@@ -26,6 +26,13 @@ require_once __DIR__ . '/../app/bootstrap.php';
 
 try {
     $reading = (new ReadingRepository($pdo))->latestForActiveLocation((int) $locationId);
+    if ($reading) {
+        $reading['observed_at'] = str_replace(' ', 'T', $reading['observed_at']) . 'Z';
+        $age = time() - strtotime($reading['observed_at']);
+        $reading['stale'] = $age > 7200 || $age < -600;
+        $reading['alert'] = $reading['stale'] ? null
+            : (new AlertRepository($pdo))->activeForReading((int)$reading['reading_id']);
+    }
     respond_json(200, ['data' => $reading]);
 } catch (PDOException $exception) {
     error_log('SmartSlope reading API failed: ' . $exception->getMessage());

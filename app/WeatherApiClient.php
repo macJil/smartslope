@@ -20,11 +20,6 @@ final class WeatherApiClient
         'wind_speed_10m',
         'wind_direction_10m',
         'wind_gusts_10m',
-        'soil_moisture_0_to_1cm',
-        'soil_moisture_1_to_3cm',
-        'soil_moisture_3_to_9cm',
-        'soil_moisture_9_to_27cm',
-        'soil_moisture_27_to_81cm',
     ];
 
     /** @return array<string, mixed> */

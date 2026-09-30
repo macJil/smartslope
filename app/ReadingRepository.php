@@ -17,7 +17,7 @@ final class ReadingRepository
              FROM readings AS r
              INNER JOIN locations AS l ON l.location_id = r.location_id
              INNER JOIN barangays AS b ON b.barangay_id = l.barangay_id
-             WHERE r.location_id = :location_id AND r.is_archived = 0
+             WHERE r.location_id = :location_id AND r.is_archived = 0 AND r.source_name = 'Open-Meteo'
                AND l.is_active = 1 AND b.is_active = 1
                AND b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
              ORDER BY r.observed_at DESC, r.reading_id DESC LIMIT 1"
@@ -39,6 +39,7 @@ final class ReadingRepository
              INNER JOIN locations AS l ON l.location_id = r.location_id
              INNER JOIN barangays AS b ON b.barangay_id = l.barangay_id
              WHERE b.barangay_name = \'Barangay Irisan\' AND b.city_name = \'Baguio City\'
+               AND r.is_archived = 0 AND r.source_name = \'Open-Meteo\'
              ORDER BY r.observed_at DESC, r.reading_id DESC'
         );
         return $statement->fetchAll();
@@ -61,31 +62,35 @@ final class ReadingRepository
         return $reading ?: null;
     }
 
-    /** Save one snapshot per location/provider/hour, preserving admin edits and archives. */
-    public function createFromApi(array $reading): void
+    /** Return the saved summary, preserving an administrator's corrections. */
+    public function createFromApi(array $reading): ?array
     {
         $reading['risk_level'] = RiskAnalyzer::analyze(
-            $reading['rainfall_1h_mm'],
-            $reading['rainfall_24h_mm'],
-            $reading['rainfall_72h_mm']
+            $reading['rainfall_1h_mm'], $reading['rainfall_24h_mm'], $reading['rainfall_72h_mm']
         );
-        $statement = $this->pdo->prepare(
-            'INSERT INTO readings
-                (location_id, rainfall_1h_mm, rainfall_24h_mm, rainfall_72h_mm,
-                 risk_level, source_name, source_url, observed_at, recorded_by_user_id)
-             VALUES
-                (:location_id, :rainfall_1h_mm, :rainfall_24h_mm, :rainfall_72h_mm,
-                 :risk_level, :source_name, :source_url, :observed_at, NULL)
-             ON DUPLICATE KEY UPDATE reading_id = reading_id'
+        $query = $this->pdo->prepare(
+            "INSERT INTO readings (location_id,rainfall_1h_mm,rainfall_24h_mm,rainfall_72h_mm,
+                     risk_level,source_name,source_url,observed_at,recorded_by_user_id)
+             VALUES (:location_id,:rainfall_1h_mm,:rainfall_24h_mm,:rainfall_72h_mm,
+                     :risk_level,:source_name,:source_url,:observed_at,NULL)
+             ON DUPLICATE KEY UPDATE
+                reading_id=LAST_INSERT_ID(reading_id),
+                rainfall_1h_mm=IF(recorded_by_user_id IS NULL AND is_archived=0,
+                    VALUES(rainfall_1h_mm),rainfall_1h_mm),
+                rainfall_24h_mm=IF(recorded_by_user_id IS NULL AND is_archived=0,
+                    VALUES(rainfall_24h_mm),rainfall_24h_mm),
+                rainfall_72h_mm=IF(recorded_by_user_id IS NULL AND is_archived=0,
+                    VALUES(rainfall_72h_mm),rainfall_72h_mm),
+                risk_level=IF(recorded_by_user_id IS NULL AND is_archived=0,
+                    VALUES(risk_level),risk_level)"
         );
-        $statement->execute($reading);
+        $query->execute($reading);
+        $saved = $this->find((int) $this->pdo->lastInsertId());
+        return $saved && (int)$saved['is_archived'] === 0 ? $saved : null;
     }
 
-    /** Save all displayed provider values. Caller owns the transaction.
-     * Current interval values and hourly totals have separate identities.
-     * Re-fetching an observation updates it instead of duplicating it.
-     */
-    public function saveWeatherObservations(int $locationId, array $current, array $hourly, string $fetchedAt): int
+    /** Caller owns the transaction; current and hourly readings have distinct keys. */
+    public function saveWeatherObservations(int $sensorId, array $current, array $hourly, string $fetchedAt): int
     {
         $fields = [
             'temperature_2m',
@@ -101,107 +106,82 @@ final class ReadingRepository
             'wind_speed_10m',
             'wind_direction_10m',
             'wind_gusts_10m',
-            'soil_moisture_0_to_1cm',
-            'soil_moisture_1_to_3cm',
-            'soil_moisture_3_to_9cm',
-            'soil_moisture_9_to_27cm',
-            'soil_moisture_27_to_81cm',
         ];
-        $columns = array_merge(
-            ['location_id', 'source_name', 'observation_kind', 'observed_at', 'fetched_at', 'interval_seconds'],
-            $fields
+        $columns = array_merge(['sensor_id','observation_kind','observed_at','fetched_at','interval_seconds'], $fields);
+        $updates = array_merge(['fetched_at','interval_seconds'], $fields);
+        $query = $this->pdo->prepare(
+            'INSERT INTO weather_observations ('.implode(',', $columns).') VALUES (:'.implode(',:',$columns).') '
+            .'ON DUPLICATE KEY UPDATE '.implode(',', array_map(
+                static fn(string $field): string => $field.'=VALUES('.$field.')', $updates
+            ))
         );
-        $updates = array_merge(['fetched_at', 'interval_seconds'], $fields);
-        $statement = $this->pdo->prepare(
-            'INSERT INTO weather_observations (' . implode(', ', $columns) . ') VALUES (:'
-            . implode(', :', $columns) . ') ON DUPLICATE KEY UPDATE '
-            . implode(', ', array_map(static fn(string $column): string => $column . ' = VALUES(' . $column . ')', $updates))
-        );
-        $utc = new DateTimeZone('UTC');
-        $save = static function (array $row, string $kind) use ($statement, $locationId, $fetchedAt, $fields, $utc): void {
+        $save = static function (array $row, string $kind) use ($query,$sensorId,$fetchedAt,$fields): void {
             $values = [
-                'location_id' => $locationId,
-                'source_name' => 'Open-Meteo',
-                'observation_kind' => $kind,
-                'observed_at' => (new DateTimeImmutable($row['time']))->setTimezone($utc)->format('Y-m-d H:i:s'),
-                'fetched_at' => $fetchedAt,
-                'interval_seconds' => $kind === 'hourly' ? 3600 : ($row['interval'] ?? null),
+                'sensor_id'=>$sensorId, 'observation_kind'=>$kind,
+                'observed_at'=>(new DateTimeImmutable($row['time']))
+                    ->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+                'fetched_at'=>$fetchedAt,
+                'interval_seconds'=>$kind === 'hourly' ? 3600 : ($row['interval'] ?? null),
             ];
             foreach ($fields as $field) {
-                $value = $row[$field] ?? null;
-                $values[$field] = is_numeric($value) ? (float) $value : null;
+                $value=$row[$field] ?? null;
+                $values[$field]=is_numeric($value) ? (float)$value : null;
             }
-            $statement->execute($values);
+            $query->execute($values);
         };
-        $save($current, 'current');
-        foreach ($hourly as $row) {
-            $save($row, 'hourly');
-        }
-        return count($hourly) + 1;
+        $save($current,'current');
+        foreach ($hourly as $row) $save($row,'hourly');
+        return count($hourly)+1;
     }
 
-    public function create(array $reading, ?int $adminId): void
+    /** Complete contiguous rainfall windows come from stored hourly provider rows. */
+    public function rainfallFromStoredHours(int $sensorId, string $latestUtc): array
     {
-        $reading['risk_level'] = RiskAnalyzer::analyze(
-            $reading['rainfall_1h_mm'],
-            $reading['rainfall_24h_mm'],
-            $reading['rainfall_72h_mm']
+        $query=$this->pdo->prepare(
+            "SELECT observed_at,precipitation FROM weather_observations
+             WHERE sensor_id=:sensor_id AND observation_kind='hourly' AND observed_at<=:latest
+             ORDER BY observed_at DESC LIMIT 72"
         );
-        $reading['recorded_by_user_id'] = $adminId;
-        $statement = $this->pdo->prepare(
-            'INSERT INTO readings
-                (location_id, rainfall_1h_mm, rainfall_24h_mm, rainfall_72h_mm,
-                 risk_level, source_name, source_url, observed_at, recorded_by_user_id)
-             VALUES
-                (:location_id, :rainfall_1h_mm, :rainfall_24h_mm, :rainfall_72h_mm,
-                 :risk_level, :source_name, :source_url, :observed_at, :recorded_by_user_id)'
-        );
-        $statement->execute($reading);
+        $query->execute(['sensor_id'=>$sensorId,'latest'=>$latestUtc]);
+        $rows=$query->fetchAll();
+        $total = static function (array $rows,int $hours): ?float {
+            if (count($rows)<$hours) return null;
+            $sum=0.0;
+            $expected=strtotime($rows[0]['observed_at'].' UTC');
+            for ($i=0;$i<$hours;$i++) {
+                if (strtotime($rows[$i]['observed_at'].' UTC') !== $expected-$i*3600
+                    || !is_numeric($rows[$i]['precipitation']) || (float)$rows[$i]['precipitation']<0) return null;
+                $sum+=(float)$rows[$i]['precipitation'];
+            }
+            return round($sum,2);
+        };
+        return [$total($rows,1),$total($rows,24),$total($rows,72)];
     }
 
-    public function update(int $readingId, array $reading): bool
+    /** Administrators may correct API totals; original location/time/source stay intact. */
+    public function update(int $readingId, array $rainfall, int $adminId): bool
     {
-        $reading['risk_level'] = RiskAnalyzer::analyze(
-            $reading['rainfall_1h_mm'],
-            $reading['rainfall_24h_mm'],
-            $reading['rainfall_72h_mm']
+        $reading=$this->find($readingId);
+        if (!$reading || (int)$reading['is_archived']===1 || $reading['source_name']!=='Open-Meteo') return false;
+        $level=RiskAnalyzer::analyze(
+            $rainfall['rainfall_1h_mm'],$rainfall['rainfall_24h_mm'],$rainfall['rainfall_72h_mm']
         );
-        $reading['reading_id'] = $readingId;
-        $reading['target_location_id'] = $reading['location_id'];
-        $statement = $this->pdo->prepare(
-            "UPDATE readings SET
-                location_id = :location_id,
-                rainfall_1h_mm = :rainfall_1h_mm,
-                rainfall_24h_mm = :rainfall_24h_mm,
-                rainfall_72h_mm = :rainfall_72h_mm,
-                risk_level = :risk_level,
-                source_name = :source_name,
-                source_url = :source_url,
-                observed_at = :observed_at
-             WHERE reading_id = :reading_id AND is_archived = 0
-               AND :target_location_id IN (
-                   SELECT l.location_id FROM locations AS l
-                   INNER JOIN barangays AS b ON b.barangay_id = l.barangay_id
-                   WHERE b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
-               )
-               AND location_id IN (
-                   SELECT l.location_id FROM locations AS l
-                   INNER JOIN barangays AS b ON b.barangay_id = l.barangay_id
-                   WHERE b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
-               )"
+        $query=$this->pdo->prepare(
+            "UPDATE readings SET rainfall_1h_mm=:rainfall_1h_mm,
+             rainfall_24h_mm=:rainfall_24h_mm,rainfall_72h_mm=:rainfall_72h_mm,
+             risk_level=:risk_level,recorded_by_user_id=:admin_id
+             WHERE reading_id=:reading_id AND source_name='Open-Meteo' AND is_archived=0"
         );
-        $statement->execute($reading);
-        $updated = $this->find($readingId);
-        return $updated !== null
-            && (int) $updated['is_archived'] === 0
-            && (int) $updated['location_id'] === (int) $reading['location_id'];
+        $query->execute($rainfall+['risk_level'=>$level,'admin_id'=>$adminId,'reading_id'=>$readingId]);
+        (new AlertRepository($this->pdo))->synchronize($readingId,(int)$reading['location_id'],$level);
+        return true;
     }
 
     public function setArchived(int $readingId, bool $archived): bool
     {
         $statement = $this->pdo->prepare(
             "UPDATE readings SET is_archived = :is_archived
-             WHERE reading_id = :reading_id
+             WHERE reading_id = :reading_id AND source_name='Open-Meteo'
                AND location_id IN (
                    SELECT l.location_id FROM locations AS l
                    INNER JOIN barangays AS b ON b.barangay_id = l.barangay_id

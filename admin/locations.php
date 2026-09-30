@@ -28,6 +28,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim(post_string('location_name'));
     $zone = trim(post_string('purok_zone'));
     $landmark = trim(post_string('landmark'));
+    $susceptibility = post_string('susceptibility_class');
+    $hazardName = trim(post_string('hazard_source_name'));
+    $hazardUrl = trim(post_string('hazard_source_url'));
+    $hazardDate = trim(post_string('hazard_source_date'));
+    $allowedSusceptibility = ['unknown','low','moderate','high','very_high','debris_flow'];
     $latitudeRaw = trim(post_string('latitude'));
     $longitudeRaw = trim(post_string('longitude'));
     $nameLength = preg_match_all('/./us', $name);
@@ -38,7 +43,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $latitude = $latitudeRaw === '' ? null : (float) $latitudeRaw;
     $longitude = $longitudeRaw === '' ? null : (float) $longitudeRaw;
 
-    if ($invalidLocationId || $nameLength === false || $nameLength < 1 || $nameLength > 150
+    if (!in_array($susceptibility,$allowedSusceptibility,true)
+        || strlen($hazardName)>150 || strlen($hazardUrl)>500
+        || ($hazardUrl!=='' && (!filter_var($hazardUrl,FILTER_VALIDATE_URL)
+            || !in_array(strtolower(parse_url($hazardUrl,PHP_URL_SCHEME)??''),['https','http'],true)))
+        || ($hazardDate!=='' && (!DateTimeImmutable::createFromFormat('!Y-m-d',$hazardDate)
+            || DateTimeImmutable::createFromFormat('!Y-m-d',$hazardDate)->format('Y-m-d')!==$hazardDate))
+        || ($susceptibility!=='unknown' && $hazardName==='')
+        || $invalidLocationId || $nameLength === false || $nameLength < 1 || $nameLength > 150
         || $zoneLength === false || $zoneLength > 100
         || $landmarkLength === false || $landmarkLength > 255
         || !$latitudeValid || !$longitudeValid
@@ -56,10 +68,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'landmark' => $landmark === '' ? null : $landmark,
         'latitude' => $latitude,
         'longitude' => $longitude,
-        'susceptibility_class' => $existing['susceptibility_class'] ?? 'unknown',
-        'hazard_source_name' => $existing['hazard_source_name'] ?? null,
-        'hazard_source_url' => $existing['hazard_source_url'] ?? null,
-        'hazard_source_date' => $existing['hazard_source_date'] ?? null,
+        'susceptibility_class' => $susceptibility,
+        'hazard_source_name' => $hazardName==='' ? null : $hazardName,
+        'hazard_source_url' => $hazardUrl==='' ? null : $hazardUrl,
+        'hazard_source_date' => $hazardDate==='' ? null : $hazardDate,
     ];
 
     try {
@@ -115,6 +127,14 @@ $locationRows = $locations->adminList();
                     <div class="col-md-6"><label class="form-label" for="landmark">Landmark</label><input class="form-control" id="landmark" name="landmark" maxlength="255" value="<?= e($editingLocation['landmark'] ?? '') ?>"></div>
                     <div class="col-md-3"><label class="form-label" for="latitude">Latitude</label><input class="form-control" id="latitude" name="latitude" inputmode="decimal" value="<?= e($editingLocation['latitude'] ?? '') ?>"></div>
                     <div class="col-md-3"><label class="form-label" for="longitude">Longitude</label><input class="form-control" id="longitude" name="longitude" inputmode="decimal" value="<?= e($editingLocation['longitude'] ?? '') ?>"></div>
+                </div>
+                <div class="row g-3 mt-2">
+                    <div class="col-md-3"><label class="form-label" for="susceptibility">Sourced baseline susceptibility</label><select id="susceptibility" class="form-select" name="susceptibility_class">
+                    <?php foreach (['unknown','low','moderate','high','very_high','debris_flow'] as $level): ?><option value="<?= e($level) ?>" <?= ($editingLocation['susceptibility_class']??'unknown')===$level?'selected':'' ?>><?= e(ucwords(str_replace('_',' ',$level))) ?></option><?php endforeach; ?>
+                    </select></div>
+                    <div class="col-md-3"><label for="hazard-source-name" class="form-label">Hazard source name</label><input id="hazard-source-name" name="hazard_source_name" class="form-control" maxlength="150" value="<?= e($editingLocation['hazard_source_name']??'') ?>"></div>
+                    <div class="col-md-4"><label for="hazard-source-url" class="form-label">Source URL (optional)</label><input id="hazard-source-url" name="hazard_source_url" type="url" class="form-control" maxlength="500" value="<?= e($editingLocation['hazard_source_url']??'') ?>"></div>
+                    <div class="col-md-2"><label for="hazard-source-date" class="form-label">Source date</label><input id="hazard-source-date" name="hazard_source_date" type="date" class="form-control" value="<?= e($editingLocation['hazard_source_date']??'') ?>"></div>
                 </div>
                 <div class="mt-3 d-flex gap-2"><button class="btn btn-primary" type="submit" name="action" value="save"><?= $editingLocation ? 'Save changes' : 'Add location' ?></button>
                     <?php if ($editingLocation): ?><a class="btn btn-outline-secondary" href="<?= e(app_url('admin/locations.php')) ?>">Cancel</a><?php endif; ?></div>

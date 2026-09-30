@@ -1,4 +1,4 @@
-<section class="card mt-4">
+<section class="card h-100 w-100">
     <div class="card-header"><h3 class="h5 mb-0">Resident reports</h3></div>
     <div class="card-body">
         <?php if ($message = flash('admin_report_message')): ?>
@@ -27,7 +27,11 @@
                 <tbody>
                     <?php foreach ($adminReports as $report): ?>
                         <tr>
-                            <td><?= e($report['reporter_name'] ?: 'Anonymous') ?></td>
+                            <td>
+                                <?= e($report['reporter_name'] ?: 'Anonymous') ?>
+                                <?php if ($report['reporter_email']): ?><br><small>Email: <?= e($report['reporter_email']) ?></small><?php endif; ?>
+                                <?php if ($report['reporter_contact_number']): ?><br><small>Phone: <?= e($report['reporter_contact_number']) ?></small><?php endif; ?>
+                            </td>
                             <td>
                                 <?= e($report['location_name']) ?>
                                 <?php if ($report['purok_zone']): ?><br><small><?= e($report['purok_zone']) ?></small><?php endif; ?>

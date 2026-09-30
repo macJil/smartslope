@@ -1,15 +1,5 @@
-# SmartSlope current status
+# Current SmartSlope scope
 
-Academic website prototype for Barangay Irisan, Baguio City. Start with README.md.
+Single study area: Barangay Irisan, Baguio City. One virtual Open-Meteo weather API source per active selected location. Current and hourly provider observations are stored; complete contiguous hourly rainfall windows produce a documented provisional risk summary. Medium/high results create linked prototype alerts. Residents submit ground reports for administrator review. Admins manage sourced locations and correct or remove API summary readings; CSV exports active summaries. Public visitors can see sourced baseline susceptibility and latest timestamped API risk without accessing private reports.
 
-- Plain PHP OOP/PDO, MySQL, Bootstrap, local jQuery/AJAX and JSON.
-- Resident weather/rainfall dashboard, provider observation storage, reports.
-- Administrator location and sourced reading management, archive/restore, report review and CSV export.
-- CSRF, role checks, password hashing, output escaping and session protection.
-- Prototype rainfall thresholds remain unvalidated; not official warnings.
-- No sensors, AI/ML, payments/subscriptions or geographic expansion.
-
-Reference-guided refactor: docs/REFACTOR.md.
-Requirement matrix, scope and outstanding acceptance/submission work: docs/REQUIREMENTS.md.
-
-Remaining: MySQL/HTTP acceptance, team Startup deliverables and database-chat changes (contact number, alerts/provider data naming, numeric sizing). No claim that every grading requirement is complete.
+PHP/MySQL, PDO, explicit OOP repositories, local jQuery AJAX, JSON, role guards, CSRF, escaped output, password hashes and verified provider TLS satisfy the website coursework coverage. This phase has no physical sensor installation, payments, AI/ML, geographic expansion or map dependency. Startup market/business model and team evidence are documentation deliverables; none are claimed as validated revenue or traction. See README.md, docs/REQUIREMENTS.md and docs/SmartSlope_Progress2_Design.md.

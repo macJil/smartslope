@@ -25,6 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
     $_SESSION['full_name'] = $user['full_name'];
     $_SESSION['username'] = $user['username'];
     $_SESSION['email'] = $user['email'];
+    $_SESSION['contact_number'] = $user['contact_number'];
     $_SESSION['role'] = $user['role'];
     $_SESSION['created_at'] = $user['created_at'];
 

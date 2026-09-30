@@ -30,6 +30,8 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/UserRepository.php';
 require_once __DIR__ . '/ReportRepository.php';
 require_once __DIR__ . '/ReadingRepository.php';
+require_once __DIR__ . '/SensorRepository.php';
+require_once __DIR__ . '/AlertRepository.php';
 require_once __DIR__ . '/LocationRepository.php';
 require_once __DIR__ . '/RiskAnalyzer.php';
 require_once __DIR__ . '/WeatherApiClient.php';

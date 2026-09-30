@@ -7,16 +7,16 @@ $readingRepository = new ReadingRepository($pdo);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
-        flash('reading_message', 'Your session expired. Reload the page and try again.');
+        flash('reading_error', 'Your session expired. Reload the page and try again.');
         redirect_to('admin/readings.php');
     }
 
     $action = post_string('action');
     $readingId = filter_var($_POST['reading_id'] ?? null, FILTER_VALIDATE_INT);
 
-    if (in_array($action, ['archive', 'restore'], true) && $readingId && $readingId > 0) {
-        if ($readingRepository->setArchived($readingId, $action === 'archive')) {
-            flash('reading_message', 'Reading status updated.');
+    if ($action === 'delete' && $readingId && $readingId > 0) {
+        if ($readingRepository->setArchived($readingId, true)) {
+            flash('reading_message', 'Reading removed from active listings; history preserved.');
         } else {
             flash('reading_error', 'The reading could not be updated.');
         }
@@ -42,7 +42,6 @@ $readingRows = $readingRepository->adminList();
 <header class="container py-3 d-flex justify-content-between align-items-center">
     <h1 class="h3 mb-0">Readings</h1>
     <div class="d-flex gap-2">
-        <a class="btn btn-success" href="<?= e(app_url('admin/reading.php')) ?>">Add reading</a>
         <a class="btn btn-primary" href="<?= e(app_url('admin/readings.php?action=download')) ?>">Download CSV</a>
         <a class="btn btn-outline-secondary" href="<?= e(app_url('admin/index.php')) ?>">Back to admin</a>
     </div>
@@ -55,7 +54,7 @@ $readingRows = $readingRepository->adminList();
         <div class="alert alert-danger" role="alert"><?= e($message) ?></div>
     <?php endif; ?>
     <section class="card">
-        <div class="card-header"><h2 class="h5 mb-0">Reading history</h2></div>
+        <div class="card-header"><h2 class="h5 mb-0">API-collected readings</h2></div>
         <div class="table-responsive"><table class="table table-striped align-middle mb-0">
             <thead><tr><th>Observed</th><th>Location</th><th>Rainfall (1h / 24h / 72h)</th><th>Risk</th><th>Source</th><th>Actions</th></tr></thead>
             <tbody>
@@ -65,14 +64,14 @@ $readingRows = $readingRepository->adminList();
                     <td><?= e($reading['location_name']) ?><?= $reading['purok_zone'] ? ' — ' . e($reading['purok_zone']) : '' ?></td>
                     <td><?= e($reading['rainfall_1h_mm'] ?? '—') ?> / <?= e($reading['rainfall_24h_mm'] ?? '—') ?> / <?= e($reading['rainfall_72h_mm'] ?? '—') ?> mm</td>
                     <td><?= e(ucfirst($reading['risk_level'])) ?></td>
-                    <td><?= e($reading['source_name']) ?><?= $reading['is_archived'] ? ' (archived)' : '' ?></td>
+                    <td><?= e($reading['source_name']) ?></td>
                     <td>
                         <div class="d-flex gap-2">
                             <a class="btn btn-sm btn-outline-primary" href="<?= e(app_url('admin/reading.php?id=' . ((int) $reading['reading_id']))) ?>">Edit</a>
                             <form method="post" action="<?= e(app_url('admin/readings.php')) ?>" >
                                 <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                                 <input type="hidden" name="reading_id" value="<?= (int) $reading['reading_id'] ?>">
-                                <button class="btn btn-sm btn-outline-danger" type="submit" name="action" value="<?= $reading['is_archived'] ? 'restore' : 'archive' ?>"><?= $reading['is_archived'] ? 'Restore' : 'Archive' ?></button>
+                                <button class="btn btn-sm btn-outline-danger" type="submit" name="action" value="delete">Delete</button>
                             </form>
                         </div>
                     </td>

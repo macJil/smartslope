@@ -6,7 +6,8 @@
 --
 -- Scope: one study barangay; admin/user accounts; sourced location risk data;
 -- rainfall observations and rule-based risk levels; community reports.
--- No sensor telemetry, payments, subscriptions, AI/ML, or geographic expansion.
+-- Open-Meteo is registered as a virtual weather API source. No physical sensors,
+-- payments, subscriptions, AI/ML, or geographic expansion.
 
 CREATE DATABASE IF NOT EXISTS smartslope_mvp
   CHARACTER SET utf8mb4
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS users (
     full_name VARCHAR(100) NOT NULL,
     username VARCHAR(50) NOT NULL,
     email VARCHAR(254) NOT NULL,
+    contact_number VARCHAR(20) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     role ENUM('admin', 'user') NOT NULL DEFAULT 'user',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -29,6 +31,7 @@ CREATE TABLE IF NOT EXISTS users (
     PRIMARY KEY (user_id),
     UNIQUE KEY uq_users_username (username),
     UNIQUE KEY uq_users_email (email),
+    UNIQUE KEY uq_users_contact_number (contact_number),
     KEY idx_users_role (role)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -93,7 +96,7 @@ CREATE TABLE IF NOT EXISTS locations (
 -- Store only values supported by the selected API or another verified source.
 -- observed_at is stored in UTC; convert to Asia/Manila for display in PHP.
 CREATE TABLE IF NOT EXISTS readings (
-    reading_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    reading_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     location_id INT UNSIGNED NOT NULL,
     rainfall_1h_mm DECIMAL(7, 2) NULL,
     rainfall_24h_mm DECIMAL(7, 2) NULL,
@@ -102,7 +105,7 @@ CREATE TABLE IF NOT EXISTS readings (
     source_name VARCHAR(150) NOT NULL,
     source_url VARCHAR(500) NULL,
     observed_at DATETIME NOT NULL,
-    -- NULL means imported/system-collected (API); an admin ID means manual entry.
+    -- NULL means API-collected; an admin ID marks a reviewed correction.
     recorded_by_user_id INT UNSIGNED NULL,
     is_archived TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -133,10 +136,55 @@ CREATE TABLE IF NOT EXISTS readings (
     CONSTRAINT chk_readings_archived CHECK (is_archived IN (0, 1))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- The teacher-requested sensor table registers the API provider as a virtual
+-- weather source. It does not claim any physical sensor is installed.
+CREATE TABLE IF NOT EXISTS sensors (
+    sensor_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    location_id INT UNSIGNED NOT NULL,
+    sensor_name VARCHAR(100) NOT NULL,
+    sensor_type ENUM('weather_api', 'physical_sensor') NOT NULL DEFAULT 'weather_api',
+    provider_name VARCHAR(100) NOT NULL,
+    endpoint_url VARCHAR(255) NULL,
+    status ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (sensor_id),
+    UNIQUE KEY uq_sensor_location_provider (location_id, sensor_type, provider_name),
+    CONSTRAINT fk_sensor_location FOREIGN KEY (location_id) REFERENCES locations(location_id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Time of observation and time fetched are UTC; interface displays PHT.
+CREATE TABLE IF NOT EXISTS weather_observations (
+    observation_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    sensor_id INT UNSIGNED NOT NULL,
+    observation_kind ENUM('current','hourly') NOT NULL,
+    observed_at DATETIME NOT NULL,
+    fetched_at DATETIME NOT NULL,
+    interval_seconds SMALLINT UNSIGNED NULL,
+    temperature_2m DECIMAL(5,2) NULL,
+    relative_humidity_2m DECIMAL(5,2) NULL,
+    apparent_temperature DECIMAL(5,2) NULL,
+    precipitation DECIMAL(7,2) NULL,
+    rain DECIMAL(7,2) NULL,
+    showers DECIMAL(7,2) NULL,
+    weather_code SMALLINT UNSIGNED NULL,
+    cloud_cover DECIMAL(5,2) NULL,
+    pressure_msl DECIMAL(7,2) NULL,
+    surface_pressure DECIMAL(7,2) NULL,
+    wind_speed_10m DECIMAL(6,2) NULL,
+    wind_direction_10m DECIMAL(5,2) NULL,
+    wind_gusts_10m DECIMAL(6,2) NULL,
+    PRIMARY KEY (observation_id),
+    UNIQUE KEY uq_sensor_kind_observed (sensor_id, observation_kind, observed_at),
+    KEY idx_observation_hourly_time (sensor_id, observation_kind, observed_at),
+    CONSTRAINT fk_observation_sensor FOREIGN KEY (sensor_id) REFERENCES sensors(sensor_id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 5. Community reports and their admin review state.
 -- reported_by_user_id is nullable so a public report can be anonymous.
 CREATE TABLE IF NOT EXISTS reports (
-    report_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    report_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     location_id INT UNSIGNED NOT NULL,
     reported_by_user_id INT UNSIGNED NULL,
     house_landmark VARCHAR(255) NULL,
@@ -227,7 +275,7 @@ ORDER BY r.created_at DESC;
 -- INSERT INTO locations (barangay_id, location_name, purok_zone, latitude, longitude)
 -- VALUES (:barangay_id, :location_name, :purok_zone, :latitude, :longitude);
 --
--- Create a sourced reading:
+-- API ingestion creates a sourced reading; manual creation is disabled:
 -- INSERT INTO readings
 --   (location_id, rainfall_1h_mm, rainfall_24h_mm, rainfall_72h_mm, risk_level,
 --    source_name, source_url, observed_at, recorded_by_user_id)
@@ -248,35 +296,21 @@ ORDER BY r.created_at DESC;
 -- Archive a location instead of deleting its history:
 -- UPDATE locations SET is_active = 0 WHERE location_id = :location_id;
 
--- Full provider readings, separate from admin-reviewed risk summaries.
-CREATE TABLE IF NOT EXISTS weather_observations (
-    observation_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+
+-- Medium/high prototype indicators; one alert record per rainfall reading.
+CREATE TABLE IF NOT EXISTS alerts (
+    alert_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    reading_id INT UNSIGNED NOT NULL,
     location_id INT UNSIGNED NOT NULL,
-    source_name VARCHAR(40) NOT NULL DEFAULT 'Open-Meteo',
-    observation_kind ENUM('current', 'hourly') NOT NULL,
-    observed_at DATETIME NOT NULL COMMENT 'UTC provider time',
-    fetched_at DATETIME NOT NULL COMMENT 'UTC latest successful fetch',
-    interval_seconds INT UNSIGNED NULL,
-    temperature_2m DECIMAL(12, 4) NULL,
-    relative_humidity_2m DECIMAL(12, 4) NULL,
-    apparent_temperature DECIMAL(12, 4) NULL,
-    precipitation DECIMAL(12, 4) NULL,
-    rain DECIMAL(12, 4) NULL,
-    showers DECIMAL(12, 4) NULL,
-    weather_code DECIMAL(12, 4) NULL,
-    cloud_cover DECIMAL(12, 4) NULL,
-    pressure_msl DECIMAL(12, 4) NULL,
-    surface_pressure DECIMAL(12, 4) NULL,
-    wind_speed_10m DECIMAL(12, 4) NULL,
-    wind_direction_10m DECIMAL(12, 4) NULL,
-    wind_gusts_10m DECIMAL(12, 4) NULL,
-    soil_moisture_0_to_1cm DECIMAL(12, 4) NULL,
-    soil_moisture_1_to_3cm DECIMAL(12, 4) NULL,
-    soil_moisture_3_to_9cm DECIMAL(12, 4) NULL,
-    soil_moisture_9_to_27cm DECIMAL(12, 4) NULL,
-    soil_moisture_27_to_81cm DECIMAL(12, 4) NULL,
-    PRIMARY KEY (observation_id),
-    UNIQUE KEY uq_weather_observation (location_id, source_name, observation_kind, observed_at),
-    CONSTRAINT fk_weather_observation_location FOREIGN KEY (location_id)
-        REFERENCES locations (location_id) ON UPDATE CASCADE ON DELETE RESTRICT
+    risk_level ENUM('medium','high') NOT NULL,
+    status ENUM('active','resolved') NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY(alert_id),
+    UNIQUE KEY uq_alert_reading (reading_id),
+    KEY idx_alert_location_status (location_id, status, created_at),
+    CONSTRAINT fk_alert_reading FOREIGN KEY (reading_id) REFERENCES readings(reading_id)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_alert_location FOREIGN KEY (location_id) REFERENCES locations(location_id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

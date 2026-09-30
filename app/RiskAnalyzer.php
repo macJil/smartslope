@@ -10,6 +10,11 @@ final class RiskAnalyzer
 {
     public static function analyze(?float $rainfall1h, ?float $rainfall24h, ?float $rainfall72h): string
     {
+        if ($rainfall1h === null || $rainfall24h === null || $rainfall72h === null
+            || !is_finite($rainfall1h) || !is_finite($rainfall24h) || !is_finite($rainfall72h)
+            || min($rainfall1h, $rainfall24h, $rainfall72h) < 0) {
+            throw new InvalidArgumentException('Complete nonnegative rainfall totals are required.');
+        }
         $values = [
             '1h' => $rainfall1h,
             '24h' => $rainfall24h,

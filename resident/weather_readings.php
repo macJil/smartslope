@@ -1,10 +1,10 @@
 <section class="card" aria-labelledby="weather-history-heading">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <h2 class="h5 mb-0" id="weather-history-heading">Recent readings for the selected location</h2>
-        <button type="button" class="btn btn-sm btn-primary" id="weather-refresh">Refresh readings</button>
+        <h2 class="h5 mb-0" id="weather-history-heading">Current readings dashboard</h2>
+        <button type="button" class="btn btn-sm btn-primary" id="weather-refresh" disabled>Refresh readings</button>
     </div>
     <div class="card-body">
-        <p id="weather-location-label" class="fw-semibold">Select a location above.</p>
+        <p id="weather-location-label" class="fw-semibold">Select a marker on the map.</p>
         <p id="weather-refresh-time" class="small text-muted" role="status">Not refreshed yet.</p>
         <p class="small text-muted">All times use Philippine Standard Time (Asia/Manila, UTC+08:00). Weather data time is the provider’s observation time; refreshed time is when SmartSlope fetched it. Hourly rows retain their original hour.</p>
             <div>
@@ -17,17 +17,15 @@
                     <dt class="col-sm-6">Wind speed / gusts</dt><dd class="col-sm-6" id="weather-wind">—</dd>
                     <dt class="col-sm-6">Wind direction</dt><dd class="col-sm-6" id="weather-wind-direction">—</dd>
                     <dt class="col-sm-6">Cloud cover</dt><dd class="col-sm-6" id="weather-cloud-cover">—</dd>
-                    <dt class="col-sm-6">Soil moisture (0–1 cm)</dt><dd class="col-sm-6" id="weather-soil-moisture-shallow">—</dd>
-                    <dt class="col-sm-6">Soil moisture (27–81 cm)</dt><dd class="col-sm-6" id="weather-soil-moisture-deep">—</dd>
                     <dt class="col-sm-6">Weather code (WMO)</dt><dd class="col-sm-6" id="weather-code">—</dd>
                     <dt class="col-sm-6">Weather data time</dt><dd class="col-sm-6" id="weather-current-time">—</dd>
                 </dl>
             </div>
-            <p class="small text-muted mt-3 mb-0">Weather data: <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a>, licensed CC BY 4.0. These are model-based estimates, not measurements from a local rain gauge or slope sensor. Soil moisture is displayed as context and is not used in the current risk rule.</p>
+        <p class="small text-muted mt-2">Weather data: <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a>, CC BY 4.0. These are model estimates rather than local hardware measurements.</p>
 
         <hr>
-        <h3 class="h6">Hourly readings</h3>
-        <p id="weather-hourly-summary" class="text-muted">Choose a location above to load up to 72 hourly readings from Open-Meteo.</p>
+        <h3 class="h6">Saved hourly observations</h3>
+        <p id="weather-hourly-summary" class="text-muted">Choose a map marker to load up to 72 saved hourly observations.</p>
         <div class="table-responsive">
             <table class="table table-sm table-striped table-hover align-middle mb-0">
                 <thead>
@@ -45,16 +43,11 @@
                         <th scope="col">Cloud cover (%)</th>
                         <th scope="col">Pressure MSL (hPa)</th>
                         <th scope="col">Surface pressure (hPa)</th>
-                        <th scope="col">Soil moisture, 0–1 cm (m³/m³)</th>
-                        <th scope="col">Soil moisture, 1–3 cm (m³/m³)</th>
-                        <th scope="col">Soil moisture, 3–9 cm (m³/m³)</th>
-                        <th scope="col">Soil moisture, 9–27 cm (m³/m³)</th>
-                        <th scope="col">Soil moisture, 27–81 cm (m³/m³)</th>
                         <th scope="col">WMO code</th>
                     </tr>
                 </thead>
                 <tbody id="weather-hourly-body">
-                    <tr><td colspan="19" class="text-center text-muted">No weather readings loaded.</td></tr>
+                    <tr><td colspan="14" class="text-center text-muted">No weather readings loaded.</td></tr>
                 </tbody>
             </table>
         </div>

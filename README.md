@@ -1,58 +1,28 @@
 # SmartSlope academic prototype
 
-Plain PHP, MySQL, Bootstrap, local jQuery and one weather provider. The study area is Barangay Irisan, Baguio City. Risk is a provisional rainfall indicator, not a validated landslide forecast or official warning.
+A PHP 8.1+/MySQL application for Barangay Irisan, Baguio City. It has resident and administrator accounts, sourced location susceptibility, resident reports, Open-Meteo weather ingestion, stored rainfall analysis and prototype alerts. The `sensors` table registers Open-Meteo as a **virtual weather API source**; there is no physical hardware. Risk thresholds are provisional classroom rules, not official safety warnings.
 
-## Requirements
+## Setup (Herd / XAMPP)
 
-PHP 8.1+ with PDO MySQL and cURL (or HTTPS URL streams), MySQL 8 or compatible MariaDB, and Apache/XAMPP or Herd. Node is only needed for developer tests. No Composer/npm installation is needed to run the website.
+1. Use PHP 8.1+, PDO MySQL and PHP cURL with verified HTTPS (or verified HTTPS streams). Use MySQL 8+ for the migration script.
+2. Copy `.env.example` to `.env`; set MySQL credentials and `APP_BASE_PATH`: empty for a Herd domain, `/landslide` when installed at `http://localhost/landslide` in XAMPP. Keep `.env` private.
+3. **New database:** import `db.sql`. **Database created from `smartslope` main `389a0b3`:** back it up and run `sql/migrate_existing_to_aligned.sql` once, after inspecting its preflight queries. Do not run `db.sql` over a populated database; `CREATE TABLE IF NOT EXISTS` cannot upgrade old tables.
+4. Existing accounts retain their email and can log in by username. The upgrade adds nullable `contact_number` until genuine numbers have been supplied. New registration requires a unique email and phone number. After supplying real contact details for existing users, run the updated `sql/finish_contact_migration.sql` to enforce both fields. If an earlier migration already dropped `email`, run `sql/restore_email_for_contact_only.sql` first, obtain genuine emails, and then finish. Never fabricate contact details.
+5. Register the first account and promote only that chosen account locally with `UPDATE users SET role='admin' WHERE username='chosen_name';`. Log out and log back in. All public registrations get role `user`.
+6. Add a verified Irisan location with coordinates and an independently sourced baseline susceptibility using `admin/locations.php`. The location CRUD page is kept for administrator maintenance but no longer appears in the main menu. Click its map marker to see saved readings; Refresh saves new provider observations.
 
-## Fresh setup
+## What each record means
 
-1. Put this entire folder in XAMPP's `htdocs/landslide`, or link it in Herd.
-2. Copy `.env.example` to `.env`. Set your MySQL credentials. Use `APP_BASE_PATH="/landslide"` for that XAMPP folder; use an empty value for a Herd domain.
-3. Import `db.sql` in phpMyAdmin/MySQL Workbench. It creates `smartslope_mvp` and seeds Irisan. It does not create a default administrator or claim any location coordinates are verified.
-4. Open the root URL and register your administrator's intended account. In your local database console, promote that exact account:
-   ```sql
-   UPDATE users SET role = 'admin' WHERE username = 'your_chosen_username';
-   ```
-   Sign out and sign in again. Public registration always creates a resident account.
-5. Add a real study location through **Manage locations**, using independently checked coordinates within Irisan. Create a separate resident account to demonstrate reports and weather refresh.
-6. As a resident, choose the location and refresh. Current/hourly Open-Meteo provider data are saved; complete 1/24/72-hour rainfall totals produce a prototype indicator. If data or persistence fail, the page explains that condition.
-7. As administrator, add/edit a sourced reading, archive/restore it, export CSV, and review a resident report.
+- `sensors`: one registered provider source per location. Its `sensor_type='weather_api'` does not imply physical measurement.
+- `weather_observations`: current interval and historical hourly model data, stored at actual observation time in UTC; repeated fetches update the same row.
+- `readings`: 1/24/72-hour rainfall totals calculated **from stored hourly observations**, plus the derived prototype risk. An admin may correct an existing API summary.
+- `alerts`: medium/high prototype indicators linked to a reading and location. A corrected reading synchronizes its alert.
+- `reports`: resident ground observations and administrator review; these reports are not silently used as weather measurements.
 
-Do not import the synthetic test seed into a public deployment. Existing installations should back up their database and use the relevant scripts in `sql/` and `db_migration_archive_readings.sql` only if the corresponding columns/tables are missing. This refactor itself changes no SQL schema and needs no migration from the reviewed `ver1` schema. `CREATE TABLE IF NOT EXISTS` does not upgrade old tables.
-
-Apache/XAMPP uses the included `.htaccess` to block configuration, SQL and development files. Herd uses Nginx and ignores `.htaccess`; keep it local or configure equivalent restrictions before hosting publicly.
-
-## Layout and flow
-
-| Path | Responsibility |
-|---|---|
-| `index.php`, `configs/` | Login, registration, logout and environment settings |
-| `admin/` | Report review, locations, reading create/edit/archive/export |
-| `resident/` | Risk/weather dashboard and report form |
-| `app/` | One bootstrap, PDO repositories, weather client, risk calculation and helpers |
-| `api/` | Read-only latest reading JSON and authenticated weather refresh |
-| `assets/` | Only the CSS/JS used by the pages; local jQuery and Bootstrap |
-| `sql/`, `db.sql` | Fresh schema and existing database repair scripts |
-| `tests/`, `docs/` | Verification and requirement evidence |
-
-The browser sends a selected location and CSRF token via jQuery AJAX to `api/weather.php`. PHP validates the session/location, requests provider data, calculates rainfall totals and saves observations plus a risk summary in a transaction. JSON updates the dashboard. Normal administrative forms use POST/redirect/GET and PDO classes. Sessions contain identity, CSRF and flash messages; MySQL owns persistent records. There is no client-side global store or framework.
-
-URLs changed from `components/admins/...` and `components/users/...` to `admin/...` and `resident/...`; update saved bookmarks. Replace the old application folder with this clean tree rather than overlaying it and leaving obsolete pages accessible. Preserve your local `.env` and database separately.
+The application uses a single PHP bootstrap, PDO repositories and jQuery AJAX for the weather endpoint. Both dashboards use local Leaflet 1.9.4 assets and an Irisan outline extracted from the `weather` reference repository; **the outline's original provenance must be independently checked before operational use**. This lightweight map does not include raster tiles, road names or an official hazard layer. It works locally without a map service, while live weather still needs internet. Marker selection reads saved observations via `api/location_dashboard.php`; the Refresh button persists new observations using `api/weather.php`. Administrators see pending report counts at location markers and reporter email/phone in the existing review table. Admin reading pages still edit, archive and export API readings. Other forms use POST/redirect/GET. `app_url()` handles Herd and XAMPP browser routes; `__DIR__` handles filesystem includes.
 
 ## Verification
 
-```sh
-find . -name '*.php' -not -path './.git/*' -exec php -l {} \;
-node --test tests/*.test.cjs
-php tests/repositories.php
-```
+Run `node --test tests/resident-weather.test.cjs` and `php -l` for PHP files. Then on Herd or XAMPP test both contact fields, login, marker selection, saved dashboard, refresh, saved sensor/observation/reading/alert rows, second refresh without duplicates, mapped report submission, admin pending marker count and contact display, report review and CSV. Verify a failed provider request, incomplete hourly data and a stale observation do not show a fresh low-risk result. See `docs/REQUIREMENTS.md` for the course trace and `docs/SmartSlope_Progress2_Design.md` for schema documentation.
 
-The repository contract test requires PDO SQLite and uses an in-memory synthetic fixture. It does not validate MySQL-specific upserts, constraints or migrations. Complete the MySQL/HTTP acceptance steps in `docs/REQUIREMENTS.md` before submission.
-
-## Scope and remaining decisions
-
-No sensors, AI/ML, payment/subscription functionality, geographic expansion or map library is included. Provider soil-moisture fields are preserved because the existing dashboard displays them; they do not affect risk. This refactor does not silently replace the database design: email/contact number, persistent alerts, provider-table naming and numeric field sizing remain separate pending database decisions.
-
-See `docs/REFACTOR.md` for reference analysis and changes; `docs/REQUIREMENTS.md` for the minimal requirements matrix and remaining submission work.
+The older scripts `sql/add_weather_observations.sql`, `sql/repair_weather_readings.sql` and `db_migration_archive_readings.sql` are retained only for installations predating the current `smartslope` baseline. Do not run them after the aligned migration. `.htaccess` protects development/configuration files in Apache/XAMPP; Herd's Nginx ignores `.htaccess`, so do not expose the entire repository as a public document root without equivalent restrictions.

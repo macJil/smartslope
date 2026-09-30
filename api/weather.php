@@ -9,7 +9,7 @@ require_once __DIR__ . '/../app/json.php';
 define('SMARTSLOPE_JSON_REQUEST', true);
 require_once __DIR__ . '/../app/bootstrap.php';
 
-if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'user') {
+if (empty($_SESSION['user_id']) || !in_array($_SESSION['role'] ?? '', ['user', 'admin'], true)) {
     respond_json(401, ['error' => 'authentication_required']);
 }
 
@@ -71,9 +71,7 @@ try {
         'temperature_2m', 'relative_humidity_2m', 'apparent_temperature',
         'precipitation', 'rain', 'showers', 'weather_code', 'cloud_cover',
         'pressure_msl', 'surface_pressure', 'wind_speed_10m',
-        'wind_direction_10m', 'wind_gusts_10m', 'soil_moisture_0_to_1cm',
-        'soil_moisture_1_to_3cm', 'soil_moisture_3_to_9cm',
-        'soil_moisture_9_to_27cm', 'soil_moisture_27_to_81cm',
+        'wind_direction_10m', 'wind_gusts_10m',
     ];
 
     $history = [];
@@ -100,99 +98,87 @@ try {
         respond_json(502, ['error' => 'weather_history_unavailable']);
     }
 
-    $sumHours = static function (array $rows, int $hours): ?float {
-        if (count($rows) < $hours) {
-            return null;
-        }
-        $window = array_slice($rows, -$hours);
-        $sum = 0.0;
-        $previousTime = null;
-        foreach ($window as $row) {
-            $time = (new DateTimeImmutable($row['time'], new DateTimeZone('Asia/Manila')))->getTimestamp();
-            if ($previousTime !== null && $time - $previousTime !== 3600) {
-                return null;
-            }
-            $previousTime = $time;
-            if (!is_float($row['precipitation']) || $row['precipitation'] < 0) {
-                return null;
-            }
-            $sum += $row['precipitation'];
-        }
-        return round($sum, 2);
-    };
-
-    $rainfall1h = $sumHours($history, 1);
-    $rainfall24h = $sumHours($history, 24);
-    $rainfall72h = $sumHours($history, 72);
-    $riskLevel = $rainfall1h === null || $rainfall24h === null || $rainfall72h === null
-        ? null
-        : RiskAnalyzer::analyze($rainfall1h, $rainfall24h, $rainfall72h);
-
-    $lastHourlyReading = $history[count($history) - 1];
-    $observedAtUtc = (new DateTimeImmutable($lastHourlyReading['time'], $timezone))
-        ->setTimezone(new DateTimeZone('UTC'))
-        ->format('Y-m-d H:i:s');
-
-    $riskExplanation = $riskLevel === null
-        ? 'Insufficient rainfall coverage: complete 1-hour, 24-hour and 72-hour totals are required.'
-        : strtoupper($riskLevel) . ' prototype rainfall indicator for the selected location. '
-            . RiskAnalyzer::description();
-
-    $retrievedAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
-    $persistenceWarning = false;
-    $savedObservations = 0;
+    $lastHourlyReading=$history[count($history)-1];
+    $observedAtUtc=(new DateTimeImmutable($lastHourlyReading['time']))
+        ->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+    $retrievedAt=new DateTimeImmutable('now',new DateTimeZone('UTC'));
+    $age=$retrievedAt->getTimestamp()-$currentTime->getTimestamp();
+    $stale=$age>7200 || $age< -600;
+    $rainfall1h=$rainfall24h=$rainfall72h=null;
+    $riskLevel=null;
+    $alert=null;
+    $savedObservations=0;
+    $persistenceWarning=false;
     try {
         $pdo->beginTransaction();
-        $repository = new ReadingRepository($pdo);
-        $savedObservations = $repository->saveWeatherObservations(
-            (int) $location['location_id'], $weather['current'], $history,
-            $retrievedAt->format('Y-m-d H:i:s')
+        $sensorId=(new SensorRepository($pdo))->openMeteoForLocation((int)$location['location_id']);
+        $repository=new ReadingRepository($pdo);
+        $savedObservations=$repository->saveWeatherObservations(
+            $sensorId,$weather['current'],$history,$retrievedAt->format('Y-m-d H:i:s')
         );
-        if ($riskLevel !== null) {
-            (new ReadingRepository($pdo))->createFromApi([
-                'location_id' => (int) $location['location_id'],
-                'rainfall_1h_mm' => $rainfall1h,
-                'rainfall_24h_mm' => $rainfall24h,
-                'rainfall_72h_mm' => $rainfall72h,
-                'source_name' => 'Open-Meteo',
-                'source_url' => 'https://open-meteo.com/',
-                'observed_at' => $observedAtUtc,
+        [$rainfall1h,$rainfall24h,$rainfall72h]=$repository->rainfallFromStoredHours($sensorId,$observedAtUtc);
+        if ($rainfall1h!==null && $rainfall24h!==null && $rainfall72h!==null) {
+            $saved=$repository->createFromApi([
+                'location_id'=>(int)$location['location_id'],
+                'rainfall_1h_mm'=>$rainfall1h,
+                'rainfall_24h_mm'=>$rainfall24h,
+                'rainfall_72h_mm'=>$rainfall72h,
+                'source_name'=>'Open-Meteo',
+                'source_url'=>'https://open-meteo.com/',
+                'observed_at'=>$observedAtUtc,
             ]);
+            if ($saved) {
+                // Use the actual saved summary so admin corrections remain authoritative.
+                $rainfall1h=(float)$saved['rainfall_1h_mm'];
+                $rainfall24h=(float)$saved['rainfall_24h_mm'];
+                $rainfall72h=(float)$saved['rainfall_72h_mm'];
+                $riskLevel=$saved['risk_level'];
+                if (!$stale) {
+                    $alerts=new AlertRepository($pdo);
+                    $alerts->synchronize((int)$saved['reading_id'],(int)$location['location_id'],$riskLevel);
+                    $alert=$alerts->activeForReading((int)$saved['reading_id']);
+                }
+            }
         }
         $pdo->commit();
     } catch (Throwable $exception) {
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        error_log('SmartSlope weather save failed: ' . $exception->getMessage());
-        $persistenceWarning = true;
-        $savedObservations = 0;
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log('SmartSlope weather save failed: '.$exception->getMessage());
+        $persistenceWarning=true;
+        $savedObservations=0;
+        $rainfall1h=$rainfall24h=$rainfall72h=$riskLevel=$alert=null;
     }
+    $riskExplanation=$persistenceWarning
+        ? 'Provider data could not be saved, so no database-backed risk status is available.'
+        : ($riskLevel===null
+            ? 'Complete, non-archived 1-hour, 24-hour and 72-hour rainfall records are required.'
+            : strtoupper($riskLevel).' prototype rainfall indicator. '.RiskAnalyzer::description());
+    if ($stale) $riskExplanation='Weather observation is over two hours old or has a future timestamp. '.$riskExplanation;
 
-    respond_json(200, [
-        'data' => [
-            'location' => [
-                'location_id' => (int) $location['location_id'],
-                'location_name' => $location['location_name'],
-                'purok_zone' => $location['purok_zone'],
-            ],
-            'source_name' => 'Open-Meteo',
-            'source_url' => 'https://open-meteo.com/',
-            'retrieved_at' => $retrievedAt->format(DateTimeInterface::ATOM),
-            'saved_observations' => $savedObservations,
-            'persistence_warning' => $persistenceWarning,
-            'current' => $weather['current'],
-            'rainfall' => [
-                'rainfall_1h_mm' => $rainfall1h,
-                'rainfall_24h_mm' => $rainfall24h,
-                'rainfall_72h_mm' => $rainfall72h,
-                'risk_level' => $riskLevel,
-                'risk_explanation' => $riskExplanation,
-                'observed_at' => str_replace(' ', 'T', $observedAtUtc) . 'Z',
-            ],
-            'hourly' => $history,
+    respond_json(200,['data'=>[
+        'location'=>[
+            'location_id'=>(int)$location['location_id'],
+            'location_name'=>$location['location_name'],
+            'purok_zone'=>$location['purok_zone'],
         ],
-    ]);
+        'source_name'=>'Open-Meteo',
+        'source_url'=>'https://open-meteo.com/',
+        'retrieved_at'=>$retrievedAt->format(DateTimeInterface::ATOM),
+        'saved_observations'=>$savedObservations,
+        'persistence_warning'=>$persistenceWarning,
+        'stale'=>$stale,
+        'current'=>$weather['current'],
+        'alert'=>$alert ? ['risk_level'=>$alert['risk_level'],'status'=>$alert['status']] : null,
+        'rainfall'=>[
+            'rainfall_1h_mm'=>$rainfall1h,
+            'rainfall_24h_mm'=>$rainfall24h,
+            'rainfall_72h_mm'=>$rainfall72h,
+            'risk_level'=>$riskLevel,
+            'risk_explanation'=>$riskExplanation,
+            'observed_at'=>str_replace(' ','T',$observedAtUtc).'Z',
+        ],
+        'hourly'=>$history,
+    ]]);
 } catch (Throwable $exception) {
     error_log('SmartSlope weather API request failed: ' . $exception->getMessage());
     respond_json(503, ['error' => 'weather_provider_unavailable']);

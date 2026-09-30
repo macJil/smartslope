@@ -7,7 +7,7 @@ require_admin();
 $readings = (new ReadingRepository($pdo))->adminList();
 
 header('Content-Type: text/csv; charset=utf-8');
-header('Content-Disposition: attachment; filename="smartslope-current-readings-' . date('Y-m-d') . '.csv"');
+header('Content-Disposition: attachment; filename="smartslope-api-readings-' . date('Y-m-d') . '.csv"');
 header('Cache-Control: no-store, max-age=0');
 
 $output = fopen('php://output', 'wb');

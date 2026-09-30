@@ -1,0 +1,9 @@
+.smartslope-map { height: 420px; min-height: 320px; background: #eaf2eb; border: 1px solid #cadbcf; border-radius: .375rem; }
+.smartslope-map .leaflet-container { background: #eaf2eb; }
+.location-pin { position: relative; display: block; width: 21px; height: 21px; border: 3px solid white; border-radius: 50%; box-shadow: 0 1px 6px #3446; background: #6c757d; }
+.location-pin.low { background: #198754; }
+.location-pin.normal { background: #0d6efd; }
+.location-pin.medium { background: #ffc107; }
+.location-pin.high { background: #dc3545; }
+.location-pin.selected { outline: 3px solid #172f47; }
+.location-pin.has-reports::after { content: ''; position: absolute; right: -5px; top: -5px; width: 9px; height: 9px; border-radius: 50%; background: #d63384; border: 1px solid white; }

@@ -16,7 +16,7 @@ require_once __DIR__ . '/add_user.php';
     <header class="nav" style="background-color: aliceblue; display:flex; justify-content:space-between; align-items:center; padding:10px 20px;">
         <h1>BARANGAY IRISAN (Baguio City) - Landslide Warning System</h1>
     </header>
-    <div class="container" style="width: 900px; align-items:center; text-align: center" >
+    <div class="container" style="max-width: 900px" >
         <h4>Register Page</h4>
         <?php if ($message = flash('register_error')): ?>
             <div class="alert alert-danger" role="alert"><?= e($message) ?></div>
@@ -41,9 +41,13 @@ require_once __DIR__ . '/add_user.php';
                 </tr>
               
                 <tr>
-                    <th>Enter Email</th>
+                    <th>Email</th>
+                    <td><input type="email" name="email" id="email" maxlength="254" autocomplete="email" class="form-control" required></td>
+                </tr>
+                <tr>
+                    <th>Enter Contact Number</th>
                     <td>
-                        <input type="email" name="email" id="email" class="form-control" required>
+                        <input type="tel" name="contact_number" id="contact_number" maxlength="20" inputmode="tel" pattern="\+?[0-9]{7,15}" class="form-control" required>
                     </td>
                 </tr>
                 <tr>
