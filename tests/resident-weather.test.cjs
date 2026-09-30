@@ -38,7 +38,9 @@ function mount(admin=false, stored=data, live=data, skipInitial=false) {
         document:{getElementById:id=>elements[id]||null,createElement:()=>new Element(),addEventListener:(name,fn)=>handlers[name]=fn},
         window:{SmartSlopeMap:{updateRisk:(...args)=>requests.push(['risk',...args])}},
         fetch:async url=>{requests.push(['stored',url]);return {ok:true,json:async()=>({data:typeof stored==='function'?await stored(url):stored})};},
-        jQuery:{ajax(options){requests.push(['weather',options.data]);Promise.resolve().then(()=>options.success({data:live}));return {abort(){options.error({},'abort');}};}},
+        jQuery:{ajax(options){requests.push(['weather',options.data]);
+            Promise.resolve().then(()=>options.success({data:typeof live==='function'?live(options):live}));
+            return {abort(){options.error({},'abort');}};}},
         URLSearchParams,console
     });
     return {elements,requests,handlers};
@@ -92,9 +94,32 @@ test('late response from first marker cannot overwrite second marker',async()=>{
     assert.equal(elements['risk-level'].textContent,'LOW');
     assert.equal(elements['report-location'].value,'8');
 });
+test('both dashboards switch saved rows by selected location and refresh the current location',async()=>{
+    const second={...data,location:{location_id:8,location_name:'Second'},
+        current_readings:[{...current,observation_id:9,temperature_2m:24}],risk_readings:[]};
+    for (const admin of [false,true]) {
+        let temperature=24;
+        const {elements,requests,handlers}=mount(admin,
+            url=>url.endsWith('=7')?data:second,
+            options=>{
+                const id=new URLSearchParams(options.data).get('location_id');
+                return id==='7'?data:{...second,current_readings:[{...second.current_readings[0],temperature_2m:temperature}]};
+            });
+        handlers['smartslope:location-selected']({detail:{location:place}}); await pause();
+        assert.match(elements['current-reading-body'].children[0].children[1].textContent,/20\.0/);
+        handlers['smartslope:location-selected']({detail:{location:second.location}}); await pause();
+        assert.match(elements['current-reading-body'].children[0].children[1].textContent,/24\.0/);
+        temperature=26;
+        elements['weather-refresh'].events.click(); await pause();
+        assert.match(elements['current-reading-body'].children[0].children[1].textContent,/26\.0/);
+        assert.equal(new URLSearchParams(requests.filter(item=>item[0]==='weather').at(-1)[1]).get('location_id'),'8');
+    }
+});
 test('offline map assets and single admin dashboard routes exist',()=>{
     assert.ok(fs.existsSync(path.join(root,'assets/map-tiles/15/27356/14867.png')));
     assert.match(read('assets/js/location-map.js'),/dataset\.tilesUrl/);
+    assert.match(read('assets/js/location-map.js'),/map\.on\('click'/);
+    assert.match(read('db.sql'),/Irisan pilot point/);
     assert.match(read('admin/index.php'),/weather_readings\.php/);
     assert.ok(!fs.existsSync(path.join(root,'admin/readings.php')));
     assert.match(read('app/UserRepository.php'),/INSERT INTO users \(full_name,username,email,contact_number,password_hash,role\)/);

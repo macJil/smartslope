@@ -217,6 +217,25 @@ INSERT INTO barangays (barangay_name, city_name)
 VALUES ('Barangay Irisan', 'Baguio City')
 ON DUPLICATE KEY UPDATE barangay_id = LAST_INSERT_ID(barangay_id);
 
+-- Approximate pilot point for a usable first map. This is NOT an official
+-- hazard location or a measured sensor. Add sourced monitoring points later.
+INSERT INTO locations (barangay_id, location_name, purok_zone, latitude, longitude, susceptibility_class)
+SELECT b.barangay_id, 'Irisan pilot point', 'Pilot', 16.421000, 120.559500, 'unknown'
+FROM barangays AS b
+WHERE b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
+  AND b.is_active = 1
+  AND NOT EXISTS (
+      SELECT 1 FROM locations AS existing
+      WHERE existing.barangay_id = b.barangay_id AND existing.is_active = 1
+        AND existing.latitude BETWEEN 16.407 AND 16.435
+        AND existing.longitude BETWEEN 120.543 AND 120.576
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM locations AS existing
+      WHERE existing.barangay_id = b.barangay_id
+        AND existing.location_name = 'Irisan pilot point' AND existing.purok_zone = 'Pilot'
+  );
+
 -- No default administrator is created. Create the first admin through a
 -- protected setup step and store a PHP password_hash() result in password_hash.
 -- Public registration code must always assign role='user'; never accept a role

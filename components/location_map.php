@@ -22,14 +22,14 @@ foreach ($mapLocations as $place) {
 <section class="card" aria-labelledby="map-heading">
     <div class="card-header"><h2 class="h5 mb-0" id="map-heading">Barangay Irisan location map</h2></div>
     <div class="card-body">
-        <p class="small text-muted">Click a location marker to see its saved risk status and readings. Gray markers have no fresh risk result. A pink dot indicates pending reports on the admin map. The outline is a reference boundary, not a hazard classification.</p>
+        <p class="small text-muted">Click a marker or a place inside the Irisan outline to select the nearest registered location and load its saved readings. Gray markers have no fresh risk result. A pink dot indicates pending reports on the admin map. The outline is a reference boundary, not a hazard classification.</p>
         <div id="location-map" class="smartslope-map" role="region" aria-label="Select a monitored location on the Irisan map"
              data-boundary-url="<?= e(app_url('assets/map/irisan.geojson')) ?>"
              data-tiles-url="<?= e(app_url('assets/map-tiles/{z}/{x}/{y}.png')) ?>"
              data-default-location-id="<?= (int)($selectedLocationId ?? 0) ?>"
              data-admin="<?= $mapIsAdmin ? '1' : '0' ?>"></div>
         <p id="map-tiles-missing" class="text-warning mt-2" role="status" hidden>Local map tiles are missing. Copy the zoom 12–15 tile folders into assets/map-tiles/. The Irisan outline and markers remain available.</p>
-        <p id="map-empty" class="text-warning mt-2" hidden>No active locations have coordinates inside the Irisan map area. An administrator must verify their latitude and longitude.</p>
+        <p id="map-empty" class="text-warning mt-2" hidden>No active Irisan location has usable map coordinates. <?php if ($mapIsAdmin): ?>Add a verified point in <a href="<?= e(app_url('admin/locations.php')) ?>">Manage study locations</a> or run the pilot-point SQL seed described in the README.<?php else: ?>Ask an administrator to set up a location.<?php endif; ?></p>
         <script type="application/json" id="map-locations-data"><?= json_encode($mapMarkers, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) ?></script>
         <p class="small text-muted mt-2 mb-0">The map uses local tiles only. Live weather refresh still requires an internet connection.</p>
     </div>

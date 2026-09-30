@@ -14,7 +14,7 @@ $mapIsAdmin = false;
     <title>SmartSlope Resident</title>
     <link rel="stylesheet" href="<?= e(app_url('assets/css/bootstrap.min.css')) ?>">
     <link rel="stylesheet" href="<?= e(app_url('assets/vendor/leaflet/leaflet.css')) ?>">
-    <link rel="stylesheet" href="<?= e(app_url('assets/css/location-map.css')) ?>">
+    <link rel="stylesheet" href="<?= e(app_url('assets/css/location-map.css?v=' . filemtime(__DIR__ . '/../assets/css/location-map.css'))) ?>">
     <script src="<?= e(app_url('assets/js/bootstrap.bundle.js')) ?>" defer></script>
 </head>
 <body>
@@ -48,7 +48,7 @@ $mapIsAdmin = false;
 <?php include __DIR__ . '/../components/footer.html'; ?>
 <script src="<?= e(app_url('assets/js/vendor/jquery.min.js')) ?>" defer></script>
 <script src="<?= e(app_url('assets/vendor/leaflet/leaflet.js')) ?>" defer></script>
-<script src="<?= e(app_url('assets/js/location-map.js')) ?>" defer></script>
+<script src="<?= e(app_url('assets/js/location-map.js?v=' . filemtime(__DIR__ . '/../assets/js/location-map.js'))) ?>" defer></script>
 <script src="<?= e(app_url('assets/js/app.js?v=' . filemtime(__DIR__ . '/../assets/js/app.js'))) ?>" defer></script>
 </body>
 </html>

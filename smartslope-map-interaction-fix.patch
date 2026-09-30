@@ -1,0 +1,325 @@
+diff --git a/README.md b/README.md
+index 567cbd0..7e6d547 100644
+--- a/README.md
++++ b/README.md
+@@ -11,6 +11,12 @@ A PHP 8.1+/MySQL application for Barangay Irisan, Baguio City. It has resident a
+ 5. Register the first account and promote only that chosen account locally with `UPDATE users SET role='admin' WHERE username='chosen_name';`. Log out and log back in. All public registrations get role `user`.
+ 6. Add a verified Irisan location with coordinates and an independently sourced baseline susceptibility using `admin/locations.php`. The location CRUD page is kept for administrator maintenance but no longer appears in the main menu. Click its map marker to see saved readings; Refresh saves new provider observations.
+ 
++### If the map has no selectable point
++
++A fresh `db.sql` import now creates a single **approximate Irisan pilot point** with unknown baseline susceptibility. It is for trying map selection and Open-Meteo ingestion, not a surveyed monitoring site or hazard classification. For an **existing** `smartslope_mvp` database, back it up and run `sql/seed_irisan_pilot_point.sql` in dbngin/MySQL or phpMyAdmin. The script adds one pilot point only if the barangay has no active location with usable coordinates in the Irisan map area. Do not re-import `db.sql` into a populated database. Verified named locations should be maintained in `admin/locations.php`.
++
++The map tiles, Leaflet code and GeoJSON outline are local. A click inside the outline selects the nearest registered point, so its weather request uses **that point's stored coordinates**; the clicked pixel does not create a new sensor or location. Selecting another point loads its saved observations and then obtains fresh provider data. Refresh repeats the request for the current point. At the same observation time, the API updates the existing database row instead of adding a duplicate. Admin edit/delete redirects show the saved state first; a deliberate Refresh may re-import the provider value.
++
+ ## What each record means
+ 
+ - `sensors`: one registered provider source per location. Its `sensor_type='weather_api'` does not imply physical measurement.
+diff --git a/admin/index.php b/admin/index.php
+index f17b372..bea4525 100644
+--- a/admin/index.php
++++ b/admin/index.php
+@@ -23,7 +23,7 @@ $skipAutoRefresh=$selectedLocationId !== null;
+     <title>SmartSlope Admin</title>
+     <link rel="stylesheet" href="<?= e(app_url('assets/css/bootstrap.min.css')) ?>">
+     <link rel="stylesheet" href="<?= e(app_url('assets/vendor/leaflet/leaflet.css')) ?>">
+-    <link rel="stylesheet" href="<?= e(app_url('assets/css/location-map.css')) ?>">
++    <link rel="stylesheet" href="<?= e(app_url('assets/css/location-map.css?v=' . filemtime(__DIR__ . '/../assets/css/location-map.css'))) ?>">
+     <script src="<?= e(app_url('assets/js/bootstrap.bundle.js')) ?>" defer></script>
+ </head>
+ <body>
+@@ -46,7 +46,7 @@ $skipAutoRefresh=$selectedLocationId !== null;
+ <?php include __DIR__ . '/../components/footer.html'; ?>
+ <script src="<?= e(app_url('assets/js/vendor/jquery.min.js')) ?>" defer></script>
+ <script src="<?= e(app_url('assets/vendor/leaflet/leaflet.js')) ?>" defer></script>
+-<script src="<?= e(app_url('assets/js/location-map.js')) ?>" defer></script>
++<script src="<?= e(app_url('assets/js/location-map.js?v=' . filemtime(__DIR__ . '/../assets/js/location-map.js'))) ?>" defer></script>
+ <script src="<?= e(app_url('assets/js/app.js?v=' . filemtime(__DIR__ . '/../assets/js/app.js'))) ?>" defer></script>
+ </body>
+ </html>
+diff --git a/assets/css/location-map.css b/assets/css/location-map.css
+index dc55cde..b19d1c2 100644
+--- a/assets/css/location-map.css
++++ b/assets/css/location-map.css
+@@ -1,4 +1,5 @@
+-.smartslope-map { height: 420px; min-height: 320px; background: #eaf2eb; border: 1px solid #cadbcf; border-radius: .375rem; }
++.smartslope-map { height: 640px; max-width: 800px; margin-inline: auto; min-height: 320px; background: #eaf2eb; border: 1px solid #cadbcf; border-radius: .375rem; }
++@media (max-width: 640px) { .smartslope-map { height: 420px; } }
+ .smartslope-map .leaflet-container { background: #eaf2eb; }
+ .location-pin { position: relative; display: block; width: 21px; height: 21px; border: 3px solid white; border-radius: 50%; box-shadow: 0 1px 6px #3446; background: #6c757d; }
+ .location-pin.low { background: #198754; }
+@@ -6,4 +7,4 @@
+ .location-pin.medium { background: #ffc107; }
+ .location-pin.high { background: #dc3545; }
+ .location-pin.selected { outline: 3px solid #172f47; }
+-.location-pin.has-reports::after { content: ''; position: absolute; right: -5px; top: -5px; width: 9px; height: 9px; border-radius: 50%; background: #d63384; border: 1px solid white; }
+\ No newline at end of file
++.location-pin.has-reports::after { content: ''; position: absolute; right: -5px; top: -5px; width: 9px; height: 9px; border-radius: 50%; background: #d63384; border: 1px solid white; }
+diff --git a/assets/js/location-map.js b/assets/js/location-map.js
+index 9a6e67f..2cd8fc1 100644
+--- a/assets/js/location-map.js
++++ b/assets/js/location-map.js
+@@ -8,7 +8,7 @@
+         let locations=[];
+         try { locations=JSON.parse(dataElement.textContent); } catch { return; }
+         // The database already restricts the barangay; also reject misplaced coordinates.
+-        // Irisan outline plus margin, fully covered by the bundled zoom 12–15 tiles.
++        // The local raster tiles cover the full Irisan outline at native zoom 15.
+         const bounds=L.latLngBounds([[16.407,120.543],[16.435,120.576]]);
+         const valid=locations.filter((place) => Number.isFinite(Number(place.latitude)) &&
+             Number.isFinite(Number(place.longitude)) && place.latitude !== null && place.longitude !== null &&
+@@ -16,15 +16,14 @@
+             Number(place.longitude)>=-180 && Number(place.longitude)<=180 &&
+             bounds.contains([Number(place.latitude),Number(place.longitude)]));
+         const map=L.map(element, { scrollWheelZoom: false });
+-        // Keep the viewport around Irisan. Tiles are loaded from this site only.
+-        map.fitBounds(bounds);
+-        map.setMaxBounds(bounds.pad(.1));
+-        map.setMinZoom(12);
++        // Native zoom 15 fills the map without empty edges from smaller tile sets.
++        map.setView([16.421,120.5595],15);
++        map.setMinZoom(15);
++        map.setMaxBounds(L.latLngBounds([[16.403,120.542],[16.436,120.580]]));
+         const tiles=L.tileLayer(element.dataset.tilesUrl, {
+-            minZoom:12,
++            minZoom:15,
+             maxNativeZoom:15,
+             maxZoom:18,
+-            bounds,
+             attribution:'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+         }).addTo(map);
+         tiles.on('tileerror', () => {
+@@ -35,7 +34,7 @@
+ 
+         fetch(element.dataset.boundaryUrl)
+             .then((response) => { if (!response.ok) throw new Error('boundary unavailable'); return response.json(); })
+-            .then((shape) => { L.geoJSON(shape, { style: { color:'#2f6752', weight:2, fillColor:'#d1e8cf', fillOpacity:.8 }, interactive:false }).addTo(map); })
++            .then((shape) => { L.geoJSON(shape, { style: { color:'#2f6752', weight:2, fillColor:'#d1e8cf', fillOpacity:.08 }, interactive:false }).addTo(map); })
+             .catch(() => { /* Markers remain available if the outline cannot load. */ });
+ 
+         const markers=new Map();
+@@ -53,7 +52,9 @@
+         }
+         valid.forEach((place) => {
+             place.location_id=Number(place.location_id);
+-            const marker=L.marker([Number(place.latitude),Number(place.longitude)], {icon:icon(place,false), keyboard:true, title:place.location_name}).addTo(map);
++            const marker=L.marker([Number(place.latitude),Number(place.longitude)], {
++                icon:icon(place,false), keyboard:true, title:place.location_name, bubblingMouseEvents:false
++            }).addTo(map);
+             const label=document.createElement('div');
+             const name=document.createElement('strong'); name.textContent=place.location_name;
+             const note=document.createElement('div');
+@@ -64,9 +65,17 @@
+             marker.on('click', () => select(place));
+             markers.set(place.location_id,marker);
+         });
++        // The application saves weather against registered locations, not arbitrary
++        // pixels. A click on the map selects the nearest registered point.
++        map.on('click', (event) => {
++            if (!valid.length || !bounds.contains(event.latlng)) return;
++            const nearest=valid.reduce((best,place) =>
++                map.distance(event.latlng,[place.latitude,place.longitude])
++                    < map.distance(event.latlng,[best.latitude,best.longitude]) ? place : best);
++            select(nearest);
++            markers.get(nearest.location_id).openPopup();
++        });
+         if (valid.length) {
+-            map.fitBounds(L.latLngBounds(valid.map((place) => [Number(place.latitude),Number(place.longitude)]))
+-                .pad(.35), { maxZoom:15 });
+             select(valid.find((place) => place.location_id===Number(element.dataset.defaultLocationId)) || valid[0]);
+         } else {
+             const note=document.getElementById('map-empty');
+diff --git a/components/location_map.php b/components/location_map.php
+index f8fb3b0..91bd888 100644
+--- a/components/location_map.php
++++ b/components/location_map.php
+@@ -22,14 +22,14 @@ foreach ($mapLocations as $place) {
+ <section class="card" aria-labelledby="map-heading">
+     <div class="card-header"><h2 class="h5 mb-0" id="map-heading">Barangay Irisan location map</h2></div>
+     <div class="card-body">
+-        <p class="small text-muted">Click a location marker to see its saved risk status and readings. Gray markers have no fresh risk result. A pink dot indicates pending reports on the admin map. The outline is a reference boundary, not a hazard classification.</p>
++        <p class="small text-muted">Click a marker or a place inside the Irisan outline to select the nearest registered location and load its saved readings. Gray markers have no fresh risk result. A pink dot indicates pending reports on the admin map. The outline is a reference boundary, not a hazard classification.</p>
+         <div id="location-map" class="smartslope-map" role="region" aria-label="Select a monitored location on the Irisan map"
+              data-boundary-url="<?= e(app_url('assets/map/irisan.geojson')) ?>"
+              data-tiles-url="<?= e(app_url('assets/map-tiles/{z}/{x}/{y}.png')) ?>"
+              data-default-location-id="<?= (int)($selectedLocationId ?? 0) ?>"
+              data-admin="<?= $mapIsAdmin ? '1' : '0' ?>"></div>
+         <p id="map-tiles-missing" class="text-warning mt-2" role="status" hidden>Local map tiles are missing. Copy the zoom 12–15 tile folders into assets/map-tiles/. The Irisan outline and markers remain available.</p>
+-        <p id="map-empty" class="text-warning mt-2" hidden>No active locations have coordinates inside the Irisan map area. An administrator must verify their latitude and longitude.</p>
++        <p id="map-empty" class="text-warning mt-2" hidden>No active Irisan location has usable map coordinates. <?php if ($mapIsAdmin): ?>Add a verified point in <a href="<?= e(app_url('admin/locations.php')) ?>">Manage study locations</a> or run the pilot-point SQL seed described in the README.<?php else: ?>Ask an administrator to set up a location.<?php endif; ?></p>
+         <script type="application/json" id="map-locations-data"><?= json_encode($mapMarkers, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) ?></script>
+         <p class="small text-muted mt-2 mb-0">The map uses local tiles only. Live weather refresh still requires an internet connection.</p>
+     </div>
+diff --git a/db.sql b/db.sql
+index 7bfda6a..fd1d03b 100644
+--- a/db.sql
++++ b/db.sql
+@@ -217,6 +217,25 @@ INSERT INTO barangays (barangay_name, city_name)
+ VALUES ('Barangay Irisan', 'Baguio City')
+ ON DUPLICATE KEY UPDATE barangay_id = LAST_INSERT_ID(barangay_id);
+ 
++-- Approximate pilot point for a usable first map. This is NOT an official
++-- hazard location or a measured sensor. Add sourced monitoring points later.
++INSERT INTO locations (barangay_id, location_name, purok_zone, latitude, longitude, susceptibility_class)
++SELECT b.barangay_id, 'Irisan pilot point', 'Pilot', 16.421000, 120.559500, 'unknown'
++FROM barangays AS b
++WHERE b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
++  AND b.is_active = 1
++  AND NOT EXISTS (
++      SELECT 1 FROM locations AS existing
++      WHERE existing.barangay_id = b.barangay_id AND existing.is_active = 1
++        AND existing.latitude BETWEEN 16.407 AND 16.435
++        AND existing.longitude BETWEEN 120.543 AND 120.576
++  )
++  AND NOT EXISTS (
++      SELECT 1 FROM locations AS existing
++      WHERE existing.barangay_id = b.barangay_id
++        AND existing.location_name = 'Irisan pilot point' AND existing.purok_zone = 'Pilot'
++  );
++
+ -- No default administrator is created. Create the first admin through a
+ -- protected setup step and store a PHP password_hash() result in password_hash.
+ -- Public registration code must always assign role='user'; never accept a role
+diff --git a/resident/index.php b/resident/index.php
+index 540f43d..5289dda 100644
+--- a/resident/index.php
++++ b/resident/index.php
+@@ -14,7 +14,7 @@ $mapIsAdmin = false;
+     <title>SmartSlope Resident</title>
+     <link rel="stylesheet" href="<?= e(app_url('assets/css/bootstrap.min.css')) ?>">
+     <link rel="stylesheet" href="<?= e(app_url('assets/vendor/leaflet/leaflet.css')) ?>">
+-    <link rel="stylesheet" href="<?= e(app_url('assets/css/location-map.css')) ?>">
++    <link rel="stylesheet" href="<?= e(app_url('assets/css/location-map.css?v=' . filemtime(__DIR__ . '/../assets/css/location-map.css'))) ?>">
+     <script src="<?= e(app_url('assets/js/bootstrap.bundle.js')) ?>" defer></script>
+ </head>
+ <body>
+@@ -48,7 +48,7 @@ $mapIsAdmin = false;
+ <?php include __DIR__ . '/../components/footer.html'; ?>
+ <script src="<?= e(app_url('assets/js/vendor/jquery.min.js')) ?>" defer></script>
+ <script src="<?= e(app_url('assets/vendor/leaflet/leaflet.js')) ?>" defer></script>
+-<script src="<?= e(app_url('assets/js/location-map.js')) ?>" defer></script>
++<script src="<?= e(app_url('assets/js/location-map.js?v=' . filemtime(__DIR__ . '/../assets/js/location-map.js'))) ?>" defer></script>
+ <script src="<?= e(app_url('assets/js/app.js?v=' . filemtime(__DIR__ . '/../assets/js/app.js'))) ?>" defer></script>
+ </body>
+ </html>
+diff --git a/sql/seed_irisan_pilot_point.sql b/sql/seed_irisan_pilot_point.sql
+new file mode 100644
+index 0000000..78de018
+--- /dev/null
++++ b/sql/seed_irisan_pilot_point.sql
+@@ -0,0 +1,21 @@
++-- Run once on an existing smartslope_mvp installation after backing up.
++-- Adds one approximate pilot marker only when no active map location exists.
++-- This point is not an official hazard classification or a sensor measurement.
++USE smartslope_mvp;
++
++INSERT INTO locations (barangay_id, location_name, purok_zone, latitude, longitude, susceptibility_class)
++SELECT b.barangay_id, 'Irisan pilot point', 'Pilot', 16.421000, 120.559500, 'unknown'
++FROM barangays AS b
++WHERE b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
++  AND b.is_active = 1
++  AND NOT EXISTS (
++      SELECT 1 FROM locations AS existing
++      WHERE existing.barangay_id = b.barangay_id AND existing.is_active = 1
++        AND existing.latitude BETWEEN 16.407 AND 16.435
++        AND existing.longitude BETWEEN 120.543 AND 120.576
++  )
++  AND NOT EXISTS (
++      SELECT 1 FROM locations AS existing
++      WHERE existing.barangay_id = b.barangay_id
++        AND existing.location_name = 'Irisan pilot point' AND existing.purok_zone = 'Pilot'
++  );
+diff --git a/tests/map-interaction.test.cjs b/tests/map-interaction.test.cjs
+new file mode 100644
+index 0000000..d6f8fd9
+--- /dev/null
++++ b/tests/map-interaction.test.cjs
+@@ -0,0 +1,40 @@
++const {test}=require('node:test');
++const assert=require('node:assert/strict');
++const fs=require('node:fs');
++const path=require('node:path');
++const vm=require('node:vm');
++const root=path.join(__dirname,'..');
++const code=fs.readFileSync(path.join(root,'assets/js/location-map.js'),'utf8');
++function mount(locations) {
++    const events={}; const selected=[]; const markers=[];
++    const element={dataset:{tilesUrl:'/smartslope/assets/map-tiles/{z}/{x}/{y}.png',boundaryUrl:'/smartslope/assets/map/irisan.geojson',defaultLocationId:'0',admin:'0'}};
++    const elements={'location-map':element,'map-locations-data':{textContent:JSON.stringify(locations)},
++        'map-empty':{hidden:true},'map-tiles-missing':{hidden:true}};
++    const map={setView(){return this;},setMinZoom(){return this;},setMaxBounds(){return this;},on(name,fn){events[name]=fn;},
++        distance(a,b){let p=Array.isArray(a)?a:[a.lat,a.lng];return Math.hypot(p[0]-b[0],p[1]-b[1]);},
++        attributionControl:{addAttribution(){}}};
++    const L={map(){return map;},latLngBounds(){return {contains(p){const [lat,lon]=Array.isArray(p)?p:[p.lat,p.lng];return lat>=16.407&&lat<=16.435&&lon>=120.543&&lon<=120.576;}};},
++        tileLayer(){return {addTo(){return this;},on(){}};},geoJSON(){return {addTo(){}};},divIcon(value){return value;},
++        marker(){let m={events:{},addTo(){markers.push(this);return this;},setIcon(){},bindPopup(){},openPopup(){},on(name,fn){this.events[name]=fn;}};return m;}};
++    let ready;
++    vm.runInNewContext(code,{document:{addEventListener(name,fn){if(name==='DOMContentLoaded')ready=fn;},getElementById:id=>elements[id]||null,
++        createElement(){return {textContent:'',append(){}};},dispatchEvent:e=>selected.push(e.detail.location.location_id)},
++        window:{},CustomEvent:class {constructor(name,options){this.detail=options.detail;}},
++        L,fetch:async()=>({ok:true,json:async()=>({features:[]})}),Map,Number,console});
++    ready(); return {events,selected,markers,elements};
++}
++test('clicking inside Irisan selects the nearest registered location',()=>{
++    const one={location_id:1,location_name:'West',latitude:16.421,longitude:120.551,stale:true};
++    const two={location_id:2,location_name:'East',latitude:16.421,longitude:120.568,stale:true};
++    const {events,selected,markers}=mount([one,two]);
++    assert.equal(selected[0],1);
++    events.click({latlng:{lat:16.421,lng:120.567}});
++    assert.equal(selected.at(-1),2);
++    markers[0].events.click(); assert.equal(selected.at(-1),1);
++});
++test('without registered locations the map explains why no reading can be requested',()=>{
++    const {events,selected,elements}=mount([]);
++    events.click({latlng:{lat:16.421,lng:120.559}});
++    assert.deepEqual(selected,[]);
++    assert.equal(elements['map-empty'].hidden,false);
++});
+diff --git a/tests/resident-weather.test.cjs b/tests/resident-weather.test.cjs
+index 0c28a14..ffd85d7 100644
+--- a/tests/resident-weather.test.cjs
++++ b/tests/resident-weather.test.cjs
+@@ -38,7 +38,9 @@ function mount(admin=false, stored=data, live=data, skipInitial=false) {
+         document:{getElementById:id=>elements[id]||null,createElement:()=>new Element(),addEventListener:(name,fn)=>handlers[name]=fn},
+         window:{SmartSlopeMap:{updateRisk:(...args)=>requests.push(['risk',...args])}},
+         fetch:async url=>{requests.push(['stored',url]);return {ok:true,json:async()=>({data:typeof stored==='function'?await stored(url):stored})};},
+-        jQuery:{ajax(options){requests.push(['weather',options.data]);Promise.resolve().then(()=>options.success({data:live}));return {abort(){options.error({},'abort');}};}},
++        jQuery:{ajax(options){requests.push(['weather',options.data]);
++            Promise.resolve().then(()=>options.success({data:typeof live==='function'?live(options):live}));
++            return {abort(){options.error({},'abort');}};}},
+         URLSearchParams,console
+     });
+     return {elements,requests,handlers};
+@@ -92,9 +94,32 @@ test('late response from first marker cannot overwrite second marker',async()=>{
+     assert.equal(elements['risk-level'].textContent,'LOW');
+     assert.equal(elements['report-location'].value,'8');
+ });
++test('both dashboards switch saved rows by selected location and refresh the current location',async()=>{
++    const second={...data,location:{location_id:8,location_name:'Second'},
++        current_readings:[{...current,observation_id:9,temperature_2m:24}],risk_readings:[]};
++    for (const admin of [false,true]) {
++        let temperature=24;
++        const {elements,requests,handlers}=mount(admin,
++            url=>url.endsWith('=7')?data:second,
++            options=>{
++                const id=new URLSearchParams(options.data).get('location_id');
++                return id==='7'?data:{...second,current_readings:[{...second.current_readings[0],temperature_2m:temperature}]};
++            });
++        handlers['smartslope:location-selected']({detail:{location:place}}); await pause();
++        assert.match(elements['current-reading-body'].children[0].children[1].textContent,/20\.0/);
++        handlers['smartslope:location-selected']({detail:{location:second.location}}); await pause();
++        assert.match(elements['current-reading-body'].children[0].children[1].textContent,/24\.0/);
++        temperature=26;
++        elements['weather-refresh'].events.click(); await pause();
++        assert.match(elements['current-reading-body'].children[0].children[1].textContent,/26\.0/);
++        assert.equal(new URLSearchParams(requests.filter(item=>item[0]==='weather').at(-1)[1]).get('location_id'),'8');
++    }
++});
+ test('offline map assets and single admin dashboard routes exist',()=>{
+     assert.ok(fs.existsSync(path.join(root,'assets/map-tiles/15/27356/14867.png')));
+     assert.match(read('assets/js/location-map.js'),/dataset\.tilesUrl/);
++    assert.match(read('assets/js/location-map.js'),/map\.on\('click'/);
++    assert.match(read('db.sql'),/Irisan pilot point/);
+     assert.match(read('admin/index.php'),/weather_readings\.php/);
+     assert.ok(!fs.existsSync(path.join(root,'admin/readings.php')));
+     assert.match(read('app/UserRepository.php'),/INSERT INTO users \(full_name,username,email,contact_number,password_hash,role\)/);

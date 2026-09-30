@@ -11,6 +11,12 @@ A PHP 8.1+/MySQL application for Barangay Irisan, Baguio City. It has resident a
 5. Register the first account and promote only that chosen account locally with `UPDATE users SET role='admin' WHERE username='chosen_name';`. Log out and log back in. All public registrations get role `user`.
 6. Add a verified Irisan location with coordinates and an independently sourced baseline susceptibility using `admin/locations.php`. The location CRUD page is kept for administrator maintenance but no longer appears in the main menu. Click its map marker to see saved readings; Refresh saves new provider observations.
 
+### If the map has no selectable point
+
+A fresh `db.sql` import now creates a single **approximate Irisan pilot point** with unknown baseline susceptibility. It is for trying map selection and Open-Meteo ingestion, not a surveyed monitoring site or hazard classification. For an **existing** `smartslope_mvp` database, back it up and run `sql/seed_irisan_pilot_point.sql` in dbngin/MySQL or phpMyAdmin. The script adds one pilot point only if the barangay has no active location with usable coordinates in the Irisan map area. Do not re-import `db.sql` into a populated database. Verified named locations should be maintained in `admin/locations.php`.
+
+The map tiles, Leaflet code and GeoJSON outline are local. A click inside the outline selects the nearest registered point, so its weather request uses **that point's stored coordinates**; the clicked pixel does not create a new sensor or location. Selecting another point loads its saved observations and then obtains fresh provider data. Refresh repeats the request for the current point. At the same observation time, the API updates the existing database row instead of adding a duplicate. Admin edit/delete redirects show the saved state first; a deliberate Refresh may re-import the provider value.
+
 ## What each record means
 
 - `sensors`: one registered provider source per location. Its `sensor_type='weather_api'` does not imply physical measurement.

@@ -8,7 +8,7 @@
         let locations=[];
         try { locations=JSON.parse(dataElement.textContent); } catch { return; }
         // The database already restricts the barangay; also reject misplaced coordinates.
-        // Irisan outline plus margin, fully covered by the bundled zoom 12–15 tiles.
+        // The local raster tiles cover the full Irisan outline at native zoom 15.
         const bounds=L.latLngBounds([[16.407,120.543],[16.435,120.576]]);
         const valid=locations.filter((place) => Number.isFinite(Number(place.latitude)) &&
             Number.isFinite(Number(place.longitude)) && place.latitude !== null && place.longitude !== null &&
@@ -16,15 +16,14 @@
             Number(place.longitude)>=-180 && Number(place.longitude)<=180 &&
             bounds.contains([Number(place.latitude),Number(place.longitude)]));
         const map=L.map(element, { scrollWheelZoom: false });
-        // Keep the viewport around Irisan. Tiles are loaded from this site only.
-        map.fitBounds(bounds);
-        map.setMaxBounds(bounds.pad(.1));
-        map.setMinZoom(12);
+        // Native zoom 15 fills the map without empty edges from smaller tile sets.
+        map.setView([16.421,120.5595],15);
+        map.setMinZoom(15);
+        map.setMaxBounds(L.latLngBounds([[16.403,120.542],[16.436,120.580]]));
         const tiles=L.tileLayer(element.dataset.tilesUrl, {
-            minZoom:12,
+            minZoom:15,
             maxNativeZoom:15,
             maxZoom:18,
-            bounds,
             attribution:'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
         }).addTo(map);
         tiles.on('tileerror', () => {
@@ -35,7 +34,7 @@
 
         fetch(element.dataset.boundaryUrl)
             .then((response) => { if (!response.ok) throw new Error('boundary unavailable'); return response.json(); })
-            .then((shape) => { L.geoJSON(shape, { style: { color:'#2f6752', weight:2, fillColor:'#d1e8cf', fillOpacity:.8 }, interactive:false }).addTo(map); })
+            .then((shape) => { L.geoJSON(shape, { style: { color:'#2f6752', weight:2, fillColor:'#d1e8cf', fillOpacity:.08 }, interactive:false }).addTo(map); })
             .catch(() => { /* Markers remain available if the outline cannot load. */ });
 
         const markers=new Map();
@@ -53,7 +52,9 @@
         }
         valid.forEach((place) => {
             place.location_id=Number(place.location_id);
-            const marker=L.marker([Number(place.latitude),Number(place.longitude)], {icon:icon(place,false), keyboard:true, title:place.location_name}).addTo(map);
+            const marker=L.marker([Number(place.latitude),Number(place.longitude)], {
+                icon:icon(place,false), keyboard:true, title:place.location_name, bubblingMouseEvents:false
+            }).addTo(map);
             const label=document.createElement('div');
             const name=document.createElement('strong'); name.textContent=place.location_name;
             const note=document.createElement('div');
@@ -64,9 +65,17 @@
             marker.on('click', () => select(place));
             markers.set(place.location_id,marker);
         });
+        // The application saves weather against registered locations, not arbitrary
+        // pixels. A click on the map selects the nearest registered point.
+        map.on('click', (event) => {
+            if (!valid.length || !bounds.contains(event.latlng)) return;
+            const nearest=valid.reduce((best,place) =>
+                map.distance(event.latlng,[place.latitude,place.longitude])
+                    < map.distance(event.latlng,[best.latitude,best.longitude]) ? place : best);
+            select(nearest);
+            markers.get(nearest.location_id).openPopup();
+        });
         if (valid.length) {
-            map.fitBounds(L.latLngBounds(valid.map((place) => [Number(place.latitude),Number(place.longitude)]))
-                .pad(.35), { maxZoom:15 });
             select(valid.find((place) => place.location_id===Number(element.dataset.defaultLocationId)) || valid[0]);
         } else {
             const note=document.getElementById('map-empty');
