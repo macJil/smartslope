@@ -1,53 +1,75 @@
 <?php
 declare(strict_types=1);
 
-require_once __DIR__ . '/../app/bootstrap.php';
-require_admin();
-$adminReportFilter = (string) ($_GET['status'] ?? '');
-if (!in_array($adminReportFilter, ['', 'pending', 'reviewed', 'resolved'], true)) {
-    $adminReportFilter = '';
+require_once __DIR__ . '/configs/auth.php';
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_SESSION['user_id'])
+    && in_array($_SESSION['role'] ?? '', ['user', 'admin'], true)) {
+    redirect_to(($_SESSION['role'] ?? '') === 'admin' ? 'admin/index.php' : 'resident/index.php');
 }
-$adminReports = (new ReportRepository($pdo))->adminQueue(
-    $adminReportFilter === '' ? null : $adminReportFilter
-);
-$mapLocations=(new LocationRepository($pdo))->activeForStudyArea();
-$mapIsAdmin=true;
+$publicLocations = (new LocationRepository($pdo))->activeForStudyArea();
+$publicReadings = new ReadingRepository($pdo);
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartSlope Admin</title>
+    <title>SmartSlope | Barangay Irisan</title>
     <link rel="stylesheet" href="<?= e(app_url('assets/css/bootstrap.min.css')) ?>">
-    <link rel="stylesheet" href="<?= e(app_url('assets/vendor/leaflet/leaflet.css')) ?>">
-    <link rel="stylesheet" href="<?= e(app_url('assets/css/location-map.css')) ?>">
     <script src="<?= e(app_url('assets/js/bootstrap.bundle.js')) ?>" defer></script>
 </head>
 <body>
-<header class="nav" style="background-color: aliceblue; display:flex; justify-content:space-between; align-items:center; padding:10px 20px;">
-    <h1>SmartSlope — Report Review</h1>
-    <nav class="d-flex gap-2" aria-label="Admin pages">
-        <a class="btn btn-outline-primary" href="<?= e(app_url('admin/readings.php')) ?>">Manage readings</a>
-    </nav>
-    <form action="<?= e(app_url('configs/logout.php')) ?>" method="post">
-        <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-        <button class="btn btn-outline-danger" type="submit">Log out</button>
-    </form>
+<header class="p-3" style="background-color: aliceblue">
+    <h1 class="h4 mb-0">Barangay Irisan (Baguio City) — SmartSlope</h1>
 </header>
 <main class="container my-4">
-    <h2>Welcome, <?= e($_SESSION['full_name'] ?? 'Administrator') ?></h2>
-    <?php include __DIR__ . '/../components/location_map.php'; ?>
-    <div class="row g-3 mt-1">
-        <div class="col-xl-6 d-flex"><?php include __DIR__ . '/../resident/risk_area.php'; ?></div>
-        <div class="col-xl-6 d-flex"><?php include __DIR__ . '/reports.php'; ?></div>
-    </div>
-    <div class="mt-3"><?php include __DIR__ . '/../resident/weather_readings.php'; ?></div>
+    <section class="card mx-auto mb-4" style="max-width: 420px" aria-labelledby="login-heading">
+        <div class="card-body">
+            <h2 id="login-heading" class="h5">Sign in</h2>
+            <?php if ($message = flash('login_error')): ?>
+                <div class="alert alert-danger" role="alert"><?= e($message) ?></div>
+            <?php endif; ?>
+            <?php if ($message = flash('register_success')): ?>
+                <div class="alert alert-success" role="status"><?= e($message) ?></div>
+            <?php endif; ?>
+            <form action="<?= e(app_url('index.php')) ?>" method="post">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <div class="mb-3">
+                    <label class="form-label" for="username">Username</label>
+                    <input class="form-control" type="text" id="username" name="username" maxlength="50" autocomplete="username" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="password">Password</label>
+                    <input class="form-control" type="password" id="password" name="password" autocomplete="current-password" required>
+                </div>
+                <button class="btn btn-primary" type="submit" name="login" value="1">Sign in</button>
+                <a class="btn btn-outline-secondary" href="<?= e(app_url('configs/register.php')) ?>">Register</a>
+            </form>
+        </div>
+    </section>
+
+    <section aria-labelledby="public-heading">
+        <h2 id="public-heading" class="h4">Barangay Irisan location overview</h2>
+        <p class="text-muted">Baseline susceptibility and the latest rainfall indicator are separate. These prototype indicators are not official warnings. Observation time uses Philippine time.</p>
+        <div class="row g-3">
+            <?php foreach ($publicLocations as $location): ?>
+                <?php
+                $latest = $publicReadings->latestForActiveLocation((int) $location['location_id']);
+                $age = $latest ? time() - (new DateTimeImmutable($latest['observed_at'], new DateTimeZone('UTC')))->getTimestamp() : null;
+                $stale = $age === null || $age > 7200 || $age < -600;
+                ?>
+                <div class="col-md-6"><article class="card h-100"><div class="card-body">
+                    <h3 class="h5"><?= e($location['location_name']) ?></h3>
+                    <p>Baseline susceptibility: <strong><?= e(str_replace('_', ' ', $location['susceptibility_class'])) ?></strong>
+                    <?php if ($location['hazard_source_name']): ?> · Source: <?= e($location['hazard_source_name']) ?><?php endif; ?></p>
+                    <p class="mb-0">Latest rainfall indicator: <strong><?= $latest ? e(strtoupper($latest['risk_level'])) : 'Unavailable' ?></strong><?= $stale ? ' (stale or missing)' : '' ?>.
+                    <?php if ($latest): ?> Observed <?= e(display_local_datetime($latest['observed_at'])) ?> PHT.<?php endif; ?></p>
+                </div></article></div>
+            <?php endforeach; ?>
+            <?php if (!$publicLocations): ?><p>No active Irisan locations are available yet.</p><?php endif; ?>
+        </div>
+    </section>
 </main>
-<?php include __DIR__ . '/../components/footer.html'; ?>
-<script src="<?= e(app_url('assets/js/vendor/jquery.min.js')) ?>" defer></script>
-<script src="<?= e(app_url('assets/vendor/leaflet/leaflet.js')) ?>" defer></script>
-<script src="<?= e(app_url('assets/js/location-map.js')) ?>" defer></script>
-<script src="<?= e(app_url('assets/js/app.js?v=' . filemtime(__DIR__ . '/../assets/js/app.js'))) ?>" defer></script>
+<?php include __DIR__ . '/components/footer.html'; ?>
 </body>
 </html>

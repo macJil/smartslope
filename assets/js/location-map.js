@@ -7,16 +7,30 @@
         if (!element || !dataElement || typeof L === 'undefined') return;
         let locations=[];
         try { locations=JSON.parse(dataElement.textContent); } catch { return; }
+        // The database already restricts the barangay; also reject misplaced coordinates.
+        const bounds=L.latLngBounds([[16.405,120.540],[16.438,120.578]]);
         const valid=locations.filter((place) => Number.isFinite(Number(place.latitude)) &&
             Number.isFinite(Number(place.longitude)) && place.latitude !== null && place.longitude !== null &&
             Number(place.latitude)>=-90 && Number(place.latitude)<=90 &&
-            Number(place.longitude)>=-180 && Number(place.longitude)<=180);
+            Number(place.longitude)>=-180 && Number(place.longitude)<=180 &&
+            bounds.contains([Number(place.latitude),Number(place.longitude)]));
         const map=L.map(element, { scrollWheelZoom: false });
-        const bounds=L.latLngBounds([[16.38,120.50],[16.46,120.62]]);
+        // Keep the viewport around Irisan. Tiles are loaded from this site only.
         map.fitBounds(bounds);
-        map.setMaxBounds(bounds.pad(.4));
-        map.setMinZoom(Math.max(11, map.getZoom()-1));
-        map.attributionControl.addAttribution('Irisan outline: weather reference data; verify boundary before operational use');
+        map.setMaxBounds(bounds.pad(.1));
+        map.setMinZoom(12);
+        const tiles=L.tileLayer(element.dataset.tilesUrl, {
+            minZoom:12,
+            maxNativeZoom:15,
+            maxZoom:18,
+            bounds,
+            attribution:'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+        }).addTo(map);
+        tiles.on('tileerror', () => {
+            const note=document.getElementById('map-tiles-missing');
+            if (note) note.hidden=false;
+        });
+        map.attributionControl.addAttribution('Irisan outline: weather reference data; verify provenance');
 
         fetch(element.dataset.boundaryUrl)
             .then((response) => { if (!response.ok) throw new Error('boundary unavailable'); return response.json(); })
@@ -43,7 +57,7 @@
             const name=document.createElement('strong'); name.textContent=place.location_name;
             const note=document.createElement('div');
             note.textContent=(place.stale ? 'Risk unavailable or stale' : `Latest risk: ${place.risk_level || 'unavailable'}`)
-                +(element.dataset.admin==='1' ? ` Â· ${Number(place.pending_count)||0} pending reports` : '');
+                +(element.dataset.admin==='1' ? ` · ${Number(place.pending_count)||0} pending reports` : '');
             label.append(name,note);
             marker.bindPopup(label);
             marker.on('click', () => select(place));
