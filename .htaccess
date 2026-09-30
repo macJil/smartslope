@@ -1,0 +1,5 @@
+# Apache/XAMPP: local configuration, SQL and development files are not web assets.
+<FilesMatch "(^\.|\.(sql|md|log|patch|cjs)$)">
+    Require all denied
+</FilesMatch>
+RedirectMatch 404 /(?:\.git|tests|docs|sql)/
