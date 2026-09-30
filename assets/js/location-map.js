@@ -39,6 +39,16 @@
 
         const markers=new Map();
         let selected=null;
+        let clickedMarker=null;
+        let clickedPlace=null;
+        const selectionMessage=document.getElementById('map-selection-message');
+        // Explicit local image paths work under both Herd and an XAMPP subfolder.
+        const clickIcon=L.icon({
+            iconUrl:element.dataset.markerIconUrl,
+            iconRetinaUrl:element.dataset.markerIconRetinaUrl,
+            shadowUrl:element.dataset.markerShadowUrl,
+            iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+        });
         function icon(place, active) {
             const risk=place.stale ? '' : (['low','normal','medium','high'].includes(place.risk_level) ? place.risk_level : '');
             const reports=Number(place.pending_count)>0 ? 'has-reports' : '';
@@ -65,15 +75,32 @@
             marker.on('click', () => select(place));
             markers.set(place.location_id,marker);
         });
-        // The application saves weather against registered locations, not arbitrary
-        // pixels. A click on the map selects the nearest registered point.
+        // Like the weather reference, mark the actual clicked coordinates.
+        // Weather records still belong to a registered SmartSlope location.
         map.on('click', (event) => {
-            if (!valid.length || !bounds.contains(event.latlng)) return;
+            if (!clickedMarker) {
+                clickedMarker=L.marker(event.latlng, {
+                    icon:clickIcon, keyboard:false, bubblingMouseEvents:false
+                }).addTo(map);
+                clickedMarker.on('click', () => {
+                    if (clickedPlace) select(clickedPlace);
+                });
+            } else {
+                clickedMarker.setLatLng(event.latlng);
+            }
+            if (!valid.length) {
+                if (selectionMessage) selectionMessage.textContent=
+                    'No registered location with coordinates is available. Ask an administrator to add one.';
+                return;
+            }
             const nearest=valid.reduce((best,place) =>
                 map.distance(event.latlng,[place.latitude,place.longitude])
                     < map.distance(event.latlng,[best.latitude,best.longitude]) ? place : best);
+            clickedPlace=nearest;
             select(nearest);
-            markers.get(nearest.location_id).openPopup();
+            if (selectionMessage) selectionMessage.textContent=
+                `Marked ${event.latlng.lat.toFixed(5)}, ${event.latlng.lng.toFixed(5)}. `+
+                `Showing saved readings and weather for nearest registered location: ${nearest.location_name}.`;
         });
         if (valid.length) {
             select(valid.find((place) => place.location_id===Number(element.dataset.defaultLocationId)) || valid[0]);
