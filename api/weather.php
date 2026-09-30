@@ -155,6 +155,20 @@ try {
             : strtoupper($riskLevel).' prototype rainfall indicator. '.RiskAnalyzer::description());
     if ($stale) $riskExplanation='Weather observation is over two hours old or has a future timestamp. '.$riskExplanation;
 
+    $savedCurrentReadings=(new ReadingRepository($pdo))->currentForLocation((int)$location['location_id']);
+    foreach ($savedCurrentReadings as &$savedCurrent) {
+        $savedCurrent['time']=str_replace(' ','T',$savedCurrent['observed_at']).'Z';
+        $savedCurrent['fetched_at']=str_replace(' ','T',$savedCurrent['fetched_at']).'Z';
+        unset($savedCurrent['observed_at']);
+    }
+    unset($savedCurrent);
+    $savedRiskReadings=($_SESSION['role'] ?? '')==='admin'
+        ? (new ReadingRepository($pdo))->forActiveLocation((int)$location['location_id']) : [];
+    foreach ($savedRiskReadings as &$savedRisk) {
+        $savedRisk['observed_at']=str_replace(' ','T',$savedRisk['observed_at']).'Z';
+    }
+    unset($savedRisk);
+
     respond_json(200,['data'=>[
         'location'=>[
             'location_id'=>(int)$location['location_id'],
@@ -168,6 +182,8 @@ try {
         'persistence_warning'=>$persistenceWarning,
         'stale'=>$stale,
         'current'=>$weather['current'],
+        'current_readings'=>$savedCurrentReadings,
+        'risk_readings'=>$savedRiskReadings,
         'alert'=>$alert ? ['risk_level'=>$alert['risk_level'],'status'=>$alert['status']] : null,
         'rainfall'=>[
             'rainfall_1h_mm'=>$rainfall1h,

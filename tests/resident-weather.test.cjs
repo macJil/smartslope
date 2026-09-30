@@ -1,117 +1,101 @@
-const {test}=require('node:test');
-const assert=require('node:assert/strict');
-const fs=require('node:fs');
-const vm=require('node:vm');
-const path=require('node:path');
-const root=path.join(__dirname,'..');
-const read=(file)=>fs.readFileSync(path.join(root,file),'utf8');
-const templates=['risk_area.php','weather_readings.php','report.php']
-    .map((file)=>read('resident/'+file)).join('\n');
-
+const {test} = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path');
+const root = path.join(__dirname, '..');
+const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 class Element {
-    constructor(){this.textContent='';this.value='';this.dataset={};this.children=[];this.events={};this.hidden=false;}
-    addEventListener(name,handler){this.events[name]=handler;}
-    replaceChildren(){this.children=[];}
-    appendChild(child){this.children.push(child);}
+    constructor() { this.textContent=''; this.value=''; this.dataset={}; this.children=[]; this.events={}; this.hidden=false; this.classList={remove(){}}; }
+    addEventListener(name, fn) { this.events[name]=fn; }
+    replaceChildren() { this.children=[]; }
+    appendChild(child) { this.children.push(child); }
+    setAttribute() {} removeAttribute() {}
 }
-const wait=()=>new Promise((done)=>setTimeout(done,15));
-const location={location_id:7,location_name:'Irisan Test',purok_zone:'Zone 1'};
-const reading={
-    location,rainfall:{risk_level:'medium',risk_explanation:'Provisional rainfall rules',
-        rainfall_1h_mm:27,rainfall_24h_mm:55,rainfall_72h_mm:104,observed_at:'2026-09-30T01:00:00Z'},
-    current:{temperature_2m:20,time:'2026-09-30T01:00:00Z',fetched_at:'2026-09-30T01:10:00Z'},
-    hourly:[{time:'2026-09-30T01:00:00Z',temperature_2m:20}],
-    retrieved_at:'2026-09-30T01:10:00Z',stale:false,alert:null
-};
-function mount(stored=reading, refreshed=reading){
-    const elements=Object.fromEntries([...templates.matchAll(/id="([^"]+)"/g)].map((match)=>[match[1],new Element()]));
-    const handlers={};
-    const requests=[];
-    elements['reading-panel'].dataset.storedUrl='/landslide/api/location_dashboard.php';
-    elements['reading-panel'].dataset.weatherUrl='/landslide/api/weather.php';
+const pause = () => new Promise(resolve => setTimeout(resolve, 25));
+const place = {location_id:7, location_name:'Irisan test', purok_zone:'Zone 1'};
+const current = {observation_id:4,time:'2026-09-30T01:00:00Z',fetched_at:'2026-09-30T01:10:00Z',
+    temperature_2m:20,relative_humidity_2m:70,precipitation:1,rain:1,showers:0,wind_speed_10m:4,wind_gusts_10m:7};
+const data = {location:place, rainfall:{risk_level:'medium',risk_explanation:'Test',rainfall_1h_mm:27,
+    rainfall_24h_mm:55,rainfall_72h_mm:104,observed_at:'2026-09-30T01:00:00Z'},
+    current_readings:[current],risk_readings:[{reading_id:6,observed_at:current.time,risk_level:'medium',
+        rainfall_1h_mm:27,rainfall_24h_mm:55,rainfall_72h_mm:104}],stale:false,alert:null,saved_observations:73};
+function mount(admin=false, stored=data, live=data, skipInitial=false) {
+    const source = read('resident/weather_readings.php')+read('resident/risk_area.php')+read('resident/report.php');
+    const elements=Object.fromEntries([...source.matchAll(/id="([^"]+)"/g)].map(match=>[match[1],new Element()]));
+    if (!admin) { delete elements['risk-reading-actions']; delete elements['risk-reading-body']; delete elements['readings-download']; }
+    const handlers={}; const requests=[];
+    elements['reading-panel'].dataset.storedUrl='/smartslope/api/location_dashboard.php';
+    elements['reading-panel'].dataset.weatherUrl='/smartslope/api/weather.php';
+    elements['reading-panel'].dataset.skipInitialRefresh=skipInitial ? '1' : '0';
     elements['weather-csrf-token'].value='token';
-    vm.runInNewContext(read('assets/js/app.js'),{
-        document:{
-            getElementById:(id)=>elements[id] || null,
-            createElement:()=>new Element(),
-            addEventListener:(name,fn)=>{handlers[name]=fn;}
-        },
-        window:{SmartSlopeMap:{updateRisk:(id,risk,stale)=>requests.push(['marker',id,risk,stale])}},
-        fetch:async(url)=>{
-            requests.push(['stored',url]);
-            const data=typeof stored==='function' ? await stored(url) : stored;
-            return {ok:true,json:async()=>({data})};
-        },
-        jQuery:{ajax(options){
-            requests.push(['refresh',options.url,options.data]);
-            Promise.resolve().then(()=>options.success({data:refreshed}));
-            return {abort(){options.error({},'abort');}};
-        }},URLSearchParams,console
+    if (admin) {
+        elements['risk-reading-actions'].dataset.saveUrl='/smartslope/admin/save_reading.php';
+        elements['risk-reading-actions'].dataset.csrfToken='token';
+        elements['readings-download'].dataset.downloadBaseUrl='/smartslope/admin/download_readings.php';
+    }
+    vm.runInNewContext(read('assets/js/app.js'), {
+        document:{getElementById:id=>elements[id]||null,createElement:()=>new Element(),addEventListener:(name,fn)=>handlers[name]=fn},
+        window:{SmartSlopeMap:{updateRisk:(...args)=>requests.push(['risk',...args])}},
+        fetch:async url=>{requests.push(['stored',url]);return {ok:true,json:async()=>({data:typeof stored==='function'?await stored(url):stored})};},
+        jQuery:{ajax(options){requests.push(['weather',options.data]);Promise.resolve().then(()=>options.success({data:live}));return {abort(){options.error({},'abort');}};}},
+        URLSearchParams,console
     });
-    return {elements,handlers,requests};
+    return {elements,requests,handlers};
 }
-
-test('map replaces both location dropdowns and keeps report tied to clicked marker',async()=>{
-    assert.doesNotMatch(templates,/<select[^>]+(?:risk-location-select|report-location)/);
-    assert.match(read('resident/index.php'),/location_map\.php/);
-    const {elements,handlers,requests}=mount();
-    assert.equal(requests.length,0);
-    handlers['smartslope:location-selected']({detail:{location}});
-    await wait();
+test('resident map click loads saved observations, fetches provider data and permits refresh',async()=>{
+    const {elements,requests,handlers}=mount();
+    handlers['smartslope:location-selected']({detail:{location:place}});
+    await pause();
     assert.equal(elements['report-location'].value,'7');
-    assert.equal(elements['report-submit'].disabled,false);
     assert.equal(elements['risk-level'].textContent,'MEDIUM');
-    assert.equal(elements['weather-temperature'].textContent,'20.0 °C');
-    assert.equal(elements['weather-hourly-body'].children[0].children.length,14);
-    assert.deepEqual(requests.find((request)=>request[0]==='stored'),
-        ['stored','/landslide/api/location_dashboard.php?location_id=7']);
-    assert.equal(requests.some((request)=>request[0]==='refresh'),false);
+    assert.equal(elements['current-reading-body'].children.length,1);
+    assert.equal(elements['current-reading-body'].children[0].children.length,7);
+    assert.deepEqual(requests.filter(item=>item[0]==='stored').map(item=>item[1]),
+        ['/smartslope/api/location_dashboard.php?location_id=7']);
+    assert.equal(requests.filter(item=>item[0]==='weather').length,1);
+    assert.equal(new URLSearchParams(requests.find(item=>item[0]==='weather')[1]).get('csrf_token'),'token');
+    elements['weather-refresh'].events.click(); await pause();
+    assert.equal(requests.filter(item=>item[0]==='weather').length,2);
 });
-
-test('refresh sends a protected POST and updates stored risk indicator',async()=>{
-    const {elements,handlers,requests}=mount();
-    handlers['smartslope:location-selected']({detail:{location}});
-    await wait();
-    elements['weather-refresh'].events.click();
-    await wait();
-    const request=requests.find((entry)=>entry[0]==='refresh');
-    assert.equal(request[1],'/landslide/api/weather.php');
-    const body=new URLSearchParams(request[2]);
-    assert.equal(body.get('location_id'),'7');
-    assert.equal(body.get('csrf_token'),'token');
-    assert.equal(elements['weather-refresh'].disabled,false);
-    assert.match(elements['reading-message'].textContent,/saved or updated/);
+test('administrator sees edit and delete controls in saved observation rows and a location CSV',async()=>{
+    const {elements,handlers}=mount(true);
+    handlers['smartslope:location-selected']({detail:{location:place}}); await pause();
+    assert.equal(elements['current-reading-body'].children[0].children.length,8);
+    assert.equal(elements['readings-download'].href,'/smartslope/admin/download_readings.php?location_id=7');
+    const actions=elements['current-reading-body'].children[0].children[7];
+    assert.equal(actions.children[0].children[0].textContent,'Edit');
+    assert.equal(actions.children[1].children.at(-1).textContent,'Delete');
+    assert.equal(elements['risk-reading-body'].children.length,1);
 });
-
-test('missing or stale data is never shown as a fresh low-risk marker',async()=>{
-    const missing={...reading,rainfall:null,current:null,hourly:[],stale:true};
-    const {elements,handlers,requests}=mount(missing);
-    handlers['smartslope:location-selected']({detail:{location}});
-    await wait();
+test('admin redirect displays an edit or deletion without immediately importing the same provider row',async()=>{
+    const {elements,requests,handlers}=mount(true,data,data,true);
+    handlers['smartslope:location-selected']({detail:{location:place}}); await pause();
+    assert.equal(requests.filter(item=>item[0]==='weather').length,0);
+    elements['weather-refresh'].events.click(); await pause();
+    assert.equal(requests.filter(item=>item[0]==='weather').length,1);
+});
+test('stale and missing risk never appear fresh',async()=>{
+    const {elements,requests,handlers}=mount(false,{...data,rainfall:null,current_readings:[],stale:true},
+        {...data,rainfall:null,current_readings:[],stale:true});
+    handlers['smartslope:location-selected']({detail:{location:place}}); await pause();
     assert.equal(elements['risk-level'].textContent,'UNAVAILABLE');
-    assert.deepEqual(requests.find((entry)=>entry[0]==='marker'),['marker',7,null,true]);
+    assert.deepEqual(requests.filter(item=>item[0]==='risk').at(-1),['risk',7,null,true]);
 });
-
-test('a late stored response cannot replace the newly selected location',async()=>{
-    let release;
-    const older=new Promise((done)=>{release=done;});
-    const second={...reading,location:{location_id:8,location_name:'Second place',purok_zone:null},
-        rainfall:{...reading.rainfall,risk_level:'low'}};
-    const {elements,handlers}=mount((url)=>url.endsWith('=7') ? older : second);
-    handlers['smartslope:location-selected']({detail:{location}});
+test('late response from first marker cannot overwrite second marker',async()=>{
+    let release; const older=new Promise(resolve=>release=resolve);
+    const second={...data, location:{...place,location_id:8,location_name:'Second'},rainfall:{...data.rainfall,risk_level:'low'}};
+    const {elements,handlers}=mount(false,url=>url.endsWith('=7')?older:second,second);
+    handlers['smartslope:location-selected']({detail:{location:place}});
     handlers['smartslope:location-selected']({detail:{location:second.location}});
-    await wait();
-    release(reading);
-    await wait();
+    await pause(); release(data); await pause();
     assert.equal(elements['risk-level'].textContent,'LOW');
     assert.equal(elements['report-location'].value,'8');
 });
-
-test('admin keeps report review and reading management',()=>{
-    const page=read('admin/index.php');
-    assert.match(page,/location_map\.php/);
-    assert.match(page,/reports\.php/);
-    assert.match(page,/weather_readings\.php/);
-    assert.match(page,/admin\/readings\.php/);
-    assert.doesNotMatch(page,/Manage locations/);
+test('offline map assets and single admin dashboard routes exist',()=>{
+    assert.ok(fs.existsSync(path.join(root,'assets/map-tiles/15/27356/14867.png')));
+    assert.match(read('assets/js/location-map.js'),/dataset\.tilesUrl/);
+    assert.match(read('admin/index.php'),/weather_readings\.php/);
+    assert.ok(!fs.existsSync(path.join(root,'admin/readings.php')));
+    assert.match(read('app/UserRepository.php'),/INSERT INTO users \(full_name,username,email,contact_number,password_hash,role\)/);
 });

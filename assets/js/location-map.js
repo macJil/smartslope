@@ -8,7 +8,8 @@
         let locations=[];
         try { locations=JSON.parse(dataElement.textContent); } catch { return; }
         // The database already restricts the barangay; also reject misplaced coordinates.
-        const bounds=L.latLngBounds([[16.405,120.540],[16.438,120.578]]);
+        // Irisan outline plus margin, fully covered by the bundled zoom 12–15 tiles.
+        const bounds=L.latLngBounds([[16.407,120.543],[16.435,120.576]]);
         const valid=locations.filter((place) => Number.isFinite(Number(place.latitude)) &&
             Number.isFinite(Number(place.longitude)) && place.latitude !== null && place.longitude !== null &&
             Number(place.latitude)>=-90 && Number(place.latitude)<=90 &&
@@ -66,7 +67,7 @@
         if (valid.length) {
             map.fitBounds(L.latLngBounds(valid.map((place) => [Number(place.latitude),Number(place.longitude)]))
                 .pad(.35), { maxZoom:15 });
-            select(valid[0]);
+            select(valid.find((place) => place.location_id===Number(element.dataset.defaultLocationId)) || valid[0]);
         } else {
             const note=document.getElementById('map-empty');
             if (note) note.hidden=false;

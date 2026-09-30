@@ -1,376 +1,270 @@
 (() => {
     'use strict';
 
-    const readingPanel = document.getElementById('reading-panel');
-    const readingMessage = document.getElementById('reading-message');
-    const historyBody = document.getElementById('weather-hourly-body');
-    const retryButton = document.getElementById('weather-retry');
-
-    if (!readingPanel || !readingMessage || !historyBody) return;
-
+    const panel = document.getElementById('reading-panel');
+    const message = document.getElementById('reading-message');
+    const currentBody = document.getElementById('current-reading-body');
     const refreshButton = document.getElementById('weather-refresh');
-    let activeRequest = null;
+    if (!panel || !message || !currentBody || !refreshButton) return;
+
+    const riskBody = document.getElementById('risk-reading-body');
+    const adminActions = document.getElementById('risk-reading-actions');
+    const download = document.getElementById('readings-download');
+    const retryButton = document.getElementById('weather-retry');
     let selectedLocation = null;
+    let activeRequest = null;
     let requestVersion = 0;
 
-    function isAvailable(value) {
-        return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
-    }
-
-    function number(value, decimals = 1) {
-        return isAvailable(value) ? Number(value).toFixed(decimals) : 'â€”';
-    }
-
+    const present = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+    const numeric = (value, decimals = 1) => present(value) ? Number(value).toFixed(decimals) : '—';
     function timeLabel(value) {
-        if (!value) return 'â€”';
-        const time = String(value);
-        const withZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(time) ? time : `${time}+08:00`;
-        const parsed = new Date(withZone);
-        return Number.isNaN(parsed.getTime())
-            ? time
-            : `${parsed.toLocaleString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })} PHT`;
+        if (!value) return '—';
+        const input = String(value);
+        const parsed = new Date(/(?:Z|[+-]\d{2}:?\d{2})$/i.test(input) ? input : `${input}Z`);
+        return Number.isNaN(parsed.getTime()) ? '—' :
+            `${parsed.toLocaleString('en-PH', {timeZone:'Asia/Manila', year:'numeric', month:'short', day:'2-digit',
+                hour:'2-digit', minute:'2-digit', hour12:true})} PHT`;
     }
-
-    function setMessage(message, isError = false) {
-        readingMessage.textContent = message;
-        readingMessage.className = isError ? 'small text-danger' : 'small text-muted';
+    function status(text, error = false) {
+        message.textContent = text;
+        message.className = error ? 'small text-danger' : 'small text-muted';
     }
-
-    function resetHistory(message) {
-        historyBody.replaceChildren();
-        const row = document.createElement('tr');
-        const cell = document.createElement('td');
-        cell.colSpan = 14;
-        cell.className = 'text-center text-muted';
-        cell.textContent = message;
-        row.appendChild(cell);
-        historyBody.appendChild(row);
-
-        const summary = document.getElementById('weather-hourly-summary');
-        if (summary) summary.textContent = message;
-    }
-
-    function setRisk(rainfall, isStale) {
-        const risk = rainfall.risk_level;
-        document.getElementById('risk-explanation').textContent = rainfall.risk_explanation || 'Risk cannot be assessed without complete rainfall data.';
-        const classes = {
-            low: 'text-bg-success',
-            normal: 'text-bg-primary',
-            medium: 'text-bg-warning',
-            high: 'text-bg-danger'
-        };
-        const badge = document.getElementById('risk-level');
-        badge.className = `badge ${isStale ? 'text-bg-warning' : (classes[risk] || 'text-bg-secondary')}`;
-        badge.textContent = risk
-            ? `${isStale ? 'STALE â€” ' : ''}${risk.toUpperCase()}`
-            : 'UNAVAILABLE';
-
-        document.getElementById('rainfall-1h').textContent =
-            isAvailable(rainfall.rainfall_1h_mm)
-                ? `${number(rainfall.rainfall_1h_mm, 2)} mm`
-                : 'Unavailable';
-
-        document.getElementById('rainfall-24h').textContent =
-            isAvailable(rainfall.rainfall_24h_mm)
-                ? `${number(rainfall.rainfall_24h_mm, 2)} mm`
-                : 'Unavailable';
-
-        document.getElementById('rainfall-72h').textContent =
-            isAvailable(rainfall.rainfall_72h_mm)
-                ? `${number(rainfall.rainfall_72h_mm, 2)} mm`
-                : 'Unavailable';
-
-        document.getElementById('reading-observed-at').textContent =
-            timeLabel(rainfall.observed_at);
-    }
-
-    function setUnavailable() {
-        setRisk({
-            risk_level: null,
-            rainfall_1h_mm: null,
-            rainfall_24h_mm: null,
-            rainfall_72h_mm: null,
-            observed_at: null
-        }, false);
-
-        setCurrent(null);
-        const alertEl = document.getElementById('active-alert');
-        if (alertEl) { alertEl.textContent = ''; alertEl.hidden = true; }
-    }
-
-    function setCurrent(current) {
-        const fields = [
-            'weather-temperature',
-            'weather-apparent-temperature',
-            'weather-humidity',
-            'weather-precipitation',
-            'weather-rain-showers',
-            'weather-wind',
-            'weather-wind-direction',
-            'weather-cloud-cover',
-            'weather-code',
-            'weather-current-time'
-        ];
-
-        if (!current) {
-            fields.forEach((id) => {
-                document.getElementById(id).textContent = 'Unavailable';
-            });
-            return;
-        }
-
-        document.getElementById('weather-temperature').textContent =
-            isAvailable(current.temperature_2m)
-                ? `${number(current.temperature_2m)} Â°C`
-                : 'â€”';
-
-        document.getElementById('weather-apparent-temperature').textContent =
-            isAvailable(current.apparent_temperature)
-                ? `${number(current.apparent_temperature)} Â°C`
-                : 'â€”';
-
-        document.getElementById('weather-humidity').textContent =
-            isAvailable(current.relative_humidity_2m)
-                ? `${number(current.relative_humidity_2m, 0)}%`
-                : 'â€”';
-
-        const intervalMinutes = isAvailable(current.interval)
-            ? `${Math.round(Number(current.interval) / 60)}-minute interval`
-            : 'API interval';
-
-        document.getElementById('weather-precipitation').textContent =
-            isAvailable(current.precipitation)
-                ? `${number(current.precipitation, 2)} mm (${intervalMinutes})`
-                : 'â€”';
-
-        document.getElementById('weather-rain-showers').textContent =
-            `${number(current.rain, 2)} mm rain / ${number(current.showers, 2)} mm showers`;
-
-        document.getElementById('weather-wind').textContent =
-            `${number(current.wind_speed_10m)} km/h / ${number(current.wind_gusts_10m)} km/h gusts`;
-
-        document.getElementById('weather-wind-direction').textContent =
-            isAvailable(current.wind_direction_10m)
-                ? `${number(current.wind_direction_10m, 0)}Â°`
-                : 'â€”';
-
-        document.getElementById('weather-cloud-cover').textContent =
-            isAvailable(current.cloud_cover)
-                ? `${number(current.cloud_cover, 0)}%`
-
-                : 'â€”';
-
-        document.getElementById('weather-code').textContent =
-            isAvailable(current.weather_code)
-                ? String(Math.round(Number(current.weather_code)))
-                : 'â€”';
-
-        document.getElementById('weather-current-time').textContent =
-            timeLabel(current.time);
-    }
-
     function addCell(row, value) {
         const cell = document.createElement('td');
-        cell.textContent = value === null || value === undefined
-            ? 'â€”'
-            : String(value);
+        cell.textContent = String(value ?? '—');
         row.appendChild(cell);
+        return cell;
     }
-
-    function setHistory(rows, retrievedAt) {
-        historyBody.replaceChildren();
-
-        if (!Array.isArray(rows) || rows.length === 0) {
-            resetHistory('The provider did not return hourly readings for this location.');
-            return;
+    function empty(body, cols, text) {
+        if (!body) return;
+        body.replaceChildren();
+        const row = document.createElement('tr');
+        const cell = addCell(row, text);
+        cell.colSpan = cols;
+        cell.className = 'text-muted';
+        body.appendChild(row);
+    }
+    function renderRisk(rainfall, stale, alert) {
+        const values = rainfall || {};
+        const level = values.risk_level;
+        const badge = document.getElementById('risk-level');
+        const colors = {low:'text-bg-success', normal:'text-bg-primary', medium:'text-bg-warning', high:'text-bg-danger'};
+        badge.className = `badge ${stale && level ? 'text-bg-warning' : (colors[level] || 'text-bg-secondary')}`;
+        badge.textContent = level ? `${stale ? 'STALE — ' : ''}${level.toUpperCase()}` : 'UNAVAILABLE';
+        document.getElementById('risk-explanation').textContent = values.risk_explanation ||
+            'Complete saved rainfall data are needed for a risk assessment.';
+        for (const [key, id] of [['rainfall_1h_mm','rainfall-1h'],['rainfall_24h_mm','rainfall-24h'],
+            ['rainfall_72h_mm','rainfall-72h']]) {
+            document.getElementById(id).textContent = present(values[key]) ? `${numeric(values[key],2)} mm` : 'Unavailable';
         }
-
-        rows.slice().reverse().forEach((reading) => {
-            const row = document.createElement('tr');
-
-            addCell(row, timeLabel(reading.time));
-            addCell(row, number(reading.temperature_2m));
-            addCell(row, number(reading.relative_humidity_2m, 0));
-            addCell(row, number(reading.apparent_temperature));
-            addCell(row, number(reading.precipitation, 2));
-            addCell(row, number(reading.rain, 2));
-            addCell(row, number(reading.showers, 2));
-            addCell(row, number(reading.wind_speed_10m));
-            addCell(row, number(reading.wind_direction_10m, 0));
-            addCell(row, number(reading.wind_gusts_10m));
-            addCell(row, number(reading.cloud_cover, 0));
-            addCell(row, number(reading.pressure_msl, 1));
-            addCell(row, number(reading.surface_pressure, 1));
-            addCell(row, isAvailable(reading.weather_code)
-                ? String(Math.round(Number(reading.weather_code)))
-                : 'â€”');
-
-            historyBody.appendChild(row);
+        document.getElementById('reading-observed-at').textContent = timeLabel(values.observed_at);
+        const alertBox = document.getElementById('active-alert');
+        alertBox.hidden = !(!stale && alert);
+        alertBox.textContent = !stale && alert ? `Prototype ${alert.risk_level.toUpperCase()} alert for this location.` : '';
+        window.SmartSlopeMap?.updateRisk(selectedLocation.location_id, level || null, stale);
+    }
+    function renderCurrent(rows) {
+        currentBody.replaceChildren();
+        const saved = Array.isArray(rows) ? rows : [];
+        document.getElementById('current-reading-summary').textContent = saved.length
+            ? `${saved.length} most recent saved current observations for this location.`
+            : 'No current observations have been saved for this location.';
+        if (!saved.length) return empty(currentBody, adminActions ? 8 : 7, 'No saved current readings yet.');
+        saved.forEach((item) => {
+            const tr = document.createElement('tr');
+            addCell(tr, timeLabel(item.time));
+            addCell(tr, present(item.temperature_2m) ? `${numeric(item.temperature_2m)} °C` : '—');
+            addCell(tr, present(item.relative_humidity_2m) ? `${numeric(item.relative_humidity_2m,0)}%` : '—');
+            addCell(tr, present(item.precipitation) ? `${numeric(item.precipitation,2)} mm` : '—');
+            addCell(tr, `${numeric(item.rain,2)} / ${numeric(item.showers,2)} mm`);
+            addCell(tr, `${numeric(item.wind_speed_10m)} / ${numeric(item.wind_gusts_10m)} km/h`);
+            addCell(tr, timeLabel(item.fetched_at));
+            if (adminActions) {
+                const actions = addCell(tr, '');
+                const details = document.createElement('details');
+                const summary = document.createElement('summary'); summary.textContent = 'Edit';
+                details.appendChild(summary);
+                const form = createForm(item, 'current_update');
+                for (const [field,label,source] of [
+                    ['temperature','Temperature (°C)','temperature_2m'],
+                    ['humidity','Humidity (%)','relative_humidity_2m'],
+                    ['precipitation','Precipitation (mm)','precipitation'],
+                    ['rain','Rain (mm)','rain'],['showers','Showers (mm)','showers'],
+                    ['wind','Wind (km/h)','wind_speed_10m'],['gusts','Gusts (km/h)','wind_gusts_10m']
+                ]) {
+                    const group = document.createElement('label'); group.className = 'd-block small mt-2';
+                    group.textContent = label;
+                    const input = document.createElement('input');
+                    input.type = 'number'; input.name = field; input.step = '0.01'; input.required = true;
+                    input.className = 'form-control form-control-sm'; input.value = item[source] ?? '';
+                    if (field !== 'temperature') input.min = '0';
+                    group.appendChild(input); form.appendChild(group);
+                }
+                const save = document.createElement('button'); save.type = 'submit';
+                save.className = 'btn btn-sm btn-primary mt-2'; save.textContent = 'Save';
+                form.appendChild(save); details.appendChild(form); actions.appendChild(details);
+                const removeForm = createForm(item, 'current_delete'); removeForm.className = 'mt-2';
+                const remove = document.createElement('button'); remove.type = 'submit';
+                remove.className = 'btn btn-sm btn-outline-danger'; remove.textContent = 'Delete';
+                removeForm.appendChild(remove); actions.appendChild(removeForm);
+            }
+            currentBody.appendChild(tr);
         });
-
-        const summary = document.getElementById('weather-hourly-summary');
-        if (summary) {
-            summary.textContent =
-                `${rows.length} saved hourly observations. Last fetched ${timeLabel(retrievedAt)}.`;
-        }
     }
-
-    function messageFor(errorCode) {
-        const messages = {
-            location_coordinates_missing:
-                'This location needs latitude and longitude before weather can load.',
-            location_not_found:
-                'The selected location is inactive or unavailable.',
-            authentication_required:
-                'Your session expired. Sign in again to load weather readings.',
-            weather_provider_unavailable:
-                'The weather provider is temporarily unavailable. Try again shortly.',
-            database_unavailable:
-                'Location data could not be read. Check the local MySQL connection.',
-            weather_history_unavailable:
-                'The API returned no recent hourly history for this location.',
-            invalid_csrf_token:
-                'Your security token expired. Reload this page and try again.',
-            invalid_location_id:
-                'Select a valid location and try again.',
-            invalid_response:
-                'The weather endpoint did not return JSON. Check the PHP error log and endpoint path.'
-        };
-
-        return messages[errorCode] ||
-            'Weather readings could not be loaded. Check the location coordinates and try again.';
+    function hidden(form, name, value) {
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = name; input.value = String(value);
+        form.appendChild(input);
     }
-
-    function showData(data, stored = false) {
-        document.getElementById('weather-location-label').textContent =
-            data.location.location_name + (data.location.purok_zone ? ` â€” ${data.location.purok_zone}` : '');
-        document.getElementById('weather-refresh-time').textContent =
-            data.retrieved_at ? `Last fetched: ${timeLabel(data.retrieved_at)}. Provider observation: ${timeLabel(data.current?.time)}.` : 'No saved provider observations yet.';
-        setRisk(data.rainfall || {}, data.stale === true);
-        setCurrent(data.current);
-        setHistory(data.hourly, data.retrieved_at);
-        const alertEl = document.getElementById('active-alert');
-        if (alertEl) {
-            alertEl.textContent = !data.stale && data.alert ? `Prototype ${data.alert.risk_level.toUpperCase()} alert for this location.` : '';
-            alertEl.hidden = !(!data.stale && data.alert);
-        }
-        if (window.SmartSlopeMap) window.SmartSlopeMap.updateRisk(data.location.location_id, data.rainfall?.risk_level || null, data.stale === true);
-        if (stored) setMessage(data.rainfall
-            ? `Showing saved readings for ${data.location.location_name}${data.stale ? ' (stale observation)' : ''}. Refresh to request new provider data.`
-            : 'No saved risk reading for this location. Refresh to request provider data.', data.stale === true);
+    function createForm(reading, action) {
+        const form = document.createElement('form');
+        form.method = 'post'; form.action = adminActions.dataset.saveUrl;
+        hidden(form, 'csrf_token', adminActions.dataset.csrfToken);
+        hidden(form, 'location_id', selectedLocation.location_id);
+        hidden(form, action.startsWith('current_') ? 'observation_id' : 'reading_id',
+            action.startsWith('current_') ? reading.observation_id : reading.reading_id);
+        hidden(form, 'action', action);
+        return form;
     }
-
-    async function loadStored() {
+    function renderAdmin(rows) {
+        if (!riskBody) return;
+        riskBody.replaceChildren();
+        const saved = Array.isArray(rows) ? rows : [];
+        if (!saved.length) return empty(riskBody, 4, 'No active rainfall summaries for this location.');
+        saved.forEach((reading) => {
+            const tr = document.createElement('tr');
+            addCell(tr, timeLabel(reading.observed_at));
+            addCell(tr, `${numeric(reading.rainfall_1h_mm,2)} / ${numeric(reading.rainfall_24h_mm,2)} / ${numeric(reading.rainfall_72h_mm,2)} mm`);
+            addCell(tr, String(reading.risk_level || 'Unavailable').toUpperCase());
+            const actions = addCell(tr, ''); actions.textContent = '';
+            const details = document.createElement('details');
+            const summary = document.createElement('summary'); summary.textContent = 'Edit rainfall';
+            details.appendChild(summary);
+            const form = createForm(reading, 'update');
+            for (const [field,label] of [['rainfall_1h_mm','1 hour'],['rainfall_24h_mm','24 hours'],
+                ['rainfall_72h_mm','72 hours']]) {
+                const group = document.createElement('label'); group.className = 'd-block small mt-2';
+                group.textContent = `${label} (mm)`;
+                const input = document.createElement('input');
+                input.className = 'form-control form-control-sm'; input.type = 'number'; input.name = field;
+                input.min = '0'; input.max = '99999.99'; input.step = '0.01'; input.required = true;
+                input.value = reading[field] ?? '';
+                group.appendChild(input); form.appendChild(group);
+            }
+            const save = document.createElement('button'); save.type = 'submit';
+            save.className = 'btn btn-sm btn-primary mt-2'; save.textContent = 'Save correction';
+            form.appendChild(save); details.appendChild(form); actions.appendChild(details);
+            const removeForm = createForm(reading, 'delete'); removeForm.className = 'mt-2';
+            const remove = document.createElement('button'); remove.type = 'submit';
+            remove.className = 'btn btn-sm btn-outline-danger'; remove.textContent = 'Delete from active readings';
+            removeForm.appendChild(remove); actions.appendChild(removeForm);
+            riskBody.appendChild(tr);
+        });
+    }
+    function showData(data) {
+        document.getElementById('weather-location-label').textContent = data.location.location_name +
+            (data.location.purok_zone ? ` — ${data.location.purok_zone}` : '');
+        const latest = Array.isArray(data.current_readings) ? data.current_readings[0] : null;
+        document.getElementById('weather-refresh-time').textContent = latest
+            ? `Latest saved observation: ${timeLabel(latest.time)}. Fetched: ${timeLabel(latest.fetched_at)}.`
+            : 'No saved current observations yet.';
+        renderRisk(data.rainfall, data.stale === true, data.alert);
+        renderCurrent(data.current_readings);
+        renderAdmin(data.risk_readings);
+    }
+    function errorMessage(code) {
+        return ({authentication_required:'Your session expired. Sign in again.', invalid_csrf_token:'Reload the page and try again.',
+            location_not_found:'That location is no longer active.', location_coordinates_missing:'This location needs valid coordinates.',
+            database_unavailable:'Saved readings are temporarily unavailable.',
+            weather_history_unavailable:'The provider returned insufficient recent history.',
+            weather_provider_unavailable:'Open-Meteo is temporarily unavailable. Saved readings remain displayed.'})[code] ||
+            'Could not load new weather data. Saved readings remain displayed.';
+    }
+    async function loadStored(autoRefresh = true) {
         const version = ++requestVersion;
-        const locationId = selectedLocation?.location_id;
+        const id = selectedLocation?.location_id;
         if (activeRequest) activeRequest.abort();
-        if (!locationId) return;
-        setUnavailable();
-        if (retryButton) retryButton.hidden = true;
-        setMessage('Loading saved readingsâ€¦');
-        resetHistory('Loading saved hourly observationsâ€¦');
+        if (!id) return;
+        status('Loading saved readings…');
         try {
-            const response=await fetch(`${readingPanel.dataset.storedUrl}?location_id=${encodeURIComponent(locationId)}`, {credentials:'same-origin'});
-            const payload=await response.json();
+            const response = await fetch(`${panel.dataset.storedUrl}?location_id=${encodeURIComponent(id)}`, {credentials:'same-origin'});
+            const payload = await response.json();
+            if (version !== requestVersion) return;
             if (!response.ok || !payload.data) throw new Error(payload.error || 'invalid_response');
-            if (version !== requestVersion) return;
-            showData(payload.data,true);
+            showData(payload.data);
+            status('Saved readings loaded. Requesting the latest provider data…');
         } catch (error) {
-            if (version !== requestVersion) return;
-            setMessage(messageFor(error.message),true);
-            resetHistory('Saved observations unavailable.');
+            if (version === requestVersion) status(errorMessage(error.message), true);
+        }
+        if (version === requestVersion && selectedLocation?.location_id === id) {
+            if (autoRefresh) loadWeather();
+            else status('Saved readings loaded. Use Refresh to request Open-Meteo again.');
         }
     }
-
     async function loadWeather() {
-        const version=++requestVersion;
-        const locationId=selectedLocation?.location_id;
-        if (!locationId) return;
+        const version = ++requestVersion;
+        const id = selectedLocation?.location_id;
+        if (!id) return;
         if (activeRequest) activeRequest.abort();
-        refreshButton.disabled=true;
-        refreshButton.textContent='Refreshingâ€¦';
-        setMessage('Fetching provider readings and saving them in the databaseâ€¦');
-        if (retryButton) retryButton.hidden=true;
-
-        const requestBody = new URLSearchParams({
-            location_id: String(locationId),
-            csrf_token: document.getElementById('weather-csrf-token').value
-        });
-
+        refreshButton.disabled = true;
+        refreshButton.textContent = 'Refreshing…';
+        if (retryButton) retryButton.hidden = true;
+        status('Requesting Open-Meteo and saving the current observations…');
         try {
-            const payload = await new Promise((resolve, reject) => {
+            const payload = await new Promise((resolve,reject) => {
                 activeRequest = jQuery.ajax({
-                    url: readingPanel.dataset.weatherUrl,
-                    method: 'POST',
-                    dataType: 'json',
-                    data: requestBody.toString(),
-                    timeout: 30000,
+                    url: panel.dataset.weatherUrl, method:'POST', dataType:'json', timeout:30000,
+                    data: new URLSearchParams({location_id:String(id), csrf_token:document.getElementById('weather-csrf-token').value}).toString(),
                     success: resolve,
-                    error: (xhr, status) => {
-                        const error = new Error(xhr.responseJSON?.error ||
-                            (status === 'parsererror' ? 'invalid_response' : 'weather_provider_unavailable'));
-                        if (status === 'abort') error.name = 'AbortError';
+                    error: (xhr,kind) => {
+                        const error = new Error(xhr.responseJSON?.error || 'weather_provider_unavailable');
+                        if (kind === 'abort') error.name = 'AbortError';
                         reject(error);
                     }
                 });
             });
-            if (!payload.data) throw new Error(payload.error || 'invalid_response');
-
             if (version !== requestVersion) return;
-
+            if (!payload.data) throw new Error(payload.error || 'invalid_response');
             const data = payload.data;
             showData(data);
-
-            if (data.stale) {
-                setMessage(
-                    `Weather provider observation is stale. Showing the saved Open-Meteo risk summary for ${data.location.location_name}, observed ${timeLabel(data.rainfall.observed_at)}. Check the provider observation time before using this status.`,
-                    true
-                );
-            } else if (data.persistence_warning) {
-                const area = data.location.purok_zone
-                    ? ` â€” ${data.location.purok_zone}`
-                    : '';
-
-                setMessage(
-                    `Live weather loaded for ${data.location.location_name}${area}, but the readings could not be saved to the database. Please notify the administrator.`,
-                    true
-                );
-            } else {
-                const area = data.location.purok_zone
-                    ? ` â€” ${data.location.purok_zone}`
-                    : '';
-
-                setMessage(`Weather readings loaded for ${data.location.location_name}${area}. ${data.saved_observations ?? 0} observations saved or updated in the database.`);
-            }
+            if (data.persistence_warning) status('Provider data was returned but could not be saved. Showing stored readings.',true);
+            else if (data.stale) status('The provider observation is stale. Check its observation time before using the risk status.',true);
+            else status(`${data.saved_observations ?? 0} current and hourly observations saved or updated for ${data.location.location_name}.`);
         } catch (error) {
-            if (error.name === 'AbortError') return;
-            if (version !== requestVersion) return;
-
+            if (error.name === 'AbortError' || version !== requestVersion) return;
+            status(errorMessage(error.message),true);
             if (retryButton) retryButton.hidden = false;
-            setMessage(messageFor(error.message), true);
         } finally {
             if (version === requestVersion) {
-                refreshButton.disabled = !selectedLocation;
+                refreshButton.disabled = false;
                 refreshButton.textContent = 'Refresh readings';
             }
         }
     }
-
-    document.addEventListener('smartslope:location-selected', (event) => {
-        selectedLocation=event.detail.location;
+    document.addEventListener('smartslope:location-selected',(event) => {
+        selectedLocation = event.detail.location;
         document.getElementById('selected-location-name').textContent = selectedLocation.location_name;
-        const formLocation=document.getElementById('report-location');
-        if (formLocation) {
-            formLocation.value=String(selectedLocation.location_id);
-            document.getElementById('report-location-name').value=selectedLocation.location_name;
-            document.getElementById('report-submit').disabled=false;
+        const reportId = document.getElementById('report-location');
+        if (reportId) {
+            reportId.value = String(selectedLocation.location_id);
+            document.getElementById('report-location-name').value = selectedLocation.location_name;
+            document.getElementById('report-submit').disabled = false;
         }
-        refreshButton.disabled=false;
-        loadStored();
+        if (download) {
+            download.href = `${download.dataset.downloadBaseUrl}?location_id=${encodeURIComponent(selectedLocation.location_id)}`;
+            download.classList.remove('disabled');
+            download.setAttribute('aria-disabled','false');
+            download.removeAttribute('tabindex');
+        }
+        refreshButton.disabled = false;
+        empty(currentBody,adminActions ? 8 : 7,'Loading selected location…');
+        empty(riskBody,4,'Loading selected location…');
+        renderRisk(null,true,null);
+        const autoRefresh = panel.dataset.skipInitialRefresh !== '1';
+        panel.dataset.skipInitialRefresh = '0';
+        loadStored(autoRefresh);
     });
-
     refreshButton.addEventListener('click', loadWeather);
     if (retryButton) retryButton.addEventListener('click', loadWeather);
-    setUnavailable();
-    resetHistory('Select a location marker to view saved readings.');
+    empty(currentBody,adminActions ? 8 : 7,'Select a map location to load readings.');
 })();

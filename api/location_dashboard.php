@@ -30,6 +30,19 @@ try {
 
     $repository=new ReadingRepository($pdo);
     $reading=$repository->latestForActiveLocation((int)$locationId);
+    $currentReadings=$repository->currentForLocation((int)$locationId);
+    foreach ($currentReadings as &$savedCurrent) {
+        $savedCurrent['time']=str_replace(' ','T',$savedCurrent['observed_at']).'Z';
+        $savedCurrent['fetched_at']=str_replace(' ','T',$savedCurrent['fetched_at']).'Z';
+        unset($savedCurrent['observed_at']);
+    }
+    unset($savedCurrent);
+    $riskReadings=($_SESSION['role'] ?? '')==='admin'
+        ? $repository->forActiveLocation((int)$locationId) : [];
+    foreach ($riskReadings as &$savedRisk) {
+        $savedRisk['observed_at']=str_replace(' ','T',$savedRisk['observed_at']).'Z';
+    }
+    unset($savedRisk);
     $stale=true;
     $alert=null;
     if ($reading) {
@@ -70,6 +83,8 @@ try {
                      'purok_zone'=>$location['purok_zone']],
         'rainfall'=>$reading ? $reading+['risk_explanation'=>RiskAnalyzer::description()] : null,
         'current'=>$current,
+        'current_readings'=>$currentReadings,
+        'risk_readings'=>$riskReadings,
         'hourly'=>$history,
         'retrieved_at'=>$current['fetched_at'] ?? null,
         'stale'=>$stale,

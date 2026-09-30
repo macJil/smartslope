@@ -42,7 +42,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register'])) {
             redirect_to('configs/register.php');
         }
         error_log('SmartSlope registration failed: ' . $exception->getMessage());
-        flash('register_error', 'The account could not be created. Please try again.');
+        $schemaMismatch = in_array((int) ($exception->errorInfo[1] ?? 0), [1054, 1364], true);
+        flash('register_error', $schemaMismatch
+            ? 'The account database needs its email and contact columns updated. Ask the administrator to check the SmartSlope migration instructions.'
+            : 'The account could not be created. Please try again.');
         redirect_to('configs/register.php');
     }
 }

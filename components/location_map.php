@@ -26,6 +26,7 @@ foreach ($mapLocations as $place) {
         <div id="location-map" class="smartslope-map" role="region" aria-label="Select a monitored location on the Irisan map"
              data-boundary-url="<?= e(app_url('assets/map/irisan.geojson')) ?>"
              data-tiles-url="<?= e(app_url('assets/map-tiles/{z}/{x}/{y}.png')) ?>"
+             data-default-location-id="<?= (int)($selectedLocationId ?? 0) ?>"
              data-admin="<?= $mapIsAdmin ? '1' : '0' ?>"></div>
         <p id="map-tiles-missing" class="text-warning mt-2" role="status" hidden>Local map tiles are missing. Copy the zoom 12–15 tile folders into assets/map-tiles/. The Irisan outline and markers remain available.</p>
         <p id="map-empty" class="text-warning mt-2" hidden>No active locations have coordinates inside the Irisan map area. An administrator must verify their latitude and longitude.</p>

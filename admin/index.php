@@ -12,6 +12,8 @@ $adminReports = (new ReportRepository($pdo))->adminQueue(
 );
 $mapLocations=(new LocationRepository($pdo))->activeForStudyArea();
 $mapIsAdmin=true;
+$selectedLocationId=filter_input(INPUT_GET,'location_id',FILTER_VALIDATE_INT) ?: null;
+$skipAutoRefresh=$selectedLocationId !== null;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -27,9 +29,6 @@ $mapIsAdmin=true;
 <body>
 <header class="nav" style="background-color: aliceblue; display:flex; justify-content:space-between; align-items:center; padding:10px 20px;">
     <h1>SmartSlope — Report Review</h1>
-    <nav class="d-flex gap-2" aria-label="Admin pages">
-        <a class="btn btn-outline-primary" href="<?= e(app_url('admin/readings.php')) ?>">Manage readings</a>
-    </nav>
     <form action="<?= e(app_url('configs/logout.php')) ?>" method="post">
         <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
         <button class="btn btn-outline-danger" type="submit">Log out</button>

@@ -12,7 +12,8 @@
         <button class="btn btn-sm btn-outline-primary mb-3" type="button" id="weather-retry" hidden>Retry weather request</button>
 
         <div id="reading-panel" data-weather-url="<?= e(app_url('api/weather.php')) ?>"
-             data-stored-url="<?= e(app_url('api/location_dashboard.php')) ?>">
+             data-stored-url="<?= e(app_url('api/location_dashboard.php')) ?>"
+             data-skip-initial-refresh="<?= !empty($skipAutoRefresh) ? '1' : '0' ?>">
             <section class="border rounded p-3 mb-3" aria-labelledby="risk-analysis-heading">
                 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
                     <h3 class="h6 mb-0" id="risk-analysis-heading">Current area landslide-risk status</h3>

@@ -45,6 +45,91 @@ final class ReadingRepository
         return $statement->fetchAll();
     }
 
+    /** Saved provider current observations for one active Irisan location. */
+    public function currentForLocation(int $locationId, ?int $limit = 30): array
+    {
+        $limitSql = $limit === null ? '' : ' LIMIT ' . max(1, min(100, $limit));
+        $statement = $this->pdo->prepare(
+            "SELECT w.observation_id, w.observed_at, w.fetched_at, w.interval_seconds,
+                    w.temperature_2m, w.relative_humidity_2m, w.precipitation,
+                    w.rain, w.showers, w.wind_speed_10m, w.wind_gusts_10m,
+                    w.cloud_cover, w.weather_code, l.location_name, l.purok_zone
+             FROM weather_observations AS w
+             JOIN sensors AS s ON s.sensor_id = w.sensor_id
+             JOIN locations AS l ON l.location_id = s.location_id
+             JOIN barangays AS b ON b.barangay_id = l.barangay_id
+             WHERE l.location_id = :location_id AND l.is_active = 1 AND b.is_active = 1
+               AND b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
+               AND s.sensor_type = 'weather_api' AND s.provider_name = 'Open-Meteo'
+               AND w.observation_kind = 'current'
+             ORDER BY w.observed_at DESC, w.observation_id DESC" . $limitSql
+        );
+        $statement->execute(['location_id' => $locationId]);
+        return $statement->fetchAll();
+    }
+
+    /** Active stored rainfall summaries for the selected map location. */
+    public function forActiveLocation(int $locationId): array
+    {
+        $statement = $this->pdo->prepare(
+            "SELECT r.reading_id, r.location_id, r.rainfall_1h_mm,
+                    r.rainfall_24h_mm, r.rainfall_72h_mm, r.risk_level,
+                    r.observed_at, r.source_name
+             FROM readings AS r JOIN locations AS l ON l.location_id = r.location_id
+             JOIN barangays AS b ON b.barangay_id = l.barangay_id
+             WHERE r.location_id = :location_id AND r.is_archived = 0
+               AND r.source_name = 'Open-Meteo' AND l.is_active = 1 AND b.is_active = 1
+               AND b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
+             ORDER BY r.observed_at DESC, r.reading_id DESC LIMIT 50"
+        );
+        $statement->execute(['location_id' => $locationId]);
+        return $statement->fetchAll();
+    }
+
+    /** Change a saved current observation only; hourly data and risk summaries remain provider sourced. */
+    public function updateCurrent(int $locationId, int $observationId, array $values): bool
+    {
+        $statement = $this->pdo->prepare(
+            "UPDATE weather_observations AS w
+             JOIN sensors AS s ON s.sensor_id = w.sensor_id
+             JOIN locations AS l ON l.location_id = s.location_id
+             JOIN barangays AS b ON b.barangay_id = l.barangay_id
+             SET w.temperature_2m = :temperature, w.relative_humidity_2m = :humidity,
+                 w.precipitation = :precipitation, w.rain = :rain, w.showers = :showers,
+                 w.wind_speed_10m = :wind, w.wind_gusts_10m = :gusts
+             WHERE w.observation_id = :observation_id AND l.location_id = :location_id
+               AND w.observation_kind = 'current' AND l.is_active = 1 AND b.is_active = 1
+               AND b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
+               AND s.sensor_type = 'weather_api' AND s.provider_name = 'Open-Meteo'"
+        );
+        $statement->execute($values + ['location_id'=>$locationId,'observation_id'=>$observationId]);
+        return $statement->rowCount() > 0 || $this->hasCurrent($locationId,$observationId);
+    }
+
+    public function hasCurrent(int $locationId, int $observationId): bool
+    {
+        $statement = $this->pdo->prepare(
+            "SELECT 1 FROM weather_observations AS w
+             JOIN sensors AS s ON s.sensor_id = w.sensor_id
+             JOIN locations AS l ON l.location_id = s.location_id
+             JOIN barangays AS b ON b.barangay_id = l.barangay_id
+             WHERE w.observation_id = :observation_id AND l.location_id = :location_id
+               AND w.observation_kind = 'current' AND l.is_active = 1 AND b.is_active = 1
+               AND b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
+               AND s.sensor_type = 'weather_api' AND s.provider_name = 'Open-Meteo'"
+        );
+        $statement->execute(['observation_id'=>$observationId,'location_id'=>$locationId]);
+        return (bool)$statement->fetchColumn();
+    }
+
+    public function deleteCurrent(int $locationId, int $observationId): bool
+    {
+        if (!$this->hasCurrent($locationId,$observationId)) return false;
+        $statement = $this->pdo->prepare('DELETE FROM weather_observations WHERE observation_id = :observation_id AND observation_kind = \'current\'');
+        $statement->execute(['observation_id'=>$observationId]);
+        return $statement->rowCount() > 0;
+    }
+
     public function find(int $readingId): ?array
     {
         $statement = $this->pdo->prepare(
