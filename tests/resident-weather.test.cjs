@@ -200,14 +200,15 @@ test('actual coordinate click resolves its own ID then loads and saves readings 
     }
 });
 
-test('admin reading edit exposes only location and risk at fetch',async()=>{
+test('admin reading edit exposes only risk at fetch',async()=>{
     const {elements,handlers}=mount(true);
     handlers['smartslope:location-selected']({detail:{location:place}}); await pause();
     const form=elements['current-reading-body'].children[0].children[10].children[0].children[1];
     const names=[];
     function walk(node){if(node.name) names.push(node.name);node.children.forEach(walk);}
     walk(form);
-    assert.ok(names.includes('target_location_id') && names.includes('risk_level'));
+    assert.ok(names.includes('risk_level'));
+    assert.ok(!names.includes('target_location_id'));
     for(const field of ['temperature','humidity','precipitation','rain','showers','wind','gusts','rainfall_1h_mm']) {
         assert.ok(!names.includes(field));
     }

@@ -23,7 +23,7 @@ The resident and admin dashboards initially show every active Irisan reading alr
 
 - `sensors`: one registered provider source per location. Its `sensor_type='weather_api'` does not imply physical measurement.
 - `weather_observations`: current interval and historical hourly model data, stored at actual observation time in UTC; repeated fetches update the same row.
-- `readings`: 1/24/72-hour rainfall totals calculated **from stored hourly observations**, plus the derived prototype risk. Administrators may correct only a saved fetch log's displayed location and risk label; the original API measurements and live analysis remain unchanged.
+- `readings`: 1/24/72-hour rainfall totals calculated **from stored hourly observations**, plus the derived prototype risk. Administrators may correct only a saved fetch log's risk label; the original API measurements and live analysis remain unchanged.
 - `alerts`: medium/high prototype indicators linked to a reading and location. A corrected reading synchronizes its alert.
 - `reports`: resident ground observations and administrator review; these reports are not silently used as weather measurements.
 
@@ -43,7 +43,7 @@ The older scripts `sql/add_weather_observations.sql`, `sql/repair_weather_readin
 
 ## v3 admin update
 
-Existing installations must run `sql/add_reading_location_override.sql` once in `smartslope_mvp` before using this update. Fresh `db.sql` already includes this nullable `weather_fetches.location_id` foreign key. It stores an administrator's corrected log association; `sensor_id` continues to identify the original API source. The **Edit** form changes only the saved location and risk-at-fetch value. It does not change temperature, humidity, rainfall, wind, hourly provider records, or the live risk panel.
+Existing installations must run `sql/add_reading_location_override.sql` once in `smartslope_mvp` before using this update. Fresh `db.sql` already includes this nullable `weather_fetches.location_id` foreign key. It stores an administrator's corrected log association; `sensor_id` continues to identify the original API source. The **Edit** form changes only the risk-at-fetch value. It does not change temperature, humidity, rainfall, wind, hourly provider records, or the live risk panel.
 
 **Remove from map** archives a location using `is_active=0`. Its saved logs and reports remain available. A later click at exactly the same rounded coordinates reactivates the same point. **Delete report** permanently removes the selected report; **Download all reports CSV** exports all remaining Irisan reports, including reporter contacts and review status. Both operations require an admin session; mutations require CSRF tokens. CSV text is protected against spreadsheet formulas.
 

@@ -35,7 +35,7 @@
                 <tbody id="current-reading-body"><tr><td colspan="<?= $mapIsAdmin ? '11' : '10' ?>" class="text-muted">Loading saved readings…</td></tr></tbody>
             </table>
         </div>
-        <p class="small text-muted mb-0">Open-Meteo provides model estimates, not measurements from a physical device. The risk assessment uses stored hourly rainfall. Administrators may correct only the saved location and risk-at-fetch label. Original API values and the live rainfall analysis are retained.</p>
+        <p class="small text-muted mb-0">Open-Meteo provides model estimates, not measurements from a physical device. The risk assessment uses stored hourly rainfall. Administrators may correct only the risk-at-fetch label. Original API values and the live rainfall analysis are retained.</p>
 
         <?php if ($mapIsAdmin): ?>
             <hr>

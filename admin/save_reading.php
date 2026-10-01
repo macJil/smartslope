@@ -20,20 +20,19 @@ try {
     $repo = new ReadingRepository($pdo);
     $pdo->beginTransaction();
     if ($action === 'current_update') {
-        $target = filter_var($_POST['target_location_id'] ?? null, FILTER_VALIDATE_INT);
         $risk = post_string('risk_level');
-        $saved = $target && $target > 0 && $repo->updateCurrent((int)$locationId, (int)$id, (int)$target, $risk);
+        $saved = $repo->updateCurrent((int)$locationId, (int)$id, $risk);
     } else {
         $saved = $repo->deleteCurrent((int)$locationId, (int)$id);
     }
     if (!$saved) throw new InvalidArgumentException('Invalid location, risk or saved row.');
     $pdo->commit();
     flash('reading_message', $action === 'current_update'
-        ? 'Saved location and risk at fetch. Original API measurements and live analysis are retained.'
+        ? 'Saved risk at fetch. Original API measurements and live analysis are retained.'
         : 'Reading removed from the saved list.');
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) $pdo->rollBack();
     error_log('SmartSlope reading review failed: ' . $exception->getMessage());
-    flash('reading_error', 'Could not save the reading. Choose an active Irisan location and a valid risk level.');
+    flash('reading_error', 'Could not save the reading. Choose a valid risk level for an existing saved reading.');
 }
 redirect_to($returnPath);

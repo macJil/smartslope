@@ -11,11 +11,6 @@
     const download = document.getElementById('readings-download');
     const retryButton = document.getElementById('weather-retry');
     const showAllButton = document.getElementById('show-all-readings');
-    const locationChoices = new Map();
-    try {
-        JSON.parse(document.getElementById('map-locations-data')?.textContent || '[]')
-            .forEach(place => locationChoices.set(Number(place.location_id), place));
-    } catch { /* A selected point can still be added below. */ }
     let selectedLocation = null;
     let activeRequest = null;
     let requestVersion = 0;
@@ -95,22 +90,6 @@
                 const summary = document.createElement('summary'); summary.textContent = 'Edit';
                 details.appendChild(summary);
                 const form = createForm(item, 'current_update');
-                const locationLabel = document.createElement('label');
-                locationLabel.className = 'd-block small mt-2'; locationLabel.textContent = 'Location';
-                const locationSelect = document.createElement('select');
-                locationSelect.name = 'target_location_id'; locationSelect.required = true;
-                locationSelect.className = 'form-select form-select-sm';
-                const choices = new Map(locationChoices);
-                const rowLocationId = Number(item.location_id ?? selectedLocation?.location_id);
-                if (!choices.has(rowLocationId)) choices.set(rowLocationId, {location_id:rowLocationId,
-                    location_name:item.location_name || selectedLocation?.location_name || 'Saved location'});
-                choices.forEach(place => {
-                    const option = document.createElement('option'); option.value = String(place.location_id);
-                    option.textContent = place.location_name;
-                    option.selected = Number(place.location_id) === rowLocationId;
-                    locationSelect.appendChild(option);
-                });
-                locationLabel.appendChild(locationSelect); form.appendChild(locationLabel);
                 const riskLabel = document.createElement('label');
                 riskLabel.className = 'd-block small mt-2'; riskLabel.textContent = 'Risk at fetch';
                 const riskSelect = document.createElement('select'); riskSelect.name = 'risk_level';
@@ -290,7 +269,6 @@
     }
     function selectLocation(location) {
         selectedLocation = location;
-        locationChoices.set(Number(location.location_id), location);
         document.getElementById('selected-location-name').textContent = selectedLocation.location_name;
         const reportId = document.getElementById('report-location');
         if (reportId) {

@@ -99,16 +99,14 @@ final class ReadingRepository
         return $statement->fetchAll();
     }
 
-    /** Correct the saved log association/risk without moving original API observations. */
-    public function updateCurrent(int $locationId, int $observationId, int $targetLocationId, string $risk): bool
+    /** Correct only the saved risk label; location and provider values are immutable here. */
+    public function updateCurrent(int $locationId, int $observationId, string $risk): bool
     {
         if (!in_array($risk, ['low','normal','medium','high'], true)
             || !$this->hasCurrent($locationId, $observationId)) return false;
-        $target = (new LocationRepository($this->pdo))->find($targetLocationId);
-        if (!$target || (!(int)$target['is_active'] && $targetLocationId !== $locationId)) return false;
-        $query = $this->pdo->prepare('UPDATE weather_fetches SET location_id=:target, risk_level=:risk
+        $query = $this->pdo->prepare('UPDATE weather_fetches SET risk_level=:risk
             WHERE fetch_id=:id AND is_archived=0');
-        $query->execute(['target'=>$targetLocationId, 'risk'=>$risk, 'id'=>$observationId]);
+        $query->execute(['risk'=>$risk, 'id'=>$observationId]);
         return true;
     }
 
