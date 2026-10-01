@@ -1,0 +1,50 @@
+diff --git a/index.php b/index.php
+index cecb324..d4d6864 100644
+--- a/index.php
++++ b/index.php
+@@ -6,8 +6,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && !empty($_SESSION['user_id'])
+     && in_array($_SESSION['role'] ?? '', ['user', 'admin'], true)) {
+     redirect_to(($_SESSION['role'] ?? '') === 'admin' ? 'admin/index.php' : 'resident/index.php');
+ }
+-$publicLocations = (new LocationRepository($pdo))->activeForStudyArea();
+-$publicReadings = new ReadingRepository($pdo);
+ ?>
+ <!DOCTYPE html>
+ <html lang="en">
+@@ -23,7 +21,7 @@ $publicReadings = new ReadingRepository($pdo);
+     <h1 class="h4 mb-0">Barangay Irisan (Baguio City) — SmartSlope</h1>
+ </header>
+ <main class="container my-4">
+-    <section class="card mx-auto mb-4" style="max-width: 420px" aria-labelledby="login-heading">
++    <section class="card mx-auto" style="max-width: 420px" aria-labelledby="login-heading">
+         <div class="card-body">
+             <h2 id="login-heading" class="h5">Sign in</h2>
+             <?php if ($message = flash('login_error')): ?>
+@@ -48,27 +46,6 @@ $publicReadings = new ReadingRepository($pdo);
+         </div>
+     </section>
+ 
+-    <section aria-labelledby="public-heading">
+-        <h2 id="public-heading" class="h4">Barangay Irisan location overview</h2>
+-        <p class="text-muted">Baseline susceptibility and the latest rainfall indicator are separate. These prototype indicators are not official warnings. Observation time uses Philippine time.</p>
+-        <div class="row g-3">
+-            <?php foreach ($publicLocations as $location): ?>
+-                <?php
+-                $latest = $publicReadings->latestForActiveLocation((int) $location['location_id']);
+-                $age = $latest ? time() - (new DateTimeImmutable($latest['observed_at'], new DateTimeZone('UTC')))->getTimestamp() : null;
+-                $stale = $age === null || $age > 7200 || $age < -600;
+-                ?>
+-                <div class="col-md-6"><article class="card h-100"><div class="card-body">
+-                    <h3 class="h5"><?= e($location['location_name']) ?></h3>
+-                    <p>Baseline susceptibility: <strong><?= e(str_replace('_', ' ', $location['susceptibility_class'])) ?></strong>
+-                    <?php if (!empty($location['hazard_source_name'])): ?> · Source: <?= e($location['hazard_source_name']) ?><?php endif; ?></p>
+-                    <p class="mb-0">Latest rainfall indicator: <strong><?= $latest ? e(strtoupper($latest['risk_level'])) : 'Unavailable' ?></strong><?= $stale ? ' (stale or missing)' : '' ?>.
+-                    <?php if ($latest): ?> Observed <?= e(display_local_datetime($latest['observed_at'])) ?> PHT.<?php endif; ?></p>
+-                </div></article></div>
+-            <?php endforeach; ?>
+-            <?php if (!$publicLocations): ?><p>No active Irisan locations are available yet.</p><?php endif; ?>
+-        </div>
+-    </section>
+ </main>
+ <?php include __DIR__ . '/components/footer.html'; ?>
+ </body>
