@@ -350,7 +350,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     alert_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     reading_id INT UNSIGNED NOT NULL,
     location_id INT UNSIGNED NOT NULL,
-    risk_level ENUM('medium','high') NOT NULL,
+    risk_level ENUM('low','normal','medium','high')  NOT NULL,
     status ENUM('active','resolved') NOT NULL DEFAULT 'active',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
