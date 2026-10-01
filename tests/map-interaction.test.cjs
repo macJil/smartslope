@@ -25,38 +25,25 @@ function mount(locations) {
             on(name,fn){this.events[name]=fn;}};return m;}};
     let ready;
     vm.runInNewContext(code,{document:{addEventListener(name,fn){if(name==='DOMContentLoaded')ready=fn;},getElementById:id=>elements[id]||null,
-        createElement(){return {textContent:'',append(){}};},dispatchEvent:e=>selected.push(e.detail.location.location_id)},
+        createElement(){return {textContent:'',append(){}};},dispatchEvent:e=>selected.push(e.detail)},
         window:{},CustomEvent:class {constructor(name,options){this.detail=options.detail;}},
         L,fetch:async()=>({ok:true,json:async()=>({features:[]})}),Map,Number,console});
     ready(); return {events,selected,markers,elements};
 }
-test('map click draws and moves a local image pin, selecting nearest registered location',()=>{
-    const one={location_id:1,location_name:'West',latitude:16.421,longitude:120.551,stale:true};
-    const two={location_id:2,location_name:'East',latitude:16.421,longitude:120.568,stale:true};
-    const {events,selected,markers,elements}=mount([one,two]);
-    assert.equal(selected[0],1);
-    events.click({latlng:{lat:16.421,lng:120.567}});
-    assert.equal(selected.at(-1),2);
-    assert.equal(markers.length,3);
-    assert.equal(markers[2].options.icon.iconUrl,'/smartslope/assets/vendor/leaflet/images/marker-icon.png');
-    assert.match(elements['map-selection-message'].textContent,/nearest registered location: East/);
-    // This point used to be silently ignored by the narrow rectangle guard.
-    events.click({latlng:{lat:16.421,lng:120.577}});
-    assert.equal(markers.length,3);
-    assert.equal(markers[2].position.lng,120.577);
-    markers[0].events.click(); assert.equal(selected.at(-1),1);
-});
-test('without registered locations the map explains why no reading can be requested',()=>{
-    const {events,selected,elements}=mount([]);
+test('map sends the clicked coordinates even when there are no registered locations',()=>{
+    const {events,selected,markers}=mount([]);
     events.click({latlng:{lat:16.421,lng:120.559}});
-    assert.deepEqual(selected,[]);
-    assert.equal(elements['map-empty'].hidden,false);
-    assert.equal(elements['map-selection-message'].textContent,
-        'No registered location with coordinates is available. Ask an administrator to add one.');
-    assert.equal(fs.existsSync(path.join(root,'assets/vendor/leaflet/images/marker-icon.png')),true);
+    assert.equal(selected.at(-1).latitude,16.421);
+    assert.equal(selected.at(-1).longitude,120.559);
+    events.click({latlng:{lat:16.422,lng:120.560}});
+    assert.equal(selected.at(-1).latitude,16.422);
+    assert.equal(markers.length,1);
+    assert.equal(markers[0].position.lng,120.560);
+    assert.match(markers[0].options.icon.iconUrl,/marker-icon.png$/);
 });
-test('root test seed contains coordinates so its location appears on the map',()=>{
-    const sql=fs.readFileSync(path.join(root,'db_test_seed.sql'),'utf8');
-    assert.match(sql,/latitude,\s*longitude,/);
-    assert.match(sql,/ON DUPLICATE KEY UPDATE is_active = 1, latitude = 16\.421000/);
+test('click coordinates are not replaced by the nearest pre-existing location',()=>{
+    const {events,selected}=mount([{location_id:1,latitude:16.421,longitude:120.551,location_name:'Old',stale:true}]);
+    events.click({latlng:{lat:16.422,lng:120.559}});
+    assert.equal(selected.at(-1).longitude,120.559);
+    assert.equal(selected.at(-1).location,undefined);
 });

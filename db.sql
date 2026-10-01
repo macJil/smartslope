@@ -181,6 +181,35 @@ CREATE TABLE IF NOT EXISTS weather_observations (
         ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Existing installations: run this once in the smartslope_mvp database.
+-- No existing observations or reports are deleted.
+CREATE TABLE IF NOT EXISTS weather_fetches (
+    fetch_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    sensor_id INT UNSIGNED NOT NULL,
+    observed_at DATETIME NOT NULL,
+    fetched_at DATETIME NOT NULL,
+    interval_seconds SMALLINT UNSIGNED NULL,
+    temperature_2m DECIMAL(5,2) NULL,
+    relative_humidity_2m DECIMAL(5,2) NULL,
+    precipitation DECIMAL(7,2) NULL,
+    rain DECIMAL(7,2) NULL,
+    showers DECIMAL(7,2) NULL,
+    wind_speed_10m DECIMAL(6,2) NULL,
+    wind_gusts_10m DECIMAL(6,2) NULL,
+    cloud_cover DECIMAL(5,2) NULL,
+    weather_code SMALLINT UNSIGNED NULL,
+    rainfall_1h_mm DECIMAL(7,2) NULL,
+    rainfall_24h_mm DECIMAL(7,2) NULL,
+    rainfall_72h_mm DECIMAL(7,2) NULL,
+    risk_level ENUM('low','normal','medium','high') NULL,
+    is_stale TINYINT(1) NOT NULL DEFAULT 0,
+    is_archived TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (fetch_id),
+    KEY idx_fetch_sensor (sensor_id, fetched_at, fetch_id),
+    CONSTRAINT fk_fetch_sensor FOREIGN KEY (sensor_id) REFERENCES sensors(sensor_id)
+        ON UPDATE CASCADE ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 5. Community reports and their admin review state.
 -- reported_by_user_id is nullable so a public report can be anonymous.
 CREATE TABLE IF NOT EXISTS reports (

@@ -54,8 +54,8 @@ if (in_array($action,['current_update','current_delete'],true)) {
         if (!$saved) throw new RuntimeException('Observation unavailable.');
         $pdo->commit();
         flash('reading_message',$action==='current_update'
-            ? 'Saved current observation corrected. Hourly risk data are unchanged.'
-            : 'Saved current observation deleted. A future provider refresh may import it again.');
+            ? 'Saved log entry corrected. Its rainfall assessment is based on the original hourly data.'
+            : 'Log entry removed from the list. Future refreshes create new entries.');
     } catch (Throwable $exception) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         error_log('SmartSlope current observation review failed: '.$exception->getMessage());

@@ -12,6 +12,7 @@
         <button class="btn btn-sm btn-outline-primary mb-3" type="button" id="weather-retry" hidden>Retry weather request</button>
 
         <div id="reading-panel" data-weather-url="<?= e(app_url('api/weather.php')) ?>"
+             data-map-location-url="<?= e(app_url('api/map_location.php')) ?>"
              data-stored-url="<?= e(app_url('api/location_dashboard.php')) ?>"
              data-skip-initial-refresh="<?= !empty($skipAutoRefresh) ? '1' : '0' ?>">
             <section class="border rounded p-3 mb-3" aria-labelledby="risk-analysis-heading">

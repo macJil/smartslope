@@ -17,7 +17,7 @@ if (!$location || !(int)$location['is_active']) {
 $readings = (new ReadingRepository($pdo))->currentForLocation((int)$locationId, null);
 
 header('Content-Type: text/csv; charset=utf-8');
-header('Content-Disposition: attachment; filename="smartslope-location-' . (int)$locationId . '-current-readings-' . date('Y-m-d') . '.csv"');
+header('Content-Disposition: attachment; filename="smartslope-location-' . (int)$locationId . '-reading-log-' . date('Y-m-d') . '.csv"');
 header('Cache-Control: no-store, max-age=0');
 
 $output = fopen('php://output', 'wb');
@@ -40,6 +40,7 @@ fputcsv($output, [
     'Showers (mm)',
     'Wind speed (km/h)',
     'Wind gusts (km/h)',
+    'Rainfall 1h (mm)', 'Rainfall 24h (mm)', 'Rainfall 72h (mm)', 'Risk at fetch', 'Stale at fetch',
 ], ',', '"', '');
 
 $safeCsvText = static function (?string $value): string {
@@ -64,6 +65,8 @@ foreach ($readings as $reading) {
         $reading['showers'],
         $reading['wind_speed_10m'],
         $reading['wind_gusts_10m'],
+        $reading['rainfall_1h_mm'], $reading['rainfall_24h_mm'], $reading['rainfall_72h_mm'],
+        $safeCsvText($reading['risk_level']), (int)$reading['is_stale'],
     ], ',', '"', '');
 }
 

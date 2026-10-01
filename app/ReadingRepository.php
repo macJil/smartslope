@@ -45,24 +45,25 @@ final class ReadingRepository
         return $statement->fetchAll();
     }
 
-    /** Saved provider current observations for one active Irisan location. */
+    /** Saved click/refresh log entries for one active Irisan location. */
     public function currentForLocation(int $locationId, ?int $limit = 30): array
     {
         $limitSql = $limit === null ? '' : ' LIMIT ' . max(1, min(100, $limit));
         $statement = $this->pdo->prepare(
-            "SELECT w.observation_id, w.observed_at, w.fetched_at, w.interval_seconds,
+            "SELECT w.fetch_id AS observation_id, w.observed_at, w.fetched_at, w.interval_seconds,
                     w.temperature_2m, w.relative_humidity_2m, w.precipitation,
                     w.rain, w.showers, w.wind_speed_10m, w.wind_gusts_10m,
-                    w.cloud_cover, w.weather_code, l.location_name, l.purok_zone
-             FROM weather_observations AS w
+                    w.cloud_cover, w.weather_code, w.risk_level, w.is_stale,
+                    w.rainfall_1h_mm, w.rainfall_24h_mm, w.rainfall_72h_mm, l.location_name, l.purok_zone
+             FROM weather_fetches AS w
              JOIN sensors AS s ON s.sensor_id = w.sensor_id
              JOIN locations AS l ON l.location_id = s.location_id
              JOIN barangays AS b ON b.barangay_id = l.barangay_id
              WHERE l.location_id = :location_id AND l.is_active = 1 AND b.is_active = 1
                AND b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
                AND s.sensor_type = 'weather_api' AND s.provider_name = 'Open-Meteo'
-               AND w.observation_kind = 'current'
-             ORDER BY w.observed_at DESC, w.observation_id DESC" . $limitSql
+               AND w.is_archived = 0
+             ORDER BY w.fetched_at DESC, w.fetch_id DESC" . $limitSql
         );
         $statement->execute(['location_id' => $locationId]);
         return $statement->fetchAll();
@@ -86,19 +87,19 @@ final class ReadingRepository
         return $statement->fetchAll();
     }
 
-    /** Change a saved current observation only; hourly data and risk summaries remain provider sourced. */
+    /** Change a saved reading log only; hourly data and risk summaries remain provider sourced. */
     public function updateCurrent(int $locationId, int $observationId, array $values): bool
     {
         $statement = $this->pdo->prepare(
-            "UPDATE weather_observations AS w
+            "UPDATE weather_fetches AS w
              JOIN sensors AS s ON s.sensor_id = w.sensor_id
              JOIN locations AS l ON l.location_id = s.location_id
              JOIN barangays AS b ON b.barangay_id = l.barangay_id
              SET w.temperature_2m = :temperature, w.relative_humidity_2m = :humidity,
                  w.precipitation = :precipitation, w.rain = :rain, w.showers = :showers,
                  w.wind_speed_10m = :wind, w.wind_gusts_10m = :gusts
-             WHERE w.observation_id = :observation_id AND l.location_id = :location_id
-               AND w.observation_kind = 'current' AND l.is_active = 1 AND b.is_active = 1
+             WHERE w.fetch_id = :observation_id AND l.location_id = :location_id
+               AND w.is_archived = 0 AND l.is_active = 1 AND b.is_active = 1
                AND b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
                AND s.sensor_type = 'weather_api' AND s.provider_name = 'Open-Meteo'"
         );
@@ -109,12 +110,12 @@ final class ReadingRepository
     public function hasCurrent(int $locationId, int $observationId): bool
     {
         $statement = $this->pdo->prepare(
-            "SELECT 1 FROM weather_observations AS w
+            "SELECT 1 FROM weather_fetches AS w
              JOIN sensors AS s ON s.sensor_id = w.sensor_id
              JOIN locations AS l ON l.location_id = s.location_id
              JOIN barangays AS b ON b.barangay_id = l.barangay_id
-             WHERE w.observation_id = :observation_id AND l.location_id = :location_id
-               AND w.observation_kind = 'current' AND l.is_active = 1 AND b.is_active = 1
+             WHERE w.fetch_id = :observation_id AND l.location_id = :location_id
+               AND w.is_archived = 0 AND l.is_active = 1 AND b.is_active = 1
                AND b.barangay_name = 'Barangay Irisan' AND b.city_name = 'Baguio City'
                AND s.sensor_type = 'weather_api' AND s.provider_name = 'Open-Meteo'"
         );
@@ -125,7 +126,7 @@ final class ReadingRepository
     public function deleteCurrent(int $locationId, int $observationId): bool
     {
         if (!$this->hasCurrent($locationId,$observationId)) return false;
-        $statement = $this->pdo->prepare('DELETE FROM weather_observations WHERE observation_id = :observation_id AND observation_kind = \'current\'');
+        $statement = $this->pdo->prepare('UPDATE weather_fetches SET is_archived = 1 WHERE fetch_id = :observation_id AND is_archived = 0');
         $statement->execute(['observation_id'=>$observationId]);
         return $statement->rowCount() > 0;
     }
@@ -134,7 +135,7 @@ final class ReadingRepository
     {
         $statement = $this->pdo->prepare(
             "SELECT r.reading_id, r.location_id, r.rainfall_1h_mm, r.rainfall_24h_mm,
-                    r.rainfall_72h_mm, r.source_name, r.source_url, r.observed_at, r.is_archived
+                    r.rainfall_72h_mm, r.source_name, r.source_url, r.observed_at, r.is_archived, r.risk_level
              FROM readings AS r
              INNER JOIN locations AS l ON l.location_id = r.location_id
              INNER JOIN barangays AS b ON b.barangay_id = l.barangay_id
@@ -217,6 +218,22 @@ final class ReadingRepository
         $save($current,'current');
         foreach ($hourly as $row) $save($row,'hourly');
         return count($hourly)+1;
+    }
+
+    /** One snapshot per successful click/refresh; observation time is preserved. */
+    public function appendFetch(int $sensorId, array $current, string $fetchedAt, array $rainfall, ?string $risk, bool $stale): void
+    {
+        $values = ['sensor_id'=>$sensorId,
+            'observed_at'=>(new DateTimeImmutable($current['time']))->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s'),
+            'fetched_at'=>$fetchedAt, 'interval_seconds'=>$current['interval'] ?? null,
+            'rainfall_1h_mm'=>$rainfall[0], 'rainfall_24h_mm'=>$rainfall[1], 'rainfall_72h_mm'=>$rainfall[2],
+            'risk_level'=>$risk, 'is_stale'=>$stale ? 1 : 0];
+        foreach (['temperature_2m','relative_humidity_2m','precipitation','rain','showers',
+            'wind_speed_10m','wind_gusts_10m','cloud_cover','weather_code'] as $field) {
+            $values[$field] = is_numeric($current[$field] ?? null) ? $current[$field] : null;
+        }
+        $query = $this->pdo->prepare('INSERT INTO weather_fetches ('.implode(',',array_keys($values)).') VALUES (:'.implode(',:',array_keys($values)).')');
+        $query->execute($values);
     }
 
     /** Complete contiguous rainfall windows come from stored hourly provider rows. */

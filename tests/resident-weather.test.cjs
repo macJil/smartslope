@@ -6,7 +6,7 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 class Element {
-    constructor() { this.textContent=''; this.value=''; this.dataset={}; this.children=[]; this.events={}; this.hidden=false; this.classList={remove(){}}; }
+    constructor() { this.textContent=''; this.value=''; this.dataset={}; this.children=[]; this.events={}; this.hidden=false; this.classList={remove(){},add(){}}; }
     addEventListener(name, fn) { this.events[name]=fn; }
     replaceChildren() { this.children=[]; }
     appendChild(child) { this.children.push(child); }
@@ -20,12 +20,13 @@ const data = {location:place, rainfall:{risk_level:'medium',risk_explanation:'Te
     rainfall_24h_mm:55,rainfall_72h_mm:104,observed_at:'2026-09-30T01:00:00Z'},
     current_readings:[current],risk_readings:[{reading_id:6,observed_at:current.time,risk_level:'medium',
         rainfall_1h_mm:27,rainfall_24h_mm:55,rainfall_72h_mm:104}],stale:false,alert:null,saved_observations:73};
-function mount(admin=false, stored=data, live=data, skipInitial=false) {
+function mount(admin=false, stored=data, live=data, skipInitial=false, resolvePoint=place) {
     const source = read('resident/weather_readings.php')+read('resident/risk_area.php')+read('resident/report.php');
     const elements=Object.fromEntries([...source.matchAll(/id="([^"]+)"/g)].map(match=>[match[1],new Element()]));
     if (!admin) { delete elements['risk-reading-actions']; delete elements['risk-reading-body']; delete elements['readings-download']; }
     const handlers={}; const requests=[];
     elements['reading-panel'].dataset.storedUrl='/smartslope/api/location_dashboard.php';
+    elements['reading-panel'].dataset.mapLocationUrl='/smartslope/api/map_location.php';
     elements['reading-panel'].dataset.weatherUrl='/smartslope/api/weather.php';
     elements['reading-panel'].dataset.skipInitialRefresh=skipInitial ? '1' : '0';
     elements['weather-csrf-token'].value='token';
@@ -37,7 +38,7 @@ function mount(admin=false, stored=data, live=data, skipInitial=false) {
     vm.runInNewContext(read('assets/js/app.js'), {
         document:{getElementById:id=>elements[id]||null,createElement:()=>new Element(),addEventListener:(name,fn)=>handlers[name]=fn},
         window:{SmartSlopeMap:{updateRisk:(...args)=>requests.push(['risk',...args])}},
-        fetch:async url=>{requests.push(['stored',url]);return {ok:true,json:async()=>({data:typeof stored==='function'?await stored(url):stored})};},
+        fetch:async (url,options={})=>{if(options.method==='POST'){requests.push(['resolve',options.body]);return {ok:true,json:async()=>({data:await (typeof resolvePoint==='function'?resolvePoint(options):resolvePoint)})};}requests.push(['stored',url]);return {ok:true,json:async()=>({data:typeof stored==='function'?await stored(url):stored})};},
         jQuery:{ajax(options){requests.push(['weather',options.data]);
             Promise.resolve().then(()=>options.success({data:typeof live==='function'?live(options):live}));
             return {abort(){options.error({},'abort');}};}},
@@ -52,7 +53,7 @@ test('resident map click loads saved observations, fetches provider data and per
     assert.equal(elements['report-location'].value,'7');
     assert.equal(elements['risk-level'].textContent,'MEDIUM');
     assert.equal(elements['current-reading-body'].children.length,1);
-    assert.equal(elements['current-reading-body'].children[0].children.length,7);
+    assert.equal(elements['current-reading-body'].children[0].children.length,9);
     assert.deepEqual(requests.filter(item=>item[0]==='stored').map(item=>item[1]),
         ['/smartslope/api/location_dashboard.php?location_id=7']);
     assert.equal(requests.filter(item=>item[0]==='weather').length,1);
@@ -63,12 +64,12 @@ test('resident map click loads saved observations, fetches provider data and per
 test('administrator sees edit and delete controls in saved observation rows and a location CSV',async()=>{
     const {elements,handlers}=mount(true);
     handlers['smartslope:location-selected']({detail:{location:place}}); await pause();
-    assert.equal(elements['current-reading-body'].children[0].children.length,8);
+    assert.equal(elements['current-reading-body'].children[0].children.length,10);
     assert.equal(elements['readings-download'].href,'/smartslope/admin/download_readings.php?location_id=7');
-    const actions=elements['current-reading-body'].children[0].children[7];
+    const actions=elements['current-reading-body'].children[0].children[9];
     assert.equal(actions.children[0].children[0].textContent,'Edit');
     assert.equal(actions.children[1].children.at(-1).textContent,'Delete');
-    assert.equal(elements['risk-reading-body'].children.length,1);
+    assert.equal(elements['risk-reading-body'],undefined);
 });
 test('admin redirect displays an edit or deletion without immediately importing the same provider row',async()=>{
     const {elements,requests,handlers}=mount(true,data,data,true);
@@ -123,4 +124,23 @@ test('offline map assets and single admin dashboard routes exist',()=>{
     assert.match(read('admin/index.php'),/weather_readings\.php/);
     assert.ok(!fs.existsSync(path.join(root,'admin/readings.php')));
     assert.match(read('app/UserRepository.php'),/INSERT INTO users \(full_name,username,email,contact_number,password_hash,role\)/);
+});
+
+test('actual coordinate click resolves its own ID then loads and saves readings on both dashboards',async()=>{
+    const location={location_id:42,location_name:'Irisan 16.42200, 120.55900'};
+    const result={...data,location,current_readings:[current]};
+    for (const admin of [false,true]) {
+        const {elements,handlers,requests}=mount(admin,result,result,false,location);
+        handlers['smartslope:point-selected']({detail:{latitude:16.422,longitude:120.559}});
+        await pause();
+        const sent=new URLSearchParams(requests.find(row=>row[0]==='resolve')[1]);
+        assert.equal(sent.get('latitude'),'16.422');
+        assert.equal(sent.get('longitude'),'120.559');
+        assert.equal(sent.get('csrf_token'),'token');
+        assert.equal(elements['report-location'].value,'42');
+        const weather=new URLSearchParams(requests.find(row=>row[0]==='weather')[1]);
+        assert.equal(weather.get('location_id'),'42');
+        assert.equal(elements['risk-level'].textContent,'MEDIUM');
+        assert.equal(elements['current-reading-body'].children.length,1);
+    }
 });

@@ -7,6 +7,27 @@ final class LocationRepository
     {
     }
 
+    /** Reuse a coordinate point so reports, observations and risk share its ID. */
+    public function forMapPoint(float $latitude, float $longitude): array
+    {
+        $latitude = round($latitude, 5);
+        $longitude = round($longitude, 5);
+        if (!StudyArea::contains($latitude, $longitude)) {
+            throw new InvalidArgumentException('Select a point inside Irisan.');
+        }
+        $name = sprintf('Irisan %.5f, %.5f', $latitude, $longitude);
+        $query = $this->pdo->prepare(
+            "INSERT INTO locations (barangay_id,location_name,purok_zone,latitude,longitude,susceptibility_class)
+             VALUES (:barangay_id,:name,'Map point',:latitude,:longitude,'unknown')
+             ON DUPLICATE KEY UPDATE location_id=LAST_INSERT_ID(location_id)"
+        );
+        $query->execute(['barangay_id'=>$this->studyBarangayId(), 'name'=>$name,
+            'latitude'=>$latitude, 'longitude'=>$longitude]);
+        $location = $this->find((int)$this->pdo->lastInsertId());
+        if (!$location || !(int)$location['is_active']) throw new DomainException('Location inactive.');
+        return $location;
+    }
+
     public function studyBarangayId(): int
     {
         $statement = $this->pdo->prepare(

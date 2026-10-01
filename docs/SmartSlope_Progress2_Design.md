@@ -21,7 +21,8 @@ erDiagram
 | barangays | `barangay_id SMALLINT UNSIGNED` | One seeded active Irisan study area. |
 | locations | `location_id INT UNSIGNED`; barangay FK | Named areas, verified coordinate pair, sourced baseline susceptibility, archival. |
 | sensors | `sensor_id INT UNSIGNED`; location FK; unique location/type/provider | Virtual Open-Meteo source (`weather_api`); physical_sensor enum value reserved for a later hardware phase, no device is claimed. |
-| weather_observations | `observation_id INT UNSIGNED`; sensor FK; unique sensor/kind/time | Provider current interval and hourly rows; actual UTC observation and fetch time, 13 used meteorological fields with bounded numeric precision. |
+| weather_observations | `observation_id INT UNSIGNED`; sensor FK; unique sensor/kind/time | Provider current interval and hourly rows; actual UTC observation and fetch time, 13 used meteorological fields with bounded numeric precision. Repeated fetches update the same provider row. |
+| weather_fetches | `fetch_id INT UNSIGNED`; sensor FK; fetched/observed timestamps | One saved snapshot for every successful map selection or Refresh, including the rainfall/risk values shown in the dashboard list. Admin Delete archives the snapshot. |
 | readings | `reading_id INT UNSIGNED`; location FK, optional correcting admin FK; unique location/time/source | 1h/24h/72h stored rainfall totals and provisional risk; inactive summary rows preserved internally. |
 | alerts | `alert_id INT UNSIGNED`; reading and location FKs; unique reading | Medium/high prototype indicator; synchronized after correction, no repeated alert for the same reading. |
 | reports | `report_id INT UNSIGNED`; location/reporter/reviewer FKs | Resident text observations, pending/reviewed/resolved state. |

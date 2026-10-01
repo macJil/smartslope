@@ -8,7 +8,7 @@ The supplied WEBSYS1 syllabus covers PHP/MySQL, OOP, jQuery/AJAX, JSON/API and s
 | jQuery and AJAX | Local jQuery, `assets/js/app.js` | Map marker loads saved data and requests new weather; Refresh repeats without full-page reload |
 | API and JSON | Open-Meteo client, `api/weather.php`, `api/readings.php` | Valid provider response and no-data/error behavior |
 | Security | Hashed passwords, server roles, session ID regeneration, CSRF, escaped output, prepared queries | Anonymous/resident denied admin changes; invalid CSRF rejected; same behavior under Herd and `/smartslope` |
-| Relational design and teacher's source table | `users`,`barangays`,`locations`,`sensors`,`weather_observations`,`readings`,`alerts`,`reports` | Foreign keys, deduplication, stored-observation rainfall calculation, linked alert and accurate UTC/PHT times |
+| Relational design and teacher's source table | `users`,`barangays`,`locations`,`sensors`,`weather_observations`,`weather_fetches`,`readings`,`alerts`,`reports` | Foreign keys, exact clicked-coordinate locations, deduplicated provider rows, an append-only fetch log, stored-observation rainfall calculation, linked alert and accurate UTC/PHT times |
 | Core landslide prototype | Sourced baseline hazard + provisional rainfall status + resident observations | Verified source/coordinates, documented thresholds and freshness states; no claim of an official warning |
 | Startup output | Prototype and documented business-model hypothesis | Team finishes actual deck, concept note, logo, financial assumptions, progress/contribution, peer evaluation and presentation; do not invent evidence |
 
@@ -21,7 +21,7 @@ The preferred business-model hypothesis is paid barangay/LGU setup and maintenan
 3. Create/modify sourced Irisan location; non-Irisan locations do not appear in report queries; archive hides it but retains references.
 4. Refresh selected location: one virtual source; current + hourly observations linked by sensor; totals from saved contiguous hours; summary and alert linked in same transaction. Repeat refresh: rows and alert do not duplicate.
 5. Test incomplete history, stale/future time, provider failure and database write failure. Never display a fresh risk based on missing totals or a failed database write.
-6. Correct a saved current observation in the admin dashboard; CSV reflects the change. Delete removes its row; a later API refresh can import the provider value again. Correct a separate rainfall summary and verify its linked alert follows risk; removing that summary hides it from active risk results while preserving history. Ensure no manual Add form or separate Manage readings page.
+6. Click two points inside Irisan as a resident and as an administrator. Each exact point is reused on repeat clicks, its provider response creates a saved `weather_fetches` log row, and the risk panel/list uses that location. In the admin dashboard, edit a saved log entry, archive it with Delete, and confirm the CSV reflects active rows. A later API refresh creates a new log entry. Ensure no manual Add form or separate Manage readings page.
 7. Submit report; admin reviews/resolves. Test CSRF and authorization, CSV formula escaping, XSS and Herd/XAMPP routes.
 8. Present relational design, contribution history, peer evaluation, concept note and business model with actual supporting evidence.
 

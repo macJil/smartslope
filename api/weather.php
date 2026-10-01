@@ -108,7 +108,6 @@ try {
     $riskLevel=null;
     $alert=null;
     $savedObservations=0;
-    $persistenceWarning=false;
     try {
         $pdo->beginTransaction();
         $sensorId=(new SensorRepository($pdo))->openMeteoForLocation((int)$location['location_id']);
@@ -140,19 +139,18 @@ try {
                 }
             }
         }
+        $repository->appendFetch($sensorId,$weather['current'],$retrievedAt->format('Y-m-d H:i:s'),
+            [$rainfall1h,$rainfall24h,$rainfall72h],$riskLevel,$stale);
         $pdo->commit();
     } catch (Throwable $exception) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         error_log('SmartSlope weather save failed: '.$exception->getMessage());
-        $persistenceWarning=true;
-        $savedObservations=0;
-        $rainfall1h=$rainfall24h=$rainfall72h=$riskLevel=$alert=null;
+        respond_json(503, ['error'=>'weather_save_failed']);
+
     }
-    $riskExplanation=$persistenceWarning
-        ? 'Provider data could not be saved, so no database-backed risk status is available.'
-        : ($riskLevel===null
-            ? 'Complete, non-archived 1-hour, 24-hour and 72-hour rainfall records are required.'
-            : strtoupper($riskLevel).' prototype rainfall indicator. '.RiskAnalyzer::description());
+    $riskExplanation=$riskLevel===null
+        ? 'Complete, non-archived 1-hour, 24-hour and 72-hour rainfall records are required.'
+        : strtoupper($riskLevel).' prototype rainfall indicator. '.RiskAnalyzer::description();
     if ($stale) $riskExplanation='Weather observation is over two hours old or has a future timestamp. '.$riskExplanation;
 
     $savedCurrentReadings=(new ReadingRepository($pdo))->currentForLocation((int)$location['location_id']);
@@ -179,7 +177,7 @@ try {
         'source_url'=>'https://open-meteo.com/',
         'retrieved_at'=>$retrievedAt->format(DateTimeInterface::ATOM),
         'saved_observations'=>$savedObservations,
-        'persistence_warning'=>$persistenceWarning,
+        'persistence_warning'=>false,
         'stale'=>$stale,
         'current'=>$weather['current'],
         'current_readings'=>$savedCurrentReadings,

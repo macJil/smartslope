@@ -75,32 +75,22 @@
             marker.on('click', () => select(place));
             markers.set(place.location_id,marker);
         });
-        // Like the weather reference, mark the actual clicked coordinates.
-        // Weather records still belong to a registered SmartSlope location.
+        // Resolve and save the actual clicked coordinate on the server.
         map.on('click', (event) => {
             if (!clickedMarker) {
                 clickedMarker=L.marker(event.latlng, {
                     icon:clickIcon, keyboard:false, bubblingMouseEvents:false
                 }).addTo(map);
                 clickedMarker.on('click', () => {
-                    if (clickedPlace) select(clickedPlace);
+                    document.dispatchEvent(new CustomEvent('smartslope:point-selected', {
+                        detail:clickedPlace
+                    }));
                 });
-            } else {
-                clickedMarker.setLatLng(event.latlng);
-            }
-            if (!valid.length) {
-                if (selectionMessage) selectionMessage.textContent=
-                    'No registered location with coordinates is available. Ask an administrator to add one.';
-                return;
-            }
-            const nearest=valid.reduce((best,place) =>
-                map.distance(event.latlng,[place.latitude,place.longitude])
-                    < map.distance(event.latlng,[best.latitude,best.longitude]) ? place : best);
-            clickedPlace=nearest;
-            select(nearest);
+            } else clickedMarker.setLatLng(event.latlng);
+            clickedPlace={latitude:event.latlng.lat,longitude:event.latlng.lng};
             if (selectionMessage) selectionMessage.textContent=
-                `Marked ${event.latlng.lat.toFixed(5)}, ${event.latlng.lng.toFixed(5)}. `+
-                `Showing saved readings and weather for nearest registered location: ${nearest.location_name}.`;
+                `Loading Irisan point ${event.latlng.lat.toFixed(5)}, ${event.latlng.lng.toFixed(5)}…`;
+            document.dispatchEvent(new CustomEvent('smartslope:point-selected', {detail:clickedPlace}));
         });
         if (valid.length) {
             select(valid.find((place) => place.location_id===Number(element.dataset.defaultLocationId)) || valid[0]);
@@ -108,11 +98,13 @@
             const note=document.getElementById('map-empty');
             if (note) note.hidden=false;
         }
-        window.SmartSlopeMap={updateRisk(locationId, risk, stale) {
+        window.SmartSlopeMap={registerLocation(place) {
+            if (!valid.some(item => Number(item.location_id)===Number(place.location_id))) valid.push(place);
+        }, updateRisk(locationId, risk, stale) {
             const place=valid.find((item) => item.location_id===Number(locationId));
             if (!place) return;
             place.risk_level=risk; place.stale=stale;
-            markers.get(place.location_id).setIcon(icon(place,selected===place));
+            markers.get(Number(place.location_id))?.setIcon(icon(place,selected===place));
         }};
     });
 })();
