@@ -27,6 +27,12 @@ The resident and admin dashboards initially show every active Irisan reading alr
 - `alerts`: medium/high prototype indicators linked to a reading and location. A corrected reading synchronizes its alert.
 - `reports`: resident ground observations and administrator review; these reports are not silently used as weather measurements.
 
+### Report contacts and saved map markers
+
+For an existing `smartslope_mvp` database, back it up and run `sql/add_report_contacts.sql` **once** if `reports` does not already contain `contact_number` and `email`. New databases imported from `db.sql` have these columns already. Do not re-import `db.sql` over existing records. New ground reports require a 7–15 digit contact number (optional leading `+`) and may include an email. Each report stores the supplied contact details so later account changes do not alter its review record. Previously submitted reports have no snapshot; the administrator view falls back to their account phone where available.
+
+Saved map markers use the most recent reading risk: low green, normal blue, medium yellow, and high red. Unknown risk remains gray; stale colors have a dashed border and reduced opacity. A clicked coordinate first shows a temporary blue pin, which becomes a saved marker when the server returns its location. The marker color updates after the risk analysis loads. Live weather still needs network access even though map tiles are local.
+
 The application uses a single PHP bootstrap, PDO repositories and jQuery AJAX for the weather endpoint. Both dashboards use local Leaflet 1.9.4, bundled zoom 12–15 raster tiles, and an Irisan outline extracted from the `weather` reference repository; **check the original map data and tile redistribution terms before public deployment**. The map has no official hazard layer. It works without a map service, while live weather still needs internet. Selecting a point loads the saved reading log and requests fresh Open-Meteo data to persist in MySQL; the Refresh button repeats the request. Administrators see pending report counts and reporter contact details, may edit/archive saved log entries, and can export the displayed all-location or selected-location reading log as CSV. Hourly provider records and their separate rainfall/risk summaries remain independent. Other forms use POST/redirect/GET. `app_url()` handles Herd and XAMPP browser routes; `__DIR__` handles filesystem includes.
 
 ## Verification

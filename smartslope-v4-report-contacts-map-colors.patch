@@ -1,0 +1,372 @@
+diff --git a/README.md b/README.md
+index f6c0f21..9bf8280 100644
+--- a/README.md
++++ b/README.md
+@@ -27,6 +27,12 @@ The resident and admin dashboards initially show every active Irisan reading alr
+ - `alerts`: medium/high prototype indicators linked to a reading and location. A corrected reading synchronizes its alert.
+ - `reports`: resident ground observations and administrator review; these reports are not silently used as weather measurements.
+ 
++### Report contacts and saved map markers
++
++For an existing `smartslope_mvp` database, back it up and run `sql/add_report_contacts.sql` **once** if `reports` does not already contain `contact_number` and `email`. New databases imported from `db.sql` have these columns already. Do not re-import `db.sql` over existing records. New ground reports require a 7–15 digit contact number (optional leading `+`) and may include an email. Each report stores the supplied contact details so later account changes do not alter its review record. Previously submitted reports have no snapshot; the administrator view falls back to their account phone where available.
++
++Saved map markers use the most recent reading risk: low green, normal blue, medium yellow, and high red. Unknown risk remains gray; stale colors have a dashed border and reduced opacity. A clicked coordinate first shows a temporary blue pin, which becomes a saved marker when the server returns its location. The marker color updates after the risk analysis loads. Live weather still needs network access even though map tiles are local.
++
+ The application uses a single PHP bootstrap, PDO repositories and jQuery AJAX for the weather endpoint. Both dashboards use local Leaflet 1.9.4, bundled zoom 12–15 raster tiles, and an Irisan outline extracted from the `weather` reference repository; **check the original map data and tile redistribution terms before public deployment**. The map has no official hazard layer. It works without a map service, while live weather still needs internet. Selecting a point loads the saved reading log and requests fresh Open-Meteo data to persist in MySQL; the Refresh button repeats the request. Administrators see pending report counts and reporter contact details, may edit/archive saved log entries, and can export the displayed all-location or selected-location reading log as CSV. Hourly provider records and their separate rainfall/risk summaries remain independent. Other forms use POST/redirect/GET. `app_url()` handles Herd and XAMPP browser routes; `__DIR__` handles filesystem includes.
+ 
+ ## Verification
+diff --git a/app/ReportRepository.php b/app/ReportRepository.php
+index 1bdbc47..6e400fe 100644
+--- a/app/ReportRepository.php
++++ b/app/ReportRepository.php
+@@ -26,16 +26,17 @@ final class ReportRepository
+         )->fetchAll();
+     }
+ 
+-    public function create(int $locationId, ?int $reporterId, ?string $houseLandmark, string $message): void
++    public function create(int $locationId, ?int $reporterId, string $contactNumber, ?string $email, ?string $houseLandmark, string $message): void
+     {
+         $query=$this->pdo->prepare(
+-            "INSERT INTO reports (location_id,reported_by_user_id,house_landmark,message)
+-             SELECT l.location_id,:reporter_id,:house_landmark,:message
++            "INSERT INTO reports (location_id,reported_by_user_id,contact_number,email,house_landmark,message)
++             SELECT l.location_id,:reporter_id,:contact_number,:email,:house_landmark,:message
+              FROM locations AS l JOIN barangays AS b ON b.barangay_id=l.barangay_id
+              WHERE l.location_id=:location_id AND l.is_active=1 AND b.is_active=1
+              AND b.barangay_name='Barangay Irisan' AND b.city_name='Baguio City'"
+         );
+         $query->execute(['location_id'=>$locationId,'reporter_id'=>$reporterId,
++            'contact_number'=>$contactNumber,'email'=>$email,
+             'house_landmark'=>$houseLandmark,'message'=>$message]);
+         if ($query->rowCount()!==1) throw new InvalidArgumentException('Location unavailable.');
+     }
+@@ -44,8 +45,8 @@ final class ReportRepository
+     {
+         $sql="SELECT r.report_id,r.location_id,r.house_landmark,r.message,r.status,
+                      r.created_at,r.reviewed_at,l.location_name,l.purok_zone,
+-                     reporter.full_name AS reporter_name,reporter.email AS reporter_email,
+-                     reporter.contact_number AS reporter_contact_number,
++                     reporter.full_name AS reporter_name,r.email AS reporter_email,
++                     COALESCE(r.contact_number,reporter.contact_number) AS reporter_contact_number,
+                      reviewer.full_name AS reviewer_name
+               FROM reports AS r JOIN locations AS l ON l.location_id=r.location_id
+               JOIN barangays AS b ON b.barangay_id=l.barangay_id
+diff --git a/assets/css/location-map.css b/assets/css/location-map.css
+index c971962..66974c9 100644
+--- a/assets/css/location-map.css
++++ b/assets/css/location-map.css
+@@ -6,5 +6,6 @@
+ .location-pin.normal { background: #0d6efd; }
+ .location-pin.medium { background: #ffc107; }
+ .location-pin.high { background: #dc3545; }
++.location-pin.stale { opacity: .65; border-style: dashed; }
+ .location-pin.selected { outline: 3px solid #172f47; }
+ .location-pin.has-reports::after { content: ''; position: absolute; right: -5px; top: -5px; width: 9px; height: 9px; border-radius: 50%; background: #d63384; border: 1px solid white; }
+diff --git a/assets/js/app.js b/assets/js/app.js
+index 054cf00..13bfb55 100644
+--- a/assets/js/app.js
++++ b/assets/js/app.js
+@@ -49,7 +49,7 @@
+         cell.className = 'text-muted';
+         body.appendChild(row);
+     }
+-    function renderRisk(rainfall, stale, alert) {
++    function renderRisk(rainfall, stale, alert, updateMarker = true) {
+         const values = rainfall || {};
+         const level = values.risk_level;
+         const badge = document.getElementById('risk-level');
+@@ -66,7 +66,9 @@
+         const alertBox = document.getElementById('active-alert');
+         alertBox.hidden = !(!stale && alert);
+         alertBox.textContent = !stale && alert ? `Prototype ${alert.risk_level.toUpperCase()} alert for this location.` : '';
+-        window.SmartSlopeMap?.updateRisk(selectedLocation?.location_id, level || null, stale);
++        if (updateMarker && selectedLocation?.location_id) {
++            window.SmartSlopeMap?.updateRisk(selectedLocation.location_id, level || null, stale);
++        }
+     }
+     function renderCurrent(rows, allLocations = false) {
+         currentBody.replaceChildren();
+@@ -303,7 +305,7 @@
+             download.removeAttribute('tabindex');
+         }
+         refreshButton.disabled = false;
+-        renderRisk(null,true,null);
++        renderRisk(null,true,null,false);
+         const autoRefresh = panel.dataset.skipInitialRefresh !== '1';
+         panel.dataset.skipInitialRefresh = '0';
+         loadStored(autoRefresh);
+diff --git a/assets/js/location-map.js b/assets/js/location-map.js
+index a4dfccd..f326ac0 100644
+--- a/assets/js/location-map.js
++++ b/assets/js/location-map.js
+@@ -38,6 +38,7 @@
+             .catch(() => { /* Markers remain available if the outline cannot load. */ });
+ 
+         const markers=new Map();
++        const markerNotes=new Map();
+         let selected=null;
+         let clickedMarker=null;
+         let clickedPlace=null;
+@@ -50,9 +51,9 @@
+             iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+         });
+         function icon(place, active) {
+-            const risk=place.stale ? '' : (['low','normal','medium','high'].includes(place.risk_level) ? place.risk_level : '');
++            const risk=['low','normal','medium','high'].includes(place.risk_level) ? place.risk_level : '';
+             const reports=Number(place.pending_count)>0 ? 'has-reports' : '';
+-            return L.divIcon({ className:'', html:`<span class="location-pin ${risk} ${reports} ${active ? 'selected' : ''}" aria-hidden="true"></span>`, iconSize:[25,25], iconAnchor:[12,12] });
++            return L.divIcon({ className:'', html:`<span class="location-pin ${risk} ${place.stale ? 'stale' : ''} ${reports} ${active ? 'selected' : ''}" aria-hidden="true"></span>`, iconSize:[25,25], iconAnchor:[12,12] });
+         }
+         function select(place) {
+             if (selected && markers.has(selected.location_id)) markers.get(selected.location_id).setIcon(icon(selected,false));
+@@ -60,7 +61,7 @@
+             markers.get(place.location_id).setIcon(icon(place,true));
+             document.dispatchEvent(new CustomEvent('smartslope:location-selected', { detail:{ location:place } }));
+         }
+-        valid.forEach((place) => {
++        function addMarker(place) {
+             place.location_id=Number(place.location_id);
+             const marker=L.marker([Number(place.latitude),Number(place.longitude)], {
+                 icon:icon(place,false), keyboard:true, title:place.location_name, bubblingMouseEvents:false
+@@ -70,11 +71,13 @@
+             const note=document.createElement('div');
+             note.textContent=(place.stale ? 'Risk unavailable or stale' : `Latest risk: ${place.risk_level || 'unavailable'}`)
+                 +(element.dataset.admin==='1' ? ` · ${Number(place.pending_count)||0} pending reports` : '');
++            markerNotes.set(place.location_id,note);
+             label.append(name,note);
+             marker.bindPopup(label);
+             marker.on('click', () => select(place));
+             markers.set(place.location_id,marker);
+-        });
++        }
++        valid.forEach(addMarker);
+         // Resolve and save the actual clicked coordinate on the server.
+         map.on('click', (event) => {
+             if (!clickedMarker) {
+@@ -102,12 +105,32 @@
+             if (selected && markers.has(selected.location_id)) markers.get(selected.location_id).setIcon(icon(selected,false));
+             selected=null;
+         }, registerLocation(place) {
+-            if (!valid.some(item => Number(item.location_id)===Number(place.location_id))) valid.push(place);
++            const id=Number(place.location_id);
++            let saved=valid.find(item=>item.location_id===id);
++            if (!saved) {
++                saved={...place,location_id:id,stale:true};
++                valid.push(saved);
++                addMarker(saved);
++                const emptyNote=document.getElementById('map-empty');
++                if (emptyNote) emptyNote.hidden=true;
++            }
++            if (clickedMarker) {
++                clickedMarker.remove();
++                clickedMarker=null;
++                clickedPlace=null;
++            }
++            if (selected && markers.has(selected.location_id)) markers.get(selected.location_id).setIcon(icon(selected,false));
++            selected=saved;
++            markers.get(id).setIcon(icon(saved,true));
+         }, updateRisk(locationId, risk, stale) {
+             const place=valid.find((item) => item.location_id===Number(locationId));
+             if (!place) return;
+             place.risk_level=risk; place.stale=stale;
+             markers.get(Number(place.location_id))?.setIcon(icon(place,selected===place));
++            const note=markerNotes.get(Number(place.location_id));
++            if (note) note.textContent=(stale ? `Latest risk: ${risk || 'unavailable'} (stale)`
++                : `Latest risk: ${risk || 'unavailable'}`)
++                +(element.dataset.admin==='1' ? ` · ${Number(place.pending_count)||0} pending reports` : '');
+         }};
+     });
+ })();
+diff --git a/db.sql b/db.sql
+index 0757137..dd7bf90 100644
+--- a/db.sql
++++ b/db.sql
+@@ -220,6 +220,8 @@ CREATE TABLE IF NOT EXISTS reports (
+     report_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+     location_id INT UNSIGNED NOT NULL,
+     reported_by_user_id INT UNSIGNED NULL,
++    contact_number VARCHAR(20) NOT NULL,
++    email VARCHAR(254) NULL,
+     house_landmark VARCHAR(255) NULL,
+     message VARCHAR(2000) NOT NULL,
+     status ENUM('pending', 'reviewed', 'resolved') NOT NULL DEFAULT 'pending',
+diff --git a/docs/SmartSlope_Progress2_Design.md b/docs/SmartSlope_Progress2_Design.md
+index 5c7710a..9899529 100644
+--- a/docs/SmartSlope_Progress2_Design.md
++++ b/docs/SmartSlope_Progress2_Design.md
+@@ -25,7 +25,7 @@ erDiagram
+ | weather_fetches | `fetch_id INT UNSIGNED`; sensor FK; nullable corrected location FK; fetched/observed timestamps | One saved snapshot for every successful map selection or Refresh, including the rainfall/risk values shown in the dashboard list. Admin Delete archives the snapshot. |
+ | readings | `reading_id INT UNSIGNED`; location FK, optional correcting admin FK; unique location/time/source | 1h/24h/72h stored rainfall totals and provisional risk; inactive summary rows preserved internally. |
+ | alerts | `alert_id INT UNSIGNED`; reading and location FKs; unique reading | Medium/high prototype indicator; synchronized after correction, no repeated alert for the same reading. |
+-| reports | `report_id INT UNSIGNED`; location/reporter/reviewer FKs | Resident text observations, pending/reviewed/resolved state. |
++| reports | `report_id INT UNSIGNED`; location/reporter/reviewer FKs; required submission phone and optional email snapshot | Resident text observations, contact for follow-up, pending/reviewed/resolved state. Existing rows may have NULL contact after migration. |
+ 
+ A current provider interval is different from an hourly precipitation row. The risk calculation sums 1, 24 and 72 **contiguous saved hourly values**; any missing period yields unavailable. An observation more than two hours old or more than ten minutes in the future is labeled stale. Times remain UTC in MySQL and PHT on screen. Baseline susceptibility is sourced separately and is not automatically combined with the rainfall score. A report is not sensor data.
+ 
+diff --git a/resident/report.php b/resident/report.php
+index 52ad3f6..511c6b0 100644
+--- a/resident/report.php
++++ b/resident/report.php
+@@ -9,6 +9,17 @@
+                 <input id="report-location-name" class="form-control" value="Select a marker on the map" readonly>
+                 <input type="hidden" id="report-location" name="location_id" value="">
+             </div>
++            <div class="mb-3">
++                <label class="form-label" for="report-contact-number">Contact number (required)</label>
++                <input type="tel" class="form-control" id="report-contact-number" name="contact_number"
++                       value="<?= e($_SESSION['contact_number'] ?? '') ?>" maxlength="20"
++                       inputmode="tel" pattern="\+?[0-9]{7,15}" autocomplete="tel" required>
++            </div>
++            <div class="mb-3">
++                <label class="form-label" for="report-email">Email (optional)</label>
++                <input type="email" class="form-control" id="report-email" name="email"
++                       maxlength="254" autocomplete="email">
++            </div>
+             <div class="form-floating mb-3">
+                 <input type="text" class="form-control" id="house-landmark" name="house_landmark"
+                        maxlength="255" placeholder="House number, landmark, or street">
+diff --git a/resident/submit_report.php b/resident/submit_report.php
+index 09f4836..514846e 100644
+--- a/resident/submit_report.php
++++ b/resident/submit_report.php
+@@ -16,13 +16,17 @@ if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
+ }
+ 
+ $locationId = filter_var($_POST['location_id'] ?? null, FILTER_VALIDATE_INT);
+-$houseLandmark = trim((string) ($_POST['house_landmark'] ?? ''));
+-$message = trim((string) ($_POST['message'] ?? ''));
++$contactNumber = trim(post_string('contact_number'));
++$email = strtolower(trim(post_string('email')));
++$houseLandmark = trim(post_string('house_landmark'));
++$message = trim(post_string('message'));
+ $messageLength = preg_match_all('/./us', $message, $matches);
++$validContact = preg_match('/\A\+?[0-9]{7,15}\z/', $contactNumber) === 1;
++$validEmail = $email === '' || (strlen($email) <= 254 && filter_var($email, FILTER_VALIDATE_EMAIL) !== false);
+ 
+ if (!$locationId || $message === '' || $messageLength === false || $messageLength > 2000
+-    || strlen($houseLandmark) > 255) {
+-    flash('report_error', 'Choose a location and enter a report of at most 2,000 characters.');
++    || strlen($houseLandmark) > 255 || !$validContact || !$validEmail) {
++    flash('report_error', 'Choose a location, enter a valid contact number (7–15 digits), and provide a report of at most 2,000 characters. If you enter an email, it must be valid.');
+     redirect_to('resident/index.php');
+ }
+ 
+@@ -30,6 +34,8 @@ try {
+     (new ReportRepository($pdo))->create(
+         (int) $locationId,
+         (int) $_SESSION['user_id'],
++        $contactNumber,
++        $email === '' ? null : $email,
+         $houseLandmark === '' ? null : $houseLandmark,
+         $message
+     );
+@@ -38,7 +44,10 @@ try {
+     flash('report_error', 'That location is not available. Please choose an active location.');
+ } catch (PDOException $exception) {
+     error_log('SmartSlope report submission failed: ' . $exception->getMessage());
+-    flash('report_error', 'The report could not be submitted. Please try again.');
++    $schemaMismatch = in_array((int)($exception->errorInfo[1] ?? 0), [1054, 1364], true);
++    flash('report_error', $schemaMismatch
++        ? 'The report database needs the contact fields migration. Please contact the administrator.'
++        : 'The report could not be submitted. Please try again.');
+ }
+ 
+-redirect_to('resident/index.php');
+\ No newline at end of file
++redirect_to('resident/index.php');
+diff --git a/sql/add_report_contacts.sql b/sql/add_report_contacts.sql
+new file mode 100644
+index 0000000..5a250ac
+--- /dev/null
++++ b/sql/add_report_contacts.sql
+@@ -0,0 +1,7 @@
++-- Existing smartslope_mvp databases: back up first and run this once.
++-- Existing reports remain readable; new submissions require a contact number.
++USE smartslope_mvp;
++
++ALTER TABLE reports
++    ADD COLUMN contact_number VARCHAR(20) NULL AFTER reported_by_user_id,
++    ADD COLUMN email VARCHAR(254) NULL AFTER contact_number;
+diff --git a/tests/map-interaction.test.cjs b/tests/map-interaction.test.cjs
+index 953b199..c1946ba 100644
+--- a/tests/map-interaction.test.cjs
++++ b/tests/map-interaction.test.cjs
+@@ -21,14 +21,15 @@ function mount(locations) {
+         tileLayer(){return {addTo(){return this;},on(){}};},geoJSON(){return {addTo(){}};},
+         divIcon(value){return value;},icon(value){return value;},
+         marker(position,options){let m={position,options,events:{},addTo(){markers.push(this);return this;},
+-            setLatLng(value){this.position=value;},setIcon(){},bindPopup(){},openPopup(){},
++            setLatLng(value){this.position=value;},setIcon(value){this.options.icon=value;},remove(){this.removed=true;},bindPopup(){},openPopup(){},
+             on(name,fn){this.events[name]=fn;}};return m;}};
+     let ready;
++    const window={};
+     vm.runInNewContext(code,{document:{addEventListener(name,fn){if(name==='DOMContentLoaded')ready=fn;},getElementById:id=>elements[id]||null,
+         createElement(){return {textContent:'',append(){}};},dispatchEvent:e=>selected.push(e.detail)},
+-        window:{},CustomEvent:class {constructor(name,options){this.detail=options.detail;}},
++        window,CustomEvent:class {constructor(name,options){this.detail=options.detail;}},
+         L,fetch:async()=>({ok:true,json:async()=>({features:[]})}),Map,Number,console});
+-    ready(); return {events,selected,markers,elements};
++    ready(); return {events,selected,markers,elements,mapApi:window.SmartSlopeMap};
+ }
+ test('map sends the clicked coordinates even when there are no registered locations',()=>{
+     const {events,selected,markers}=mount([]);
+@@ -48,3 +49,25 @@ test('click coordinates are not replaced by the nearest pre-existing location',(
+     assert.equal(selected.at(-1).longitude,120.559);
+     assert.equal(selected.at(-1).location,undefined);
+ });
++test('saved markers use risk colors and a clicked point becomes a saved marker',()=>{
++    const {events,markers,mapApi}=mount([{location_id:1,latitude:16.421,longitude:120.559,
++        location_name:'Existing',risk_level:'low',stale:false}]);
++    assert.match(markers[0].options.icon.html,/location-pin low/);
++    for (const level of ['normal','medium','high']) {
++        mapApi.updateRisk(1,level,false);
++        assert.match(markers[0].options.icon.html,new RegExp(`location-pin ${level}`));
++    }
++    events.click({latlng:{lat:16.422,lng:120.560}});
++    const temporary=markers[1];
++    mapApi.registerLocation({location_id:2,latitude:16.422,longitude:120.560,location_name:'New point'});
++    assert.equal(temporary.removed,true);
++    assert.equal(markers.length,3);
++    mapApi.updateRisk(2,'high',false);
++    assert.match(markers[2].options.icon.html,/location-pin high/);
++    mapApi.updateRisk(2,'low',true);
++    assert.match(markers[2].options.icon.html,/location-pin low stale/);
++    const css=fs.readFileSync(path.join(root,'assets/css/location-map.css'),'utf8');
++    for (const [level,color] of [['low','#198754'],['normal','#0d6efd'],['medium','#ffc107'],['high','#dc3545']]) {
++        assert.match(css,new RegExp(`\\.location-pin\\.${level} \\{ background: ${color.replace('#','\\#')}; \\}`));
++    }
++});
+diff --git a/tests/repositories.php b/tests/repositories.php
+index 0ec48e3..61fb36f 100644
+--- a/tests/repositories.php
++++ b/tests/repositories.php
+@@ -16,7 +16,7 @@ INSERT INTO barangays VALUES(1,'Barangay Irisan','Baguio City',1);
+ CREATE TABLE users(user_id INTEGER PRIMARY KEY,full_name TEXT,username TEXT UNIQUE,email TEXT UNIQUE,contact_number TEXT UNIQUE,password_hash TEXT,role TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+ CREATE TABLE locations(location_id INTEGER PRIMARY KEY,barangay_id INTEGER REFERENCES barangays,location_name TEXT,purok_zone TEXT,landmark TEXT,latitude REAL,longitude REAL,susceptibility_class TEXT,hazard_source_name TEXT,hazard_source_url TEXT,hazard_source_date TEXT,is_active INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT);
+ CREATE TABLE readings(reading_id INTEGER PRIMARY KEY,location_id INTEGER REFERENCES locations,rainfall_1h_mm REAL,rainfall_24h_mm REAL,rainfall_72h_mm REAL,risk_level TEXT,source_name TEXT,source_url TEXT,observed_at TEXT,recorded_by_user_id INTEGER,is_archived INTEGER DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+-CREATE TABLE reports(report_id INTEGER PRIMARY KEY,location_id INTEGER REFERENCES locations,reported_by_user_id INTEGER,house_landmark TEXT,message TEXT,status TEXT DEFAULT 'pending',reviewed_by_user_id INTEGER,reviewed_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);");
++CREATE TABLE reports(report_id INTEGER PRIMARY KEY,location_id INTEGER REFERENCES locations,reported_by_user_id INTEGER,contact_number TEXT NOT NULL,email TEXT,house_landmark TEXT,message TEXT,status TEXT DEFAULT 'pending',reviewed_by_user_id INTEGER,reviewed_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);");
+ $users=new UserRepository($pdo);
+ $users->create('Resident','resident','resident@example.test','+639171234567','example-password');
+ $user=$users->authenticate('resident','example-password');
+@@ -32,13 +32,18 @@ $locations->create($location);
+ $id=(int)$pdo->lastInsertId();
+ check(count($locations->activeForStudyArea())===1,'location created');
+ $reports=new ReportRepository($pdo);
+-$reports->create($id,(int)$user['user_id'],null,'TEST ONLY');
++$reports->create($id,(int)$user['user_id'],'+639171234567',null,null,'TEST ONLY');
+ check(count($reports->adminQueue('pending'))===1,'resident report review queue');
+-check($reports->adminQueue('pending')[0]['reporter_email']==='resident@example.test','admin sees reporter email');
++check($reports->adminQueue('pending')[0]['reporter_email']===null,'optional report email remains empty');
++check($reports->adminQueue('pending')[0]['reporter_contact_number']==='+639171234567','admin sees report contact number');
+ check($reports->pendingCountsByLocation()[$id]===1,'admin map counts pending reports');
+ $reportId=(int)$reports->adminQueue()[0]['report_id'];
+ check($reports->delete($reportId),'admin report deletion');
+ check($reports->adminQueue()===[] && $reports->pendingCountsByLocation()===[],'deleted reports absent from queue and map count');
++$reports->create($id,(int)$user['user_id'],'+639181234567','contact@example.test',null,'SECOND REPORT');
++check($reports->adminQueue()[0]['reporter_email']==='contact@example.test'
++    && $reports->adminQueue()[0]['reporter_contact_number']==='+639181234567',
++    'admin sees the supplied report contacts instead of account values');
+ $locations->setActive($id,false);
+ check($locations->activeForStudyArea()===[] && $reports->activeLocations()===[],'archived location excluded');
+ foreach ([[0,0,0,'low'],[10,0,0,'normal'],[0,50,0,'medium'],[0,0,150,'high']] as [$a,$b,$c,$level]) {

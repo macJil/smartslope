@@ -220,6 +220,8 @@ CREATE TABLE IF NOT EXISTS reports (
     report_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     location_id INT UNSIGNED NOT NULL,
     reported_by_user_id INT UNSIGNED NULL,
+    contact_number VARCHAR(20) NOT NULL,
+    email VARCHAR(254) NULL,
     house_landmark VARCHAR(255) NULL,
     message VARCHAR(2000) NOT NULL,
     status ENUM('pending', 'reviewed', 'resolved') NOT NULL DEFAULT 'pending',

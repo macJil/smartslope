@@ -38,6 +38,7 @@
             .catch(() => { /* Markers remain available if the outline cannot load. */ });
 
         const markers=new Map();
+        const markerNotes=new Map();
         let selected=null;
         let clickedMarker=null;
         let clickedPlace=null;
@@ -50,9 +51,9 @@
             iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
         });
         function icon(place, active) {
-            const risk=place.stale ? '' : (['low','normal','medium','high'].includes(place.risk_level) ? place.risk_level : '');
+            const risk=['low','normal','medium','high'].includes(place.risk_level) ? place.risk_level : '';
             const reports=Number(place.pending_count)>0 ? 'has-reports' : '';
-            return L.divIcon({ className:'', html:`<span class="location-pin ${risk} ${reports} ${active ? 'selected' : ''}" aria-hidden="true"></span>`, iconSize:[25,25], iconAnchor:[12,12] });
+            return L.divIcon({ className:'', html:`<span class="location-pin ${risk} ${place.stale ? 'stale' : ''} ${reports} ${active ? 'selected' : ''}" aria-hidden="true"></span>`, iconSize:[25,25], iconAnchor:[12,12] });
         }
         function select(place) {
             if (selected && markers.has(selected.location_id)) markers.get(selected.location_id).setIcon(icon(selected,false));
@@ -60,7 +61,7 @@
             markers.get(place.location_id).setIcon(icon(place,true));
             document.dispatchEvent(new CustomEvent('smartslope:location-selected', { detail:{ location:place } }));
         }
-        valid.forEach((place) => {
+        function addMarker(place) {
             place.location_id=Number(place.location_id);
             const marker=L.marker([Number(place.latitude),Number(place.longitude)], {
                 icon:icon(place,false), keyboard:true, title:place.location_name, bubblingMouseEvents:false
@@ -70,11 +71,13 @@
             const note=document.createElement('div');
             note.textContent=(place.stale ? 'Risk unavailable or stale' : `Latest risk: ${place.risk_level || 'unavailable'}`)
                 +(element.dataset.admin==='1' ? ` · ${Number(place.pending_count)||0} pending reports` : '');
+            markerNotes.set(place.location_id,note);
             label.append(name,note);
             marker.bindPopup(label);
             marker.on('click', () => select(place));
             markers.set(place.location_id,marker);
-        });
+        }
+        valid.forEach(addMarker);
         // Resolve and save the actual clicked coordinate on the server.
         map.on('click', (event) => {
             if (!clickedMarker) {
@@ -102,12 +105,32 @@
             if (selected && markers.has(selected.location_id)) markers.get(selected.location_id).setIcon(icon(selected,false));
             selected=null;
         }, registerLocation(place) {
-            if (!valid.some(item => Number(item.location_id)===Number(place.location_id))) valid.push(place);
+            const id=Number(place.location_id);
+            let saved=valid.find(item=>item.location_id===id);
+            if (!saved) {
+                saved={...place,location_id:id,stale:true};
+                valid.push(saved);
+                addMarker(saved);
+                const emptyNote=document.getElementById('map-empty');
+                if (emptyNote) emptyNote.hidden=true;
+            }
+            if (clickedMarker) {
+                clickedMarker.remove();
+                clickedMarker=null;
+                clickedPlace=null;
+            }
+            if (selected && markers.has(selected.location_id)) markers.get(selected.location_id).setIcon(icon(selected,false));
+            selected=saved;
+            markers.get(id).setIcon(icon(saved,true));
         }, updateRisk(locationId, risk, stale) {
             const place=valid.find((item) => item.location_id===Number(locationId));
             if (!place) return;
             place.risk_level=risk; place.stale=stale;
             markers.get(Number(place.location_id))?.setIcon(icon(place,selected===place));
+            const note=markerNotes.get(Number(place.location_id));
+            if (note) note.textContent=(stale ? `Latest risk: ${risk || 'unavailable'} (stale)`
+                : `Latest risk: ${risk || 'unavailable'}`)
+                +(element.dataset.admin==='1' ? ` · ${Number(place.pending_count)||0} pending reports` : '');
         }};
     });
 })();

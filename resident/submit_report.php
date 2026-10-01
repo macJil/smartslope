@@ -16,13 +16,17 @@ if (!csrf_is_valid($_POST['csrf_token'] ?? null)) {
 }
 
 $locationId = filter_var($_POST['location_id'] ?? null, FILTER_VALIDATE_INT);
-$houseLandmark = trim((string) ($_POST['house_landmark'] ?? ''));
-$message = trim((string) ($_POST['message'] ?? ''));
+$contactNumber = trim(post_string('contact_number'));
+$email = strtolower(trim(post_string('email')));
+$houseLandmark = trim(post_string('house_landmark'));
+$message = trim(post_string('message'));
 $messageLength = preg_match_all('/./us', $message, $matches);
+$validContact = preg_match('/\A\+?[0-9]{7,15}\z/', $contactNumber) === 1;
+$validEmail = $email === '' || (strlen($email) <= 254 && filter_var($email, FILTER_VALIDATE_EMAIL) !== false);
 
 if (!$locationId || $message === '' || $messageLength === false || $messageLength > 2000
-    || strlen($houseLandmark) > 255) {
-    flash('report_error', 'Choose a location and enter a report of at most 2,000 characters.');
+    || strlen($houseLandmark) > 255 || !$validContact || !$validEmail) {
+    flash('report_error', 'Choose a location, enter a valid contact number (7–15 digits), and provide a report of at most 2,000 characters. If you enter an email, it must be valid.');
     redirect_to('resident/index.php');
 }
 
@@ -30,6 +34,8 @@ try {
     (new ReportRepository($pdo))->create(
         (int) $locationId,
         (int) $_SESSION['user_id'],
+        $contactNumber,
+        $email === '' ? null : $email,
         $houseLandmark === '' ? null : $houseLandmark,
         $message
     );
@@ -38,7 +44,10 @@ try {
     flash('report_error', 'That location is not available. Please choose an active location.');
 } catch (PDOException $exception) {
     error_log('SmartSlope report submission failed: ' . $exception->getMessage());
-    flash('report_error', 'The report could not be submitted. Please try again.');
+    $schemaMismatch = in_array((int)($exception->errorInfo[1] ?? 0), [1054, 1364], true);
+    flash('report_error', $schemaMismatch
+        ? 'The report database needs the contact fields migration. Please contact the administrator.'
+        : 'The report could not be submitted. Please try again.');
 }
 
 redirect_to('resident/index.php');

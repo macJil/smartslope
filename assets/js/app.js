@@ -49,7 +49,7 @@
         cell.className = 'text-muted';
         body.appendChild(row);
     }
-    function renderRisk(rainfall, stale, alert) {
+    function renderRisk(rainfall, stale, alert, updateMarker = true) {
         const values = rainfall || {};
         const level = values.risk_level;
         const badge = document.getElementById('risk-level');
@@ -66,7 +66,9 @@
         const alertBox = document.getElementById('active-alert');
         alertBox.hidden = !(!stale && alert);
         alertBox.textContent = !stale && alert ? `Prototype ${alert.risk_level.toUpperCase()} alert for this location.` : '';
-        window.SmartSlopeMap?.updateRisk(selectedLocation?.location_id, level || null, stale);
+        if (updateMarker && selectedLocation?.location_id) {
+            window.SmartSlopeMap?.updateRisk(selectedLocation.location_id, level || null, stale);
+        }
     }
     function renderCurrent(rows, allLocations = false) {
         currentBody.replaceChildren();
@@ -303,7 +305,7 @@
             download.removeAttribute('tabindex');
         }
         refreshButton.disabled = false;
-        renderRisk(null,true,null);
+        renderRisk(null,true,null,false);
         const autoRefresh = panel.dataset.skipInitialRefresh !== '1';
         panel.dataset.skipInitialRefresh = '0';
         loadStored(autoRefresh);

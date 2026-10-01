@@ -25,7 +25,7 @@ erDiagram
 | weather_fetches | `fetch_id INT UNSIGNED`; sensor FK; nullable corrected location FK; fetched/observed timestamps | One saved snapshot for every successful map selection or Refresh, including the rainfall/risk values shown in the dashboard list. Admin Delete archives the snapshot. |
 | readings | `reading_id INT UNSIGNED`; location FK, optional correcting admin FK; unique location/time/source | 1h/24h/72h stored rainfall totals and provisional risk; inactive summary rows preserved internally. |
 | alerts | `alert_id INT UNSIGNED`; reading and location FKs; unique reading | Medium/high prototype indicator; synchronized after correction, no repeated alert for the same reading. |
-| reports | `report_id INT UNSIGNED`; location/reporter/reviewer FKs | Resident text observations, pending/reviewed/resolved state. |
+| reports | `report_id INT UNSIGNED`; location/reporter/reviewer FKs; required submission phone and optional email snapshot | Resident text observations, contact for follow-up, pending/reviewed/resolved state. Existing rows may have NULL contact after migration. |
 
 A current provider interval is different from an hourly precipitation row. The risk calculation sums 1, 24 and 72 **contiguous saved hourly values**; any missing period yields unavailable. An observation more than two hours old or more than ten minutes in the future is labeled stale. Times remain UTC in MySQL and PHT on screen. Baseline susceptibility is sourced separately and is not automatically combined with the rainfall score. A report is not sensor data.
 

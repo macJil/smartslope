@@ -21,14 +21,15 @@ function mount(locations) {
         tileLayer(){return {addTo(){return this;},on(){}};},geoJSON(){return {addTo(){}};},
         divIcon(value){return value;},icon(value){return value;},
         marker(position,options){let m={position,options,events:{},addTo(){markers.push(this);return this;},
-            setLatLng(value){this.position=value;},setIcon(){},bindPopup(){},openPopup(){},
+            setLatLng(value){this.position=value;},setIcon(value){this.options.icon=value;},remove(){this.removed=true;},bindPopup(){},openPopup(){},
             on(name,fn){this.events[name]=fn;}};return m;}};
     let ready;
+    const window={};
     vm.runInNewContext(code,{document:{addEventListener(name,fn){if(name==='DOMContentLoaded')ready=fn;},getElementById:id=>elements[id]||null,
         createElement(){return {textContent:'',append(){}};},dispatchEvent:e=>selected.push(e.detail)},
-        window:{},CustomEvent:class {constructor(name,options){this.detail=options.detail;}},
+        window,CustomEvent:class {constructor(name,options){this.detail=options.detail;}},
         L,fetch:async()=>({ok:true,json:async()=>({features:[]})}),Map,Number,console});
-    ready(); return {events,selected,markers,elements};
+    ready(); return {events,selected,markers,elements,mapApi:window.SmartSlopeMap};
 }
 test('map sends the clicked coordinates even when there are no registered locations',()=>{
     const {events,selected,markers}=mount([]);
@@ -47,4 +48,26 @@ test('click coordinates are not replaced by the nearest pre-existing location',(
     events.click({latlng:{lat:16.422,lng:120.559}});
     assert.equal(selected.at(-1).longitude,120.559);
     assert.equal(selected.at(-1).location,undefined);
+});
+test('saved markers use risk colors and a clicked point becomes a saved marker',()=>{
+    const {events,markers,mapApi}=mount([{location_id:1,latitude:16.421,longitude:120.559,
+        location_name:'Existing',risk_level:'low',stale:false}]);
+    assert.match(markers[0].options.icon.html,/location-pin low/);
+    for (const level of ['normal','medium','high']) {
+        mapApi.updateRisk(1,level,false);
+        assert.match(markers[0].options.icon.html,new RegExp(`location-pin ${level}`));
+    }
+    events.click({latlng:{lat:16.422,lng:120.560}});
+    const temporary=markers[1];
+    mapApi.registerLocation({location_id:2,latitude:16.422,longitude:120.560,location_name:'New point'});
+    assert.equal(temporary.removed,true);
+    assert.equal(markers.length,3);
+    mapApi.updateRisk(2,'high',false);
+    assert.match(markers[2].options.icon.html,/location-pin high/);
+    mapApi.updateRisk(2,'low',true);
+    assert.match(markers[2].options.icon.html,/location-pin low stale/);
+    const css=fs.readFileSync(path.join(root,'assets/css/location-map.css'),'utf8');
+    for (const [level,color] of [['low','#198754'],['normal','#0d6efd'],['medium','#ffc107'],['high','#dc3545']]) {
+        assert.match(css,new RegExp(`\\.location-pin\\.${level} \\{ background: ${color.replace('#','\\#')}; \\}`));
+    }
 });

@@ -9,6 +9,17 @@
                 <input id="report-location-name" class="form-control" value="Select a marker on the map" readonly>
                 <input type="hidden" id="report-location" name="location_id" value="">
             </div>
+            <div class="mb-3">
+                <label class="form-label" for="report-contact-number">Contact number (required)</label>
+                <input type="tel" class="form-control" id="report-contact-number" name="contact_number"
+                       value="<?= e($_SESSION['contact_number'] ?? '') ?>" maxlength="20"
+                       inputmode="tel" pattern="\+?[0-9]{7,15}" autocomplete="tel" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="report-email">Email (optional)</label>
+                <input type="email" class="form-control" id="report-email" name="email"
+                       maxlength="254" autocomplete="email">
+            </div>
             <div class="form-floating mb-3">
                 <input type="text" class="form-control" id="house-landmark" name="house_landmark"
                        maxlength="255" placeholder="House number, landmark, or street">
