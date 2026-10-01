@@ -9,11 +9,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register'])) {
         redirect_to('configs/register.php');
     }
 
-    $fullName = trim((string) ($_POST['full_name'] ?? ''));
-    $username = trim((string) ($_POST['username'] ?? ''));
-    $email = strtolower(trim((string) ($_POST['email'] ?? '')));
-    $contactNumber = trim((string) ($_POST['contact_number'] ?? ''));
-    $password = (string) ($_POST['password'] ?? '');
+    $fullName = trim(post_string('full_name'));
+    $username = trim(post_string('username'));
+    $email = strtolower(trim(post_string('email')));
+    $contactNumber = trim(post_string('contact_number'));
+    $password = post_string('password');
 
     // Count Unicode characters for names while keeping usernames ASCII and predictable.
     $fullNameLength = preg_match_all('/./us', $fullName);
@@ -33,16 +33,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register'])) {
 
 
     try {
-        (new UserRepository($pdo))->create($fullName, $username, $email, $contactNumber, $password);
+        $users = new UserRepository($pdo);
+        $duplicates = $users->duplicateFields($username, $email, $contactNumber);
+        if ($duplicates) {
+            flash('register_error', 'Already registered: ' . implode(', ', array_map(
+                static fn($field) => str_replace('_', ' ', $field), $duplicates)) . '. Use different account details.');
+            redirect_to('configs/register.php');
+        }
+        $users->create($fullName, $username, $email, $contactNumber, $password);
         flash('register_success', 'Account created. You can now sign in.');
         redirect_to('configs/register.php');
     } catch (PDOException $exception) {
-        if ($exception->getCode() === '23000') {
-            flash('register_error', 'That username, email, or contact number is already registered.');
+        error_log('SmartSlope registration failed: ' . $exception->getMessage());
+        // MySQL 1062 alone means duplicate key; 23000 includes other constraints.
+        $driverCode = (int) ($exception->errorInfo[1] ?? 0);
+        if ($driverCode === 1062) {
+            $duplicates = (new UserRepository($pdo))->duplicateFields($username, $email, $contactNumber);
+            flash('register_error', $duplicates
+                ? 'Already registered: ' . implode(', ', array_map(static fn($field) => str_replace('_', ' ', $field), $duplicates)) . '.'
+                : 'The account database has an ID or index conflict. Ask the administrator to check the registration error log.');
             redirect_to('configs/register.php');
         }
-        error_log('SmartSlope registration failed: ' . $exception->getMessage());
-        $schemaMismatch = in_array((int) ($exception->errorInfo[1] ?? 0), [1054, 1364], true);
+        $schemaMismatch = in_array($driverCode, [1054, 1364, 1048, 3819, 4025, 1452], true);
         flash('register_error', $schemaMismatch
             ? 'The account database needs its email and contact columns updated. Ask the administrator to check the SmartSlope migration instructions.'
             : 'The account could not be created. Please try again.');

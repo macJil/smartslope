@@ -22,6 +22,21 @@ foreach ($mapLocations as $place) {
 <section class="card" aria-labelledby="map-heading">
     <div class="card-header"><h2 class="h5 mb-0" id="map-heading">Barangay Irisan location map</h2></div>
     <div class="card-body">
+        <?php if ($mapIsAdmin): ?>
+            <?php if ($notice = flash('map_message')): ?><p class="alert alert-info" role="status"><?= e($notice) ?></p><?php endif; ?>
+            <form action="<?= e(app_url('admin/remove_location.php')) ?>" method="post" class="d-flex flex-wrap gap-2 mb-3">
+                <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                <label for="remove-map-location" class="align-self-center">Saved map point</label>
+                <select id="remove-map-location" name="location_id" class="form-select w-auto" required>
+                    <option value="">Choose a saved point</option>
+                    <?php foreach ($mapLocations as $savedPoint): ?>
+                        <option value="<?= (int)$savedPoint['location_id'] ?>"><?= e($savedPoint['location_name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <button class="btn btn-outline-danger" type="submit">Remove from map</button>
+            </form>
+            <p class="small text-muted">Removing a point hides its marker and retains its saved readings and reports. Clicking the same coordinates again reactivates it.</p>
+        <?php endif; ?>
         <p class="small text-muted">Click inside the Irisan outline to save and load weather for that coordinate. The blue pin marks the point used for the weather request. The outline is a reference boundary, not a hazard classification.</p>
         <div id="location-map" class="smartslope-map" role="region" aria-label="Select a monitored location on the Irisan map"
              data-boundary-url="<?= e(app_url('assets/map/irisan.geojson')) ?>"

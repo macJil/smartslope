@@ -22,6 +22,9 @@ $users->create('Resident','resident','resident@example.test','+639171234567','ex
 $user=$users->authenticate('resident','example-password');
 check($user!==null && $user['email']==='resident@example.test' && $user['contact_number']==='+639171234567' && $user['role']==='user','email and phone registration hashes and assigns resident');
 check($users->authenticate('resident','wrong')===null,'bad password rejected');
+check($users->duplicateFields('fresh','fresh@example.test','+639199999999')===[],'unused identities accepted');
+check($users->duplicateFields('resident','fresh@example.test','+639199999999')===['username'],'actual username conflict identified');
+check($users->duplicateFields('fresh','resident@example.test','+639199999999')===['email'],'actual email conflict identified');
 $locations=new LocationRepository($pdo);
 $location=['location_name'=>'TEST','purok_zone'=>null,'landmark'=>null,'latitude'=>16.4,'longitude'=>120.5,
     'susceptibility_class'=>'unknown','hazard_source_name'=>null,'hazard_source_url'=>null,'hazard_source_date'=>null];
@@ -33,6 +36,9 @@ $reports->create($id,(int)$user['user_id'],null,'TEST ONLY');
 check(count($reports->adminQueue('pending'))===1,'resident report review queue');
 check($reports->adminQueue('pending')[0]['reporter_email']==='resident@example.test','admin sees reporter email');
 check($reports->pendingCountsByLocation()[$id]===1,'admin map counts pending reports');
+$reportId=(int)$reports->adminQueue()[0]['report_id'];
+check($reports->delete($reportId),'admin report deletion');
+check($reports->adminQueue()===[] && $reports->pendingCountsByLocation()===[],'deleted reports absent from queue and map count');
 $locations->setActive($id,false);
 check($locations->activeForStudyArea()===[] && $reports->activeLocations()===[],'archived location excluded');
 foreach ([[0,0,0,'low'],[10,0,0,'normal'],[0,50,0,'medium'],[0,0,150,'high']] as [$a,$b,$c,$level]) {

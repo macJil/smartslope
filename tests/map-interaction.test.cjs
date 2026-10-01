@@ -43,6 +43,7 @@ test('map sends the clicked coordinates even when there are no registered locati
 });
 test('click coordinates are not replaced by the nearest pre-existing location',()=>{
     const {events,selected}=mount([{location_id:1,latitude:16.421,longitude:120.551,location_name:'Old',stale:true}]);
+    assert.equal(selected.length,0);
     events.click({latlng:{lat:16.422,lng:120.559}});
     assert.equal(selected.at(-1).longitude,120.559);
     assert.equal(selected.at(-1).location,undefined);

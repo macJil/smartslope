@@ -10,6 +10,12 @@
     const adminActions = document.getElementById('risk-reading-actions');
     const download = document.getElementById('readings-download');
     const retryButton = document.getElementById('weather-retry');
+    const showAllButton = document.getElementById('show-all-readings');
+    const locationChoices = new Map();
+    try {
+        JSON.parse(document.getElementById('map-locations-data')?.textContent || '[]')
+            .forEach(place => locationChoices.set(Number(place.location_id), place));
+    } catch { /* A selected point can still be added below. */ }
     let selectedLocation = null;
     let activeRequest = null;
     let requestVersion = 0;
@@ -62,15 +68,16 @@
         alertBox.textContent = !stale && alert ? `Prototype ${alert.risk_level.toUpperCase()} alert for this location.` : '';
         window.SmartSlopeMap?.updateRisk(selectedLocation?.location_id, level || null, stale);
     }
-    function renderCurrent(rows) {
+    function renderCurrent(rows, allLocations = false) {
         currentBody.replaceChildren();
         const saved = Array.isArray(rows) ? rows : [];
         document.getElementById('current-reading-summary').textContent = saved.length
-            ? `${saved.length} most recent saved reading logs for this location.`
-            : 'No reading logs have been saved for this location.';
-        if (!saved.length) return empty(currentBody, adminActions ? 10 : 9, 'No saved reading logs yet.');
+            ? `${saved.length} saved reading logs ${allLocations ? 'across Irisan' : 'for this location'}.`
+            : 'No saved reading logs in the database yet.';
+        if (!saved.length) return empty(currentBody, adminActions ? 11 : 10, 'No saved reading logs yet.');
         saved.forEach((item) => {
             const tr = document.createElement('tr');
+            addCell(tr, item.location_name || selectedLocation?.location_name || 'Irisan');
             addCell(tr, timeLabel(item.time));
             addCell(tr, present(item.temperature_2m) ? `${numeric(item.temperature_2m)} °C` : '—');
             addCell(tr, present(item.relative_humidity_2m) ? `${numeric(item.relative_humidity_2m,0)}%` : '—');
@@ -86,21 +93,33 @@
                 const summary = document.createElement('summary'); summary.textContent = 'Edit';
                 details.appendChild(summary);
                 const form = createForm(item, 'current_update');
-                for (const [field,label,source] of [
-                    ['temperature','Temperature (°C)','temperature_2m'],
-                    ['humidity','Humidity (%)','relative_humidity_2m'],
-                    ['precipitation','Precipitation (mm)','precipitation'],
-                    ['rain','Rain (mm)','rain'],['showers','Showers (mm)','showers'],
-                    ['wind','Wind (km/h)','wind_speed_10m'],['gusts','Gusts (km/h)','wind_gusts_10m']
-                ]) {
-                    const group = document.createElement('label'); group.className = 'd-block small mt-2';
-                    group.textContent = label;
-                    const input = document.createElement('input');
-                    input.type = 'number'; input.name = field; input.step = '0.01'; input.required = true;
-                    input.className = 'form-control form-control-sm'; input.value = item[source] ?? '';
-                    if (field !== 'temperature') input.min = '0';
-                    group.appendChild(input); form.appendChild(group);
-                }
+                const locationLabel = document.createElement('label');
+                locationLabel.className = 'd-block small mt-2'; locationLabel.textContent = 'Location';
+                const locationSelect = document.createElement('select');
+                locationSelect.name = 'target_location_id'; locationSelect.required = true;
+                locationSelect.className = 'form-select form-select-sm';
+                const choices = new Map(locationChoices);
+                const rowLocationId = Number(item.location_id ?? selectedLocation?.location_id);
+                if (!choices.has(rowLocationId)) choices.set(rowLocationId, {location_id:rowLocationId,
+                    location_name:item.location_name || selectedLocation?.location_name || 'Saved location'});
+                choices.forEach(place => {
+                    const option = document.createElement('option'); option.value = String(place.location_id);
+                    option.textContent = place.location_name;
+                    option.selected = Number(place.location_id) === rowLocationId;
+                    locationSelect.appendChild(option);
+                });
+                locationLabel.appendChild(locationSelect); form.appendChild(locationLabel);
+                const riskLabel = document.createElement('label');
+                riskLabel.className = 'd-block small mt-2'; riskLabel.textContent = 'Risk at fetch';
+                const riskSelect = document.createElement('select'); riskSelect.name = 'risk_level';
+                riskSelect.required = true; riskSelect.className = 'form-select form-select-sm';
+                ['', 'low','normal','medium','high'].forEach(level => {
+                    const option = document.createElement('option'); option.value = level;
+                    option.textContent = level ? level.toUpperCase() : 'Choose risk';
+                    option.selected = level === (item.risk_level || '');
+                    riskSelect.appendChild(option);
+                });
+                riskLabel.appendChild(riskSelect); form.appendChild(riskLabel);
                 const save = document.createElement('button'); save.type = 'submit';
                 save.className = 'btn btn-sm btn-primary mt-2'; save.textContent = 'Save';
                 form.appendChild(save); details.appendChild(form); actions.appendChild(details);
@@ -121,7 +140,7 @@
         const form = document.createElement('form');
         form.method = 'post'; form.action = adminActions.dataset.saveUrl;
         hidden(form, 'csrf_token', adminActions.dataset.csrfToken);
-        hidden(form, 'location_id', selectedLocation.location_id);
+        hidden(form, 'location_id', reading.location_id ?? selectedLocation?.location_id);
         hidden(form, action.startsWith('current_') ? 'observation_id' : 'reading_id',
             action.startsWith('current_') ? reading.observation_id : reading.reading_id);
         hidden(form, 'action', action);
@@ -149,25 +168,82 @@
             weather_provider_unavailable:'Open-Meteo is temporarily unavailable. Saved readings remain displayed.'})[code] ||
             'Could not load new weather data. Saved readings remain displayed.';
     }
+    async function fetchAllRows() {
+        const response = await fetch(panel.dataset.allReadingsUrl, {credentials:'same-origin'});
+        const payload = await response.json();
+        if (!response.ok || !Array.isArray(payload.data?.current_readings)) {
+            throw new Error(payload.error || 'database_unavailable');
+        }
+        return payload.data.current_readings;
+    }
+    async function showAllSaved() {
+        const version = ++requestVersion;
+        if (activeRequest) activeRequest.abort();
+        selectedLocation = null;
+        window.SmartSlopeMap?.clearSelection?.();
+        refreshButton.disabled = true;
+        if (retryButton) retryButton.hidden = true;
+        const report = document.getElementById('report-submit');
+        if (report) report.disabled = true;
+        if (download) {
+            download.href = download.dataset.downloadBaseUrl;
+            download.classList.remove('disabled');
+            download.setAttribute('aria-disabled','false'); download.removeAttribute('tabindex');
+        }
+        document.getElementById('selected-location-name').textContent = 'Select a point on the map for risk analysis.';
+        document.getElementById('weather-location-label').textContent = 'All saved Irisan locations';
+        document.getElementById('weather-refresh-time').textContent = 'Click a map point to fetch new weather for it.';
+        renderRisk(null,true,null);
+        status('Loading saved readings across Irisan…');
+        try {
+            const rows = await fetchAllRows();
+            if (version !== requestVersion) return;
+            renderCurrent(rows, true);
+            status(rows.length ? 'Saved readings loaded. Select a map point to see its risk.' : 'No saved readings in the database yet.');
+        } catch (error) {
+            if (version === requestVersion) status(errorMessage(error.message),true);
+        }
+    }
     async function loadStored(autoRefresh = true) {
         const version = ++requestVersion;
         const id = selectedLocation?.location_id;
         if (activeRequest) activeRequest.abort();
         if (!id) return;
+        let loaded = false;
         status('Loading saved readings…');
         try {
             const response = await fetch(`${panel.dataset.storedUrl}?location_id=${encodeURIComponent(id)}`, {credentials:'same-origin'});
             const payload = await response.json();
             if (version !== requestVersion) return;
             if (!response.ok || !payload.data) throw new Error(payload.error || 'invalid_response');
+            let fallbackRows = null;
+            if (!payload.data.current_readings?.length) {
+                fallbackRows = await fetchAllRows();
+                if (version !== requestVersion) return;
+            }
             showData(payload.data);
+            if (fallbackRows) {
+                renderCurrent(fallbackRows, true);
+                if (fallbackRows.length) document.getElementById('current-reading-summary').textContent =
+                    'No saved readings for this point yet. Showing saved readings across Irisan.';
+            }
+            loaded = true;
             status('Saved readings loaded. Requesting the latest provider data…');
         } catch (error) {
-            if (version === requestVersion) status(errorMessage(error.message), true);
+            if (version !== requestVersion) return;
+            status(errorMessage(error.message), true);
+            try {
+                const rows = await fetchAllRows();
+                if (version === requestVersion) {
+                    renderCurrent(rows, true);
+                    if (rows.length) document.getElementById('current-reading-summary').textContent =
+                        'Showing saved Irisan readings while the selected point loads.';
+                }
+            } catch { /* Keep any previously displayed rows and the error message. */ }
         }
         if (version === requestVersion && selectedLocation?.location_id === id) {
             if (autoRefresh) loadWeather();
-            else status('Saved readings loaded. Use Refresh to request Open-Meteo again.');
+            else if (loaded) status('Saved readings loaded. Use Refresh to request Open-Meteo again.');
         }
     }
     async function loadWeather() {
@@ -212,6 +288,7 @@
     }
     function selectLocation(location) {
         selectedLocation = location;
+        locationChoices.set(Number(location.location_id), location);
         document.getElementById('selected-location-name').textContent = selectedLocation.location_name;
         const reportId = document.getElementById('report-location');
         if (reportId) {
@@ -226,7 +303,6 @@
             download.removeAttribute('tabindex');
         }
         refreshButton.disabled = false;
-        empty(currentBody,adminActions ? 10 : 9,'Loading selected location…');
         renderRisk(null,true,null);
         const autoRefresh = panel.dataset.skipInitialRefresh !== '1';
         panel.dataset.skipInitialRefresh = '0';
@@ -241,8 +317,10 @@
         if (retryButton) retryButton.hidden = true;
         const report = document.getElementById('report-submit');
         if (report) report.disabled = true;
-        if (download) { download.removeAttribute('href'); download.classList.add('disabled'); }
-        empty(currentBody,adminActions ? 10 : 9,'Loading clicked point…');
+        if (download) {
+            download.href = download.dataset.downloadBaseUrl;
+            download.classList.remove('disabled');
+        }
         document.getElementById('selected-location-name').textContent = 'Resolving clicked point…';
         renderRisk(null,true,null);
         status('Resolving the clicked coordinates…');
@@ -270,5 +348,6 @@
     });
     refreshButton.addEventListener('click', loadWeather);
     if (retryButton) retryButton.addEventListener('click', loadWeather);
-    empty(currentBody,adminActions ? 10 : 9,'Select a map location to load readings.');
+    if (showAllButton) showAllButton.addEventListener('click', showAllSaved);
+    showAllSaved();
 })();

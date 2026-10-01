@@ -92,13 +92,16 @@
                 `Loading Irisan point ${event.latlng.lat.toFixed(5)}, ${event.latlng.lng.toFixed(5)}…`;
             document.dispatchEvent(new CustomEvent('smartslope:point-selected', {detail:clickedPlace}));
         });
-        if (valid.length) {
-            select(valid.find((place) => place.location_id===Number(element.dataset.defaultLocationId)) || valid[0]);
-        } else {
+        const defaultLocation=valid.find((place) => place.location_id===Number(element.dataset.defaultLocationId));
+        if (defaultLocation) select(defaultLocation);
+        if (!valid.length) {
             const note=document.getElementById('map-empty');
             if (note) note.hidden=false;
         }
-        window.SmartSlopeMap={registerLocation(place) {
+        window.SmartSlopeMap={clearSelection() {
+            if (selected && markers.has(selected.location_id)) markers.get(selected.location_id).setIcon(icon(selected,false));
+            selected=null;
+        }, registerLocation(place) {
             if (!valid.some(item => Number(item.location_id)===Number(place.location_id))) valid.push(place);
         }, updateRisk(locationId, risk, stale) {
             const place=valid.find((item) => item.location_id===Number(locationId));

@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS weather_observations (
 CREATE TABLE IF NOT EXISTS weather_fetches (
     fetch_id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     sensor_id INT UNSIGNED NOT NULL,
+    location_id INT UNSIGNED NULL, -- Optional admin-corrected log association.
     observed_at DATETIME NOT NULL,
     fetched_at DATETIME NOT NULL,
     interval_seconds SMALLINT UNSIGNED NULL,
@@ -205,6 +206,9 @@ CREATE TABLE IF NOT EXISTS weather_fetches (
     is_stale TINYINT(1) NOT NULL DEFAULT 0,
     is_archived TINYINT(1) NOT NULL DEFAULT 0,
     PRIMARY KEY (fetch_id),
+    KEY idx_fetch_location (location_id),
+    CONSTRAINT fk_fetch_display_location FOREIGN KEY (location_id) REFERENCES locations(location_id)
+        ON UPDATE CASCADE ON DELETE RESTRICT,
     KEY idx_fetch_sensor (sensor_id, fetched_at, fetch_id),
     CONSTRAINT fk_fetch_sensor FOREIGN KEY (sensor_id) REFERENCES sensors(sensor_id)
         ON UPDATE CASCADE ON DELETE RESTRICT

@@ -1,6 +1,7 @@
 <section class="card h-100 w-100">
     <div class="card-header"><h3 class="h5 mb-0">Resident reports</h3></div>
     <div class="card-body">
+        <a class="btn btn-outline-success mb-3" href="<?= e(app_url('admin/download_reports.php')) ?>">Download all reports CSV</a>
         <?php if ($message = flash('admin_report_message')): ?>
             <div class="alert alert-info" role="status"><?= e($message) ?></div>
         <?php endif; ?>
@@ -21,7 +22,7 @@
                 <thead>
                     <tr>
                         <th>Reporter</th><th>Location</th><th>Observation</th>
-                        <th>Status</th><th>Submitted</th><th>Update</th>
+                        <th>Status</th><th>Submitted</th><th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -54,6 +55,11 @@
                                 <?php else: ?>
                                     <?= $report['reviewed_at'] ? 'Reviewed ' . e(display_local_datetime($report['reviewed_at'])) : 'Resolved' ?>
                                 <?php endif; ?>
+                                <form action="<?= e(app_url('admin/delete_report.php')) ?>" method="post" class="mt-2">
+                                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                                    <input type="hidden" name="report_id" value="<?= (int)$report['report_id'] ?>">
+                                    <button class="btn btn-sm btn-outline-danger" type="submit">Delete report</button>
+                                </form>
                             </td>
                         </tr>
                     <?php endforeach; ?>

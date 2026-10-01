@@ -5,6 +5,15 @@ final class UserRepository
 {
     public function __construct(private PDO $pdo) {}
 
+    /** Return only the supplied identity fields that already exist. */
+    public function duplicateFields(string $username, string $email, string $contactNumber): array
+    {
+        $query = $this->pdo->prepare('SELECT MAX(username = :username) AS username,
+            MAX(email = :email) AS email, MAX(contact_number = :phone) AS contact_number FROM users');
+        $query->execute(['username'=>$username, 'email'=>$email, 'phone'=>$contactNumber]);
+        return array_keys(array_filter($query->fetch(), static fn($value) => (int)$value === 1));
+    }
+
     public function authenticate(string $username, string $password): ?array
     {
         $query = $this->pdo->prepare(

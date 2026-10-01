@@ -4,20 +4,25 @@ declare(strict_types=1);
 require_once __DIR__ . '/../app/bootstrap.php';
 require_admin();
 
-$locationId = filter_var($_GET['location_id'] ?? null, FILTER_VALIDATE_INT);
-if (!$locationId || $locationId < 1) {
+$allLocations = !isset($_GET['location_id']);
+$locationId = $allLocations ? null : filter_var($_GET['location_id'], FILTER_VALIDATE_INT);
+if (!$allLocations && (!$locationId || $locationId < 1)) {
     http_response_code(400);
-    exit('Select a map location first.');
+    exit('Invalid location.');
 }
-$location = (new LocationRepository($pdo))->find((int)$locationId);
-if (!$location || !(int)$location['is_active']) {
-    http_response_code(404);
-    exit('Location unavailable.');
+if (!$allLocations) {
+    $location = (new LocationRepository($pdo))->find((int)$locationId);
+    if (!$location || !(int)$location['is_active']) {
+        http_response_code(404);
+        exit('Location unavailable.');
+    }
 }
-$readings = (new ReadingRepository($pdo))->currentForLocation((int)$locationId, null);
+$repository = new ReadingRepository($pdo);
+$readings = $allLocations ? $repository->allCurrentForStudyArea()
+    : $repository->currentForLocation((int)$locationId, null);
 
 header('Content-Type: text/csv; charset=utf-8');
-header('Content-Disposition: attachment; filename="smartslope-location-' . (int)$locationId . '-reading-log-' . date('Y-m-d') . '.csv"');
+header('Content-Disposition: attachment; filename="smartslope-' . ($allLocations ? 'all-locations' : 'location-' . (int)$locationId) . '-reading-log-' . date('Y-m-d') . '.csv"');
 header('Cache-Control: no-store, max-age=0');
 
 $output = fopen('php://output', 'wb');

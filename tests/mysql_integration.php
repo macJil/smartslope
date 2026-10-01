@@ -15,10 +15,12 @@ try {
     $barangay=$pdo->query("SELECT barangay_id FROM barangays WHERE barangay_name='Barangay Irisan'
         AND city_name='Baguio City' LIMIT 1")->fetchColumn();
     verify($barangay!==false,'study barangay seeded');
+    $startingLogs = count((new ReadingRepository($pdo))->allCurrentForStudyArea());
     $mapLocations = new LocationRepository($pdo);
     $point = $mapLocations->forMapPoint(16.421,120.5595);
     $same = $mapLocations->forMapPoint(16.421,120.5595);
     verify($point['location_id']===$same['location_id'],'same clicked point reuses its ID');
+    verify(array_key_exists('hazard_source_name',$mapLocations->activeForStudyArea()[0]),'public overview includes optional source field');
     verify((float)$point['latitude']===16.421 && (float)$point['longitude']===120.5595,'clicked coordinates retained');
     $outside=false;
     try { $mapLocations->forMapPoint(0,0); } catch (InvalidArgumentException $exception) { $outside=true; }
@@ -56,16 +58,26 @@ try {
     $repo->appendFetch($sensorId,$current,$fetched,[$one,$day,$three],$saved['risk_level'],false);
     $repo->appendFetch($sensorId,$current,$fetched,[$one,$day,$three],$saved['risk_level'],false);
     $logs=$repo->currentForLocation($locationId);
+    $allLogs=$repo->allCurrentForStudyArea();
+    verify(count($allLogs)===$startingLogs+2 && (int)$allLogs[0]['location_id']===$locationId,'initial dashboard sees stored readings with their location');
     verify(count($logs)===2,'two successful fetches with identical provider time create two log entries');
     verify($logs[0]['risk_level']==='high','risk snapshot saved in the list');
     verify((int)$logs[0]['observation_id']>(int)$logs[1]['observation_id'],'latest log displayed first');
     $logId=(int)$logs[0]['observation_id'];
     verify(!$repo->hasCurrent((int)$point['location_id'],$logId),'log edits scoped to selected location');
-    verify($repo->updateCurrent($locationId,$logId,['temperature'=>21,'humidity'=>70,'precipitation'=>1,
-        'rain'=>1,'showers'=>0,'wind'=>5,'gusts'=>8]),'admin log update');
-    verify((float)$repo->currentForLocation($locationId)[0]['temperature_2m']===21.0,'updated log visible');
-    verify($repo->deleteCurrent($locationId,$logId),'admin log removed');
-    verify(count($repo->currentForLocation($locationId))===1,'removed log hidden from resident/admin list');
+    $targetId=(int)$point['location_id'];
+    verify(!$repo->updateCurrent($locationId,$logId,$targetId,'invalid'),'invalid risk rejected');
+    verify($repo->updateCurrent($locationId,$logId,$targetId,'normal'),'admin edits saved location and risk');
+    $changed=$repo->currentForLocation($targetId)[0];
+    verify($changed['risk_level']==='normal' && (float)$changed['temperature_2m']===20.0,'weather measurements stay unchanged');
+    verify((int)$pdo->query('SELECT sensor_id FROM weather_fetches WHERE fetch_id='.$logId)->fetchColumn()===$sensorId,'original API source retained');
+    verify(!$repo->hasCurrent($locationId,$logId) && $repo->hasCurrent($targetId,$logId),'edited log appears at corrected location');
+    $mapLocations->setActive($targetId,false);
+    verify(count($repo->allCurrentForStudyArea())===$startingLogs+2,'removing map point retains saved history');
+    $reactivated=$mapLocations->forMapPoint(16.421,120.5595);
+    verify((int)$reactivated['location_id']===$targetId && (int)$reactivated['is_active']===1,'click reactivates same archived coordinate');
+    verify($repo->deleteCurrent($targetId,$logId),'admin log removed');
+    verify(count($repo->allCurrentForStudyArea())===$startingLogs+1,'archived log hidden from initial dashboard');
     $pdo->rollBack();
     echo "PASS transaction rolled back; synthetic records were not kept\n";
 } catch (Throwable $exception) {

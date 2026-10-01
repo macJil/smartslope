@@ -5,6 +5,16 @@ final class ReportRepository
 {
     public function __construct(private PDO $pdo) {}
 
+    /** Reports have no dependent records; an authorized admin may delete one. */
+    public function delete(int $reportId): bool
+    {
+        $query = $this->pdo->prepare("DELETE FROM reports WHERE report_id=:id AND location_id IN (
+            SELECT l.location_id FROM locations l JOIN barangays b ON b.barangay_id=l.barangay_id
+            WHERE b.barangay_name='Barangay Irisan' AND b.city_name='Baguio City')");
+        $query->execute(['id'=>$reportId]);
+        return $query->rowCount() === 1;
+    }
+
     public function activeLocations(): array
     {
         return $this->pdo->query(

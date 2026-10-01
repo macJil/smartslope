@@ -19,7 +19,7 @@ final class LocationRepository
         $query = $this->pdo->prepare(
             "INSERT INTO locations (barangay_id,location_name,purok_zone,latitude,longitude,susceptibility_class)
              VALUES (:barangay_id,:name,'Map point',:latitude,:longitude,'unknown')
-             ON DUPLICATE KEY UPDATE location_id=LAST_INSERT_ID(location_id)"
+             ON DUPLICATE KEY UPDATE location_id=LAST_INSERT_ID(location_id), is_active=1"
         );
         $query->execute(['barangay_id'=>$this->studyBarangayId(), 'name'=>$name,
             'latitude'=>$latitude, 'longitude'=>$longitude]);
@@ -49,7 +49,7 @@ final class LocationRepository
     {
         $statement = $this->pdo->prepare(
             "SELECT l.location_id, l.location_name, l.purok_zone, l.landmark,
-                    l.latitude, l.longitude, l.susceptibility_class
+                    l.latitude, l.longitude, l.susceptibility_class, l.hazard_source_name
              FROM locations AS l
              INNER JOIN barangays AS b ON b.barangay_id = l.barangay_id
              WHERE l.is_active = 1 AND b.is_active = 1
