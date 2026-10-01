@@ -1,5 +1,0 @@
-# Current SmartSlope scope
-
-Single study area: Barangay Irisan, Baguio City. One virtual Open-Meteo weather API source per active selected location. Current and hourly provider observations are stored; complete contiguous hourly rainfall windows produce a documented provisional risk summary. Medium/high results create linked prototype alerts. Residents submit ground reports for administrator review. Admins manage sourced locations and correct or remove API summary readings; CSV exports active summaries. Public visitors can see sourced baseline susceptibility and latest timestamped API risk without accessing private reports.
-
-PHP/MySQL, PDO, explicit OOP repositories, local jQuery AJAX, JSON, role guards, CSRF, escaped output, password hashes and verified provider TLS satisfy the website coursework coverage. This phase has no physical sensor installation, payments, AI/ML, geographic expansion or map dependency. Startup market/business model and team evidence are documentation deliverables; none are claimed as validated revenue or traction. See README.md, docs/REQUIREMENTS.md and docs/SmartSlope_Progress2_Design.md.

@@ -1,6 +1,0 @@
-.env
-*.log
-.DS_Store
-node_modules/
-# Reference map tiles are for local testing until their redistribution rights are verified.
-assets/map-tiles/[0-9]*/

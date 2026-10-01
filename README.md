@@ -1,50 +1,80 @@
-# SmartSlope academic prototype
+# SmartSlope - Simplified Version
 
-A PHP 8.1+/MySQL application for Barangay Irisan, Baguio City. It has resident and administrator accounts, sourced location susceptibility, resident reports, Open-Meteo weather ingestion, stored rainfall analysis and prototype alerts. The `sensors` table registers Open-Meteo as a **virtual weather API source**; there is no physical hardware. Risk thresholds are provisional classroom rules, not official safety warnings.
+A simplified PHP + MySQL + Leaflet web application for Barangay Irisan landslide risk monitoring.
 
-## Setup (Herd / XAMPP)
+## Quick Start
 
-1. Use PHP 8.1+, PDO MySQL and PHP cURL with verified HTTPS (or verified HTTPS streams). Use MySQL 8+ for the migration script.
-2. Copy `.env.example` to `.env`; set MySQL credentials and `APP_BASE_PATH`: empty for a Herd domain, `/smartslope` when installed at `http://localhost/smartslope` in XAMPP. Match the actual URL folder name. Keep `.env` private.
-3. **New database:** import `db.sql`. **Database created from `smartslope` main `389a0b3`:** back it up and run `sql/migrate_existing_to_aligned.sql` once, after inspecting its preflight queries, then run `sql/add_weather_fetches.sql` once to add the saved click/Refresh log (the latter is safe to run again). Do not run `db.sql` over a populated database; `CREATE TABLE IF NOT EXISTS` cannot upgrade old tables.
-4. Existing accounts retain their email and can log in by username. The upgrade adds nullable `contact_number` until genuine numbers have been supplied. New registration requires a unique email and phone number. After supplying real contact details for existing users, run the updated `sql/finish_contact_migration.sql` to enforce both fields. If an earlier migration already dropped `email`, run `sql/restore_email_for_contact_only.sql` first, obtain genuine emails, and then finish. Never fabricate contact details.
-5. Register the first account and promote only that chosen account locally with `UPDATE users SET role='admin' WHERE username='chosen_name';`. Log out and log back in. All public registrations get role `user`.
-6. Add a verified Irisan location with coordinates and an independently sourced baseline susceptibility using `admin/locations.php`. The location CRUD page is kept for administrator maintenance but no longer appears in the main menu. Click inside the local Irisan map to create or reuse that exact coordinate as a saved map location; its reading log and risk status then load below the map. Refresh saves another provider fetch for the selected point.
+1. **Create Database:**
+   ```bash
+   mysql -u root -p -e "CREATE DATABASE smartslope;"
+   mysql -u root -p smartslope < db_ultra_simple.sql
+   ```
 
-### If the map has no selectable point
+2. **Configure:**
+   Create `.env` file:
+   ```
+   DB_HOST=127.0.0.1
+   DB_PORT=3306
+   DB_DATABASE=smartslope
+   DB_USERNAME=root
+   DB_PASSWORD=
+   APP_BASE_PATH=
+   ```
 
-A fresh `db.sql` import now creates a single **approximate Irisan pilot point** with unknown baseline susceptibility. It is for trying map selection and Open-Meteo ingestion, not a surveyed monitoring site or hazard classification. For an **existing** `smartslope_mvp` database, back it up and run `sql/seed_irisan_pilot_point.sql` in dbngin/MySQL or phpMyAdmin. The script adds one pilot point only if the barangay has no active location with usable coordinates in the Irisan map area. Do not re-import `db.sql` into a populated database. Verified named locations should be maintained in `admin/locations.php`.
+3. **Access:**
+   - Visit `index.php`
+   - Default admin: username=`admin`, password=`admin123`
 
-The map tiles, Leaflet code and GeoJSON outline are local. A click inside the outline sends the exact latitude/longitude to `api/map_location.php`; the server validates the point against the Irisan boundary and creates or reuses one coordinate location. Selecting a point loads its saved log and obtains fresh provider data. Refresh repeats the request for the selected point. `weather_observations` still deduplicates the provider's current/hourly rows by sensor, kind and observation time, while `weather_fetches` appends one auditable log row for every successful click or refresh. Admin edit/delete redirects show the saved state first; deleting a log archives it so provider history is retained.
+## File Structure
 
-The resident and admin dashboards initially show every active Irisan reading already stored in `weather_fetches`; no map click or weather request is needed to see those rows. A map click focuses the risk panel and reading list on that coordinate. If the coordinate has no readings yet, the list continues to show readings from the other Irisan points until the first fetch succeeds. Use **Show all saved readings** to return to the complete list. Refresh still requires selecting a map point. The login page contains only the sign-in form.
+```
+smartslope/
+├── index.php           # Login + Registration entry point
+├── app/
+│   └── config.php      # Database + Functions + Helpers
+├── pages/
+│   └── login.php       # Login + Registration implementation
+├── dashboard.php       # Main Dashboard with Map
+├── admin.php           # Admin Dashboard
+├── report.php          # Submit Reports
+├── readings.php        # View All Readings
+├── save_reading.php     # Edit Readings
+├── delete_reading.php   # Delete Readings
+├── save_location.php   # Handle Map Clicks
+├── logout.php          # Logout
+├── db_ultra_simple.sql # Database Schema (3 tables)
+├── .env                # Configuration
+└── assets/
+    └── map/            # GeoJSON boundary
+        └── irisan.geojson
+```
 
-## What each record means
+## Features
 
-- `sensors`: one registered provider source per location. Its `sensor_type='weather_api'` does not imply physical measurement.
-- `weather_observations`: current interval and historical hourly model data, stored at actual observation time in UTC; repeated fetches update the same row.
-- `readings`: 1/24/72-hour rainfall totals calculated **from stored hourly observations**, plus the derived prototype risk. Administrators may correct only a saved fetch log's risk label; the original API measurements and live analysis remain unchanged.
-- `alerts`: medium/high prototype indicators linked to a reading and location. A corrected reading synchronizes its alert.
-- `reports`: resident ground observations and administrator review; these reports are not silently used as weather measurements.
+- User registration and login
+- Interactive map with Leaflet
+- Weather data from Open-Meteo API
+- Rainfall-based preliminary risk screening, plus forecast precipitation and modeled soil-moisture context
+- Location management
+- Community report submission
+- Admin dashboard for review
+- CSV export
 
-### Report contacts and saved map markers
+Existing databases need the additive reading-fields migration in `db_migration_weather_indicators.sql` before the updated app can save readings.
 
-For an existing `smartslope_mvp` database, back it up and run `sql/add_report_contacts.sql` **once** if `reports` does not already contain `contact_number` and `email`. New databases imported from `db.sql` have these columns already. Do not re-import `db.sql` over existing records. New ground reports require a 7–15 digit contact number (optional leading `+`) and may include an email. Each report stores the supplied contact details so later account changes do not alter its review record. Previously submitted reports have no snapshot; the administrator view falls back to their account phone where available.
+## Security
 
-Saved map markers use the most recent reading risk: low green, normal blue, medium yellow, and high red. Unknown risk remains gray; stale colors have a dashed border and reduced opacity. A clicked coordinate first shows a temporary blue pin, which becomes a saved marker when the server returns its location. The marker color updates after the risk analysis loads. Live weather still needs network access even though map tiles are local.
+- Password hashing (PHP password_hash)
+- Prepared statements for all SQL
+- Secure session management
 
-The application uses a single PHP bootstrap, PDO repositories and jQuery AJAX for the weather endpoint. Both dashboards use local Leaflet 1.9.4, bundled zoom 12–15 raster tiles, and an Irisan outline extracted from the `weather` reference repository; **check the original map data and tile redistribution terms before public deployment**. The map has no official hazard layer. It works without a map service, while live weather still needs internet. Selecting a point loads the saved reading log and requests fresh Open-Meteo data to persist in MySQL; the Refresh button repeats the request. Administrators see pending report counts and reporter contact details, may edit/archive saved log entries, and can export the displayed all-location or selected-location reading log as CSV. Hourly provider records and their separate rainfall/risk summaries remain independent. Other forms use POST/redirect/GET. `app_url()` handles Herd and XAMPP browser routes; `__DIR__` handles filesystem includes.
+## Default Admin
 
-## Verification
+- Username: `admin`
+- Password: `admin123`
 
-Run `node --test tests/resident-weather.test.cjs` and `php -l` for PHP files. Then on Herd or XAMPP test both contact fields, login, marker selection, saved dashboard, refresh, saved sensor/observation/reading/alert rows, second refresh without duplicates, mapped report submission, admin pending marker count and contact display, report review and CSV. Verify a failed provider request, incomplete hourly data and a stale observation do not show a fresh low-risk result. See `docs/REQUIREMENTS.md` for the course trace and `docs/SmartSlope_Progress2_Design.md` for schema documentation.
+## Database Tables
 
-The older scripts `sql/add_weather_observations.sql`, `sql/repair_weather_readings.sql` and `db_migration_archive_readings.sql` are retained only for installations predating the current `smartslope` baseline. Do not run them after the aligned migration. `.htaccess` protects development/configuration files in Apache/XAMPP; Herd's Nginx ignores `.htaccess`, so do not expose the entire repository as a public document root without equivalent restrictions.
-
-## v3 admin update
-
-Existing installations must run `sql/add_reading_location_override.sql` once in `smartslope_mvp` before using this update. Fresh `db.sql` already includes this nullable `weather_fetches.location_id` foreign key. It stores an administrator's corrected log association; `sensor_id` continues to identify the original API source. The **Edit** form changes only the risk-at-fetch value. It does not change temperature, humidity, rainfall, wind, hourly provider records, or the live risk panel.
-
-**Remove from map** archives a location using `is_active=0`. Its saved logs and reports remain available. A later click at exactly the same rounded coordinates reactivates the same point. **Delete report** permanently removes the selected report; **Download all reports CSV** exports all remaining Irisan reports, including reporter contacts and review status. Both operations require an admin session; mutations require CSRF tokens. CSV text is protected against spreadsheet formulas.
-
-Registration checks which supplied identities really exist and distinguishes MySQL duplicate-key errors (1062) from other constraints. If unused details still fail, inspect the PHP error log entry beginning `SmartSlope registration failed` and run `sql/diagnose_registration.sql` against the configured database. The GitHub schema already has a valid auto-increment user key, so do not guess at or delete local constraints. The old `finish_contact_migration.sql` incorrectly removed email; the updated script retains both email and phone. If email was already removed, follow `sql/restore_email_for_contact_only.sql` first.
+1. **users** - User accounts
+2. **locations** - Monitoring locations
+3. **events** - Weather readings + reports
