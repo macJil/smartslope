@@ -11,6 +11,7 @@ foreach ($locations as &$loc) {
     $loc['latest'] = get_latest_reading($loc['id']);
     $loc['pending'] = $pendingCounts[$loc['id']] ?? 0;
 }
+unset($loc); // End the reference before iterating locations again.
 
 $isAdmin = is_admin();
 $selectedLocId = (int)get('location_id', 0);
@@ -118,8 +119,9 @@ if ($selectedLocId) {
         }
         .map-heading {
             top: 1rem;
-            left: 1rem;
-            max-width: calc(100% - 2rem);
+            left: 3.5rem;
+            max-width: calc(100% - 4.5rem);
+            pointer-events: none;
         }
         .map-heading h5,
         .map-heading p {
@@ -433,6 +435,7 @@ if ($selectedLocId) {
     <script src="<?= e(url('assets/js/dashboard.js')) ?>"></script>
     <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
     <script src="<?= url('assets/vendor/leaflet/leaflet.js') ?>"></script>
+    <script src="<?= e(url('assets/js/offline-map.js')) ?>"></script>
     <script src="<?= e(url('assets/js/location-address.js')) ?>"></script>
     <script src="<?= e(url('assets/js/irisan-boundary.js')) ?>"></script>
     <script>
@@ -447,14 +450,15 @@ if ($selectedLocId) {
 
         const map = L.map('dashboard-map', {
             zoomControl: true,
+            zoomSnap: 0.25,
             scrollWheelZoom: true,
             maxBounds: irisanBounds.pad(0.3),
             maxBoundsViscosity: 1,
             minZoom: 12,
             maxZoom: 16
-        }).fitBounds(irisanBounds, { padding: [18, 18], maxZoom: 15 });
+        }).fitBounds(irisanBounds, { padding: [32, 32], maxZoom: 14 });
 
-        L.tileLayer('<?= url("assets/map-tiles/{z}/{x}/{y}.png") ?>', {
+        irisanTiles('<?= url("assets/map-tiles/{z}/{x}/{y}.png") ?>', {
             attribution: 'Barangay Irisan offline map tiles',
             maxNativeZoom: 15,
             maxZoom: 16,
@@ -474,11 +478,11 @@ if ($selectedLocId) {
                     interactive: false,
                     style: { color: '#13589e', weight: 3, fillOpacity: 0.08 }
                 }).addTo(map);
-                map.fitBounds(boundaryLayer.getBounds(), { padding: [18, 18], maxZoom: 15 });
+                map.fitBounds(boundaryLayer.getBounds(), { padding: [32, 32], maxZoom: 14 });
             })
             .catch(() => {
                 L.rectangle(irisanBounds, {color: '#13589e', weight: 3, fillOpacity: 0.08, interactive: false}).addTo(map);
-                map.fitBounds(irisanBounds, { padding: [18, 18], maxZoom: 15 });
+                map.fitBounds(irisanBounds, { padding: [32, 32], maxZoom: 14 });
             });
 
         const markersLayer = L.layerGroup();

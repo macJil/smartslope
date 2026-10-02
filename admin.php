@@ -59,7 +59,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
     <link rel="stylesheet" href="<?= url('assets/vendor/leaflet/leaflet.css') ?>">
     <style>
         .badge-risk { font-size: 0.85em; }
-        #reportMap { height: 300px; width: 100%; }
+        #reportMap { height: 420px; width: 100%; }
         .report-risk-icon { background: transparent; border: 0; }
         .report-risk-pin {
             display: block;
@@ -217,8 +217,8 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                             data-contact="<?= e(($r['contact_phone'] ?? 'N/A') . ' / ' . ($r['contact_email'] ?? 'No email')) ?>"
                                             data-status="<?= e($r['status']) ?>"
                                             data-date="<?= local_date($r['created_at']) ?>"
-                                            data-lat="<?= $loc['lat'] ?? '' ?>"
-                                            data-lng="<?= $loc['lng'] ?? '' ?>"
+                                            data-lat="<?= e($r['lat'] ?? '') ?>"
+                                            data-lng="<?= e($r['lng'] ?? '') ?>"
                                             data-risk="<?= e($r['location_risk_level'] ?? 'unavailable') ?>">
                                         View
                                     </button>
@@ -427,7 +427,9 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
 
     <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
     <script src="<?= url('assets/vendor/leaflet/leaflet.js') ?>"></script>
+    <script src="<?= e(url('assets/js/offline-map.js')) ?>"></script>
     <script>
+        let reportMapInstance = null;
         const viewReportModal = document.getElementById('viewReportModal');
         document.querySelectorAll('.view-report-btn').forEach(button => {
             button.addEventListener('click', function() {
@@ -453,7 +455,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                 viewReportModal.querySelector('#modalReportLat').value = lat;
                 viewReportModal.querySelector('#modalReportLng').value = lng;
 
-                const bootstrapModal = new bootstrap.Modal(viewReportModal);
+                const bootstrapModal = bootstrap.Modal.getOrCreateInstance(viewReportModal);
                 bootstrapModal.show();
             });
         });
@@ -466,21 +468,29 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
             const riskLabel = ['low', 'normal', 'medium', 'high'].includes(risk) ? risk : 'unavailable';
             const location = viewReportModal.querySelector('#modalReportLocation').textContent;
 
-            if (!window.reportMap) {
-                window.reportMap = L.map('reportMap').setView([lat, lng], 16);
+            if (!reportMapInstance) {
+                reportMapInstance = L.map('reportMap', { minZoom: 12, maxZoom: 16, zoomSnap: 0.25 });
 
-                L.tileLayer('<?= e(url("assets/map-tiles/{z}/{x}/{y}.png")) ?>', {
+                irisanTiles('<?= e(url("assets/map-tiles/{z}/{x}/{y}.png")) ?>', {
                     attribution: 'Barangay Irisan offline map tiles',
                     maxNativeZoom: 15,
                     maxZoom: 16,
                     minZoom: 12,
                     tileSize: 256,
                     noWrap: true
-                }).addTo(window.reportMap);
+                }).addTo(reportMapInstance);
             }
-            window.reportMap.setView([lat, lng], 16);
-            window.reportMap.eachLayer(layer => {
-                if (layer instanceof L.Marker) window.reportMap.removeLayer(layer);
+            reportMapInstance.invalidateSize();
+            reportMapInstance.fitBounds([[16.407, 120.543], [16.435, 120.576]], {padding: [24, 24], maxZoom: 14});
+            const currentMap = reportMapInstance;
+            fetch('<?= e(url("assets/map/irisan.geojson")) ?>')
+                .then(response => { if (!response.ok) throw new Error('Boundary unavailable'); return response.json(); })
+                .then(data => {
+                    if (reportMapInstance !== currentMap) return;
+                    L.geoJSON(data, {interactive: false, style: {color: '#13589e', weight: 3, fillOpacity: 0.08}}).addTo(currentMap);
+                }).catch(() => { /* Marker and local tiles remain usable. */ });
+            reportMapInstance.eachLayer(layer => {
+                if (layer instanceof L.Marker) reportMapInstance.removeLayer(layer);
             });
             const riskIcon = L.divIcon({
                 html: `<span class="report-risk-pin report-risk-${riskLabel}">${riskLabel.toUpperCase()}</span>`,
@@ -488,21 +498,21 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                 iconSize: [112, 34],
                 iconAnchor: [56, 17]
             });
-            const marker = L.marker([lat, lng], { icon: riskIcon }).addTo(window.reportMap);
+            const marker = L.marker([lat, lng], { icon: riskIcon }).addTo(reportMapInstance);
             const popup = document.createElement('div');
             const address = document.createElement('div');
             address.textContent = location;
             const status = document.createElement('strong');
             status.textContent = 'Risk status: ' + riskLabel.toUpperCase();
             popup.append(address, status);
-            marker.bindPopup(popup).openPopup();
-            setTimeout(() => window.reportMap.invalidateSize(), 100);
+            marker.bindPopup(popup, {autoPan: false}).openPopup();
+            requestAnimationFrame(() => { if (reportMapInstance) reportMapInstance.invalidateSize(); });
         });
 
         viewReportModal.addEventListener('hidden.bs.modal', function() {
-            if (window.reportMap) {
-                window.reportMap.remove();
-                window.reportMap = null;
+            if (reportMapInstance) {
+                reportMapInstance.remove();
+                reportMapInstance = null;
             }
         });
 
