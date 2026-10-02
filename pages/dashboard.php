@@ -274,13 +274,22 @@ if ($selectedLocId) {
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5>Recent Weather Readings</h5>
-                <a href="<?= url('readings.php') ?>" class="btn btn-sm btn-outline-primary">View All</a>
+                <div class="d-flex flex-wrap gap-2">
+                    <?php if ($isAdmin): ?>
+                        <form id="bulkDashboardReadingsForm" method="post" action="<?= e(url('admin.php')) ?>" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="m-0">
+                            <?= csrf_field() ?><input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="dashboard.php">
+                            <button class="btn btn-sm btn-outline-danger">Remove selected</button>
+                        </form>
+                    <?php endif; ?>
+                    <a href="<?= url('readings.php') ?>" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
+                                <?php if ($isAdmin): ?><th><input type="checkbox" data-select-all="dashboard-readings" aria-label="Select all readings"></th><?php endif; ?>
                                 <th>Location</th>
                                 <th>Risk</th>
                                 <th>1h Rain</th>
@@ -300,15 +309,12 @@ if ($selectedLocId) {
                                 $staleClass = $r['stale'] ? 'text-muted' : '';
                             ?>
                             <tr class="<?= $staleClass ?>">
+                                <?php if ($isAdmin): ?><td><input type="checkbox" form="bulkDashboardReadingsForm" name="reading_ids[]" value="<?= (int)$r['id'] ?>" data-bulk-item="dashboard-readings" aria-label="Select reading <?= (int)$r['id'] ?>"></td><?php endif; ?>
                                 <td>
                                     <?= e($loc['name'] ?? 'Unknown') ?>
-                                    <?php if ($loc['purok'] ?? ''): ?>
-                                        <br><small class="text-muted">Purok: <?= e($loc['purok']) ?></small>
-                                    <?php endif; ?>
                                     <?php if ($loc['landmark'] ?? ''): ?>
                                         <br><small class="text-muted">Street/Landmark: <?= e($loc['landmark']) ?></small>
                                     <?php endif; ?>
-                                    <br><small class="text-muted">Barangay Irisan, Baguio City, Benguet, Philippines</small>
                                     <?php if ($loc['lat'] && $loc['lng']): ?>
                                         <br><small class="text-muted">Coor: <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?></small>
                                     <?php endif; ?>
@@ -332,14 +338,13 @@ if ($selectedLocId) {
                                     <td>
                                         <a href="<?= url('actions/save_reading.php?reading_id=' . $r['id']) ?>"
                                            class="btn btn-xs btn-outline-primary">Edit</a>
-                                        <form method="post" action="<?= e(url('actions/delete_reading.php')) ?>" class="d-inline" onsubmit="return confirm('Remove this reading?')"><?= csrf_field() ?><input type="hidden" name="reading_id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-outline-danger">Delete</button></form>
                                     </td>
                                 <?php endif; ?>
                             </tr>
                             <?php endforeach; ?>
                             <?php if (empty($readings)): ?>
                                 <tr>
-                                    <td colspan="<?= $isAdmin ? 11 : 10 ?>" class="text-center text-muted">
+                                    <td colspan="<?= $isAdmin ? 12 : 10 ?>" class="text-center text-muted">
                                         No readings yet. Select a location and click Refresh to fetch weather data.
                                     </td>
                                 </tr>
@@ -380,13 +385,9 @@ if ($selectedLocId) {
                                     <?php if ($r['house_landmark'] ?? ''): ?>
                                         <br><small class="text-muted">Reported address: <?= e($r['house_landmark']) ?></small>
                                     <?php endif; ?>
-                                    <?php if ($loc['purok'] ?? ''): ?>
-                                        <br><small class="text-muted">Purok: <?= e($loc['purok']) ?></small>
-                                    <?php endif; ?>
                                     <?php if ($loc['landmark'] ?? ''): ?>
                                         <br><small class="text-muted">Street/Landmark: <?= e($loc['landmark']) ?></small>
                                     <?php endif; ?>
-                                    <br><small class="text-muted">Barangay Irisan, Baguio City, Benguet, Philippines</small>
                                     <?php if ($loc['lat'] && $loc['lng']): ?>
                                         <br><small class="text-muted">Coor: <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?></small>
                                     <?php endif; ?>
@@ -430,10 +431,11 @@ if ($selectedLocId) {
     <form id="map-selection-form" method="post" action="<?= e(url('actions/save_location.php')) ?>" hidden>
         <?= csrf_field() ?><input type="hidden" name="location_id"><input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="address">
     </form>
-    <script>window.SmartSlope = <?= json_encode(['locationId'=>$selectedLocId,'apiUrl'=>url('api/readings.php'),'csrf'=>csrf_token(),'isAdmin'=>$isAdmin,'editUrl'=>url('actions/save_reading.php?reading_id='),'deleteUrl'=>url('actions/delete_reading.php')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
+    <script>window.SmartSlope = <?= json_encode(['locationId'=>$selectedLocId,'apiUrl'=>url('api/readings.php'),'csrf'=>csrf_token(),'isAdmin'=>$isAdmin,'editUrl'=>url('actions/save_reading.php?reading_id=')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
     <script src="<?= e(url('assets/js/vendor/jquery.min.js')) ?>"></script>
     <script src="<?= e(url('assets/js/dashboard.js')) ?>"></script>
     <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
+    <?php if ($isAdmin): ?><script src="<?= e(url('assets/js/bulk-select.js')) ?>"></script><?php endif; ?>
     <script src="<?= url('assets/vendor/leaflet/leaflet.js') ?>"></script>
     <script src="<?= e(url('assets/js/offline-map.js')) ?>"></script>
     <script src="<?= e(url('assets/js/location-address.js')) ?>"></script>

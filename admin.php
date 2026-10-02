@@ -7,11 +7,51 @@ $locations = get_locations();
 $readings = get_all_readings(50);
 $reports = get_reports();
 $pendingCounts = get_pending_counts();
+$reportedAddressesByLocation = [];
+foreach ($reports as $report) {
+    $locationId = (int)$report['location_id'];
+    $address = trim((string)($report['house_landmark'] ?? ''));
+    if ($address !== '' && !isset($reportedAddressesByLocation[$locationId])) {
+        $reportedAddressesByLocation[$locationId] = $address;
+    }
+}
 
 // Mutating actions require an administrator, POST, and a session-bound token.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_post_csrf();
     $action = (string)post('action');
+    $bulkActions = [
+        'bulk_delete_reports' => ['field' => 'report_ids', 'operation' => 'delete_report', 'label' => 'reports deleted'],
+        'bulk_archive_readings' => ['field' => 'reading_ids', 'operation' => 'archive_reading', 'label' => 'readings removed from active lists'],
+        'bulk_remove_locations' => ['field' => 'location_ids', 'operation' => 'deactivate_location', 'label' => 'locations removed; history retained'],
+    ];
+    if (isset($bulkActions[$action])) {
+        $bulkAction = $bulkActions[$action];
+        $selectedIds = $_POST[$bulkAction['field']] ?? [];
+        if (!is_array($selectedIds)) $selectedIds = [];
+        $selectedIds = array_unique(array_filter(array_map(
+            static fn($value) => filter_var($value, FILTER_VALIDATE_INT),
+            $selectedIds
+        ), static fn($id) => $id !== false && $id > 0));
+        if (!$selectedIds) {
+            flash('error', 'Select at least one item first.');
+            $returnTo = $_POST['return_to'] ?? 'admin.php';
+            redirect(in_array($returnTo, ['admin.php', 'dashboard.php', 'readings.php'], true) ? $returnTo : 'admin.php');
+        }
+
+        $changed = 0;
+        foreach ($selectedIds as $selectedId) {
+            $changed += match ($bulkAction['operation']) {
+                'delete_report' => delete_report((int)$selectedId),
+                'archive_reading' => archive_reading((int)$selectedId),
+                'deactivate_location' => deactivate_location((int)$selectedId),
+            } ? 1 : 0;
+        }
+        flash('success', $changed . ' ' . $bulkAction['label'] . '.');
+        $returnTo = $_POST['return_to'] ?? 'admin.php';
+        redirect(in_array($returnTo, ['admin.php', 'dashboard.php', 'readings.php'], true) ? $returnTo : 'admin.php');
+    }
+
     $id = filter_var(post('id'), FILTER_VALIDATE_INT);
     if (!$id || $id < 1) {
         http_response_code(422);
@@ -77,6 +117,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
         .report-risk-medium { background: #ffc107; color: #212529; }
         .report-risk-high { background: #dc3545; }
         .report-risk-unavailable { background: #6c757d; }
+        .report-message { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 6rem; }
     </style>
 </head>
 <body>
@@ -148,15 +189,22 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
 
         <!-- All Reports Section -->
         <div class="card mb-4">
-            <div class="card-header">
-                <h5>All Reports</h5><a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export_reports')) ?>">Download reports CSV</a>
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h5 class="mb-0">All Reports</h5>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <form id="bulkReportsForm" method="post" data-bulk-confirm="Delete %d selected report(s)?" class="m-0">
+                        <?= csrf_field() ?><input type="hidden" name="action" value="bulk_delete_reports"><input type="hidden" name="return_to" value="admin.php">
+                        <button class="btn btn-sm btn-outline-danger">Delete selected</button>
+                    </form>
+                    <a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export_reports')) ?>">Download reports CSV</a>
+                </div>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>ID</th>
+                                <th><span class="visually-hidden">Select</span><input type="checkbox" data-select-all="reports" aria-label="Select all reports"></th>
                                 <th>Location</th>
                                 <th>Message</th>
                                 <th>Reporter</th>
@@ -169,14 +217,13 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                         <tbody>
                             <?php foreach ($reports as $r):
                                 $loc = get_location($r['location_id']);
-                                $locationAddress = array_filter([
-                                    $loc['name'] ?? 'Unknown',
-                                    !empty($r['house_landmark']) ? 'Reported address: ' . $r['house_landmark'] : null,
-                                    !empty($loc['landmark']) ? 'Street/Landmark: ' . $loc['landmark'] : null,
-                                    !empty($loc['purok']) ? 'Purok ' . $loc['purok'] : null,
-                                    'Barangay Irisan', 'Baguio City', 'Benguet', 'Philippines',
-                                    !empty($loc['lat']) && !empty($loc['lng']) ? sprintf('Coordinates: %.5f, %.5f', $loc['lat'], $loc['lng']) : null
-                                ]);
+                                $locationAddress = trim((string)($loc['landmark'] ?? ''));
+                                if ($locationAddress === '') $locationAddress = trim((string)($r['house_landmark'] ?? ''));
+                                if ($locationAddress === '') $locationAddress = $loc['name'] ?? 'Unknown';
+                                $locationCoordinates = !empty($loc['lat']) && !empty($loc['lng'])
+                                    ? sprintf('Coordinates: %.5f, %.5f', $loc['lat'], $loc['lng'])
+                                    : 'Coordinates unavailable';
+                                $reportMapLocation = $locationAddress . ' | ' . $locationCoordinates;
                                 $reporterName = 'Anonymous';
                                 if ($r['user_id']) {
                                     $pdo = db();
@@ -188,14 +235,10 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                 }
                             ?>
                             <tr>
-                                <td><?= $r['id'] ?></td>
+                                <td><input type="checkbox" form="bulkReportsForm" name="report_ids[]" value="<?= (int)$r['id'] ?>" data-bulk-item="reports" aria-label="Select report <?= (int)$r['id'] ?>"></td>
                                 <td>
-                                    <?= e($loc['name'] ?? 'Unknown') ?>
-                                    <?php if ($r['house_landmark'] ?? ''): ?><br><small class="text-muted">Reported address: <?= e($r['house_landmark']) ?></small><?php endif; ?>
-                                    <?php if ($loc['landmark'] ?? ''): ?><br><small class="text-muted">Street/Landmark: <?= e($loc['landmark']) ?></small><?php endif; ?>
-                                    <?php if ($loc['purok'] ?? ''): ?><br><small class="text-muted">Purok: <?= e($loc['purok']) ?></small><?php endif; ?>
-                                    <br><small class="text-muted">Barangay Irisan, Baguio City, Benguet, Philippines</small>
-                                    <?php if (!empty($loc['lat']) && !empty($loc['lng'])): ?><br><small class="text-muted">Coordinates: <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?></small><?php endif; ?>
+                                    <strong><?= e($locationAddress) ?></strong>
+                                    <br><small class="text-muted"><?= e($locationCoordinates) ?></small>
                                 </td>
                                 <td><?= e(substr($r['message'], 0, 40)) ?>...</td>
                                 <td><?= e($reporterName) ?></td>
@@ -211,7 +254,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                 <td>
                                     <button class="btn btn-xs btn-info view-report-btn"
                                             data-report-id="<?= $r['id'] ?>"
-                                            data-location="<?= e(implode(', ', $locationAddress)) ?>"
+                                            data-location="<?= e($reportMapLocation) ?>"
                                             data-message="<?= e($r['message']) ?>"
                                             data-reporter="<?= e($reporterName) ?>"
                                             data-contact="<?= e(($r['contact_phone'] ?? 'N/A') . ' / ' . ($r['contact_email'] ?? 'No email')) ?>"
@@ -228,7 +271,6 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                     <?php if ($r['status'] === 'reviewed'): ?>
                                         <form method="post" class="d-inline"><?= csrf_field() ?><input type="hidden" name="action" value="resolve"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-success">Resolve</button></form>
                                     <?php endif; ?>
-                                    <form method="post" class="d-inline" onsubmit="return confirm('Delete this report?')"><?= csrf_field() ?><input type="hidden" name="action" value="delete_report"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-danger">Delete</button></form>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -243,28 +285,41 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
 
         <!-- Locations Section -->
         <div class="card mb-4">
-            <div class="card-header">
-                <h5>All Locations</h5>
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h5 class="mb-0">All Locations</h5>
+                <form id="bulkLocationsForm" method="post" data-bulk-confirm="Remove %d selected location(s)? Their reading and report history will be kept." class="m-0">
+                    <?= csrf_field() ?><input type="hidden" name="action" value="bulk_remove_locations"><input type="hidden" name="return_to" value="admin.php">
+                    <button class="btn btn-sm btn-outline-danger">Remove selected</button>
+                </form>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>ID</th>
-                                <th>Name</th>
-                                <th>Purok</th>
+                                <th><input type="checkbox" data-select-all="locations" aria-label="Select all locations"></th>
+                                <th>Location address</th>
                                 <th>Coordinates</th>
                                 <th>Active</th>
-                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($locations as $loc): ?>
+                            <?php foreach ($locations as $loc):
+                                $locationAddress = trim((string)($loc['landmark'] ?? ''));
+                                if ($locationAddress === '') {
+                                    $locationAddress = $reportedAddressesByLocation[(int)$loc['id']] ?? '';
+                                }
+                                if ($locationAddress === '') {
+                                    $storedName = trim((string)($loc['name'] ?? ''));
+                                    $isGeneratedName = preg_match('/^Irisan\s+-?\d+(?:\.\d+)?,\s*-?\d+(?:\.\d+)?$/i', $storedName);
+                                    $locationAddress = $isGeneratedName
+                                        ? 'Barangay Irisan, Baguio City, Benguet, Philippines'
+                                        : ($storedName !== '' ? $storedName : 'Address unavailable');
+                                }
+                            ?>
                             <tr class="<?= $loc['active'] ? '' : 'table-secondary' ?>">
-                                <td><?= $loc['id'] ?></td>
-                                <td><?= e($loc['name']) ?></td>
-                                <td><?= e($loc['purok'] ?? 'N/A') ?></td>
+                                <td><input type="checkbox" form="bulkLocationsForm" name="location_ids[]" value="<?= (int)$loc['id'] ?>" data-bulk-item="locations" aria-label="Select location <?= (int)$loc['id'] ?>"></td>
+                                <td><?= e($locationAddress) ?></td>
                                 <td>
                                     <?php if ($loc['lat'] && $loc['lng']): ?>
                                         <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?>
@@ -277,13 +332,10 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                         <?= $loc['active'] ? 'Active' : 'Inactive' ?>
                                     </span>
                                 </td>
-                                <td>
-                                    <form method="post" onsubmit="return confirm('Remove this location from active maps? Its history is kept.')"><?= csrf_field() ?><input type="hidden" name="action" value="remove_location"><input type="hidden" name="id" value="<?= (int)$loc['id'] ?>"><button class="btn btn-sm btn-outline-danger">Remove</button></form>
-                                </td>
                             </tr>
                             <?php endforeach; ?>
                             <?php if (empty($locations)): ?>
-                                <tr><td colspan="6" class="text-center text-muted">No locations yet</td></tr>
+                                <tr><td colspan="4" class="text-center text-muted">No locations yet</td></tr>
                             <?php endif; ?>
                         </tbody>
                     </table>
@@ -293,15 +345,19 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
 
         <!-- All Readings Section -->
         <div class="card mb-4">
-            <div class="card-header">
-                <h5>All Weather Readings</h5>
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h5 class="mb-0">All Weather Readings</h5>
+                <form id="bulkAdminReadingsForm" method="post" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="m-0">
+                    <?= csrf_field() ?><input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="admin.php">
+                    <button class="btn btn-sm btn-outline-danger">Remove selected</button>
+                </form>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>ID</th>
+                                <th><input type="checkbox" data-select-all="admin-readings" aria-label="Select all readings"></th>
                                 <th>Location</th>
                                 <th>Risk</th>
                                 <th>Rainfall (1h/24h/72h)</th>
@@ -318,16 +374,12 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                 $loc = get_location($r['location_id']);
                             ?>
                             <tr>
-                                <td><?= $r['id'] ?></td>
+                                <td><input type="checkbox" form="bulkAdminReadingsForm" name="reading_ids[]" value="<?= (int)$r['id'] ?>" data-bulk-item="admin-readings" aria-label="Select reading <?= (int)$r['id'] ?>"></td>
                                 <td>
                                     <?= e($loc['name'] ?? 'Unknown') ?>
-                                    <?php if ($loc['purok'] ?? ''): ?>
-                                        <br><small class="text-muted">Purok: <?= e($loc['purok']) ?></small>
-                                    <?php endif; ?>
                                     <?php if ($loc['landmark'] ?? ''): ?>
                                         <br><small class="text-muted">Street/Landmark: <?= e($loc['landmark']) ?></small>
                                     <?php endif; ?>
-                                    <br><small class="text-muted">Barangay Irisan, Baguio City, Benguet, Philippines</small>
                                     <?php if ($loc['lat'] && $loc['lng']): ?>
                                         <br><small class="text-muted">Coor: <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?></small>
                                     <?php endif; ?>
@@ -353,7 +405,6 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                 <td>
                                     <a href="<?= url('actions/save_reading.php?reading_id=' . $r['id']) ?>"
                                        class="btn btn-xs btn-outline-primary">Edit</a>
-                                    <form method="post" action="<?= e(url('actions/delete_reading.php')) ?>" class="d-inline" onsubmit="return confirm('Remove this reading?')"><?= csrf_field() ?><input type="hidden" name="reading_id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-outline-danger">Delete</button></form>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -369,7 +420,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
 
     <!-- View Report Modal -->
     <div class="modal fade" id="viewReportModal" tabindex="-1">
-        <div class="modal-dialog modal-xl">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Report Details</h5>
@@ -387,9 +438,6 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
 
                                 <dt class="col-sm-4">Risk status:</dt>
                                 <dd class="col-sm-8" id="modalReportRisk"></dd>
-
-                                <dt class="col-sm-4">Message:</dt>
-                                <dd class="col-sm-8" id="modalReportMessage"></dd>
 
                                 <dt class="col-sm-4">Reporter:</dt>
                                 <dd class="col-sm-8" id="modalReportReporter"></dd>
@@ -417,6 +465,10 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                             <input type="hidden" id="modalReportLng" value="">
                         </div>
                     </div>
+                    <section class="mt-3">
+                        <h6>Full report message</h6>
+                        <div id="modalReportMessage" class="report-message border rounded p-3 bg-light"></div>
+                    </section>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -428,6 +480,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
     <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
     <script src="<?= url('assets/vendor/leaflet/leaflet.js') ?>"></script>
     <script src="<?= e(url('assets/js/offline-map.js')) ?>"></script>
+    <script src="<?= e(url('assets/js/bulk-select.js')) ?>"></script>
     <script>
         let reportMapInstance = null;
         const viewReportModal = document.getElementById('viewReportModal');

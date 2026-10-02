@@ -43,9 +43,13 @@ if (get('action') === 'export') {
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2>All Weather Readings</h2>
             <div>
-                <?php if ($isAdmin): ?><a href="<?= url('readings.php?action=export') ?>" class="btn btn-outline-success">
-                    Export CSV
-                </a><?php endif; ?>
+                <?php if ($isAdmin): ?>
+                    <form id="bulkReadingsPageForm" method="post" action="<?= e(url('admin.php')) ?>" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="d-inline">
+                        <?= csrf_field() ?><input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="readings.php">
+                        <button class="btn btn-outline-danger">Remove selected</button>
+                    </form>
+                    <a href="<?= url('readings.php?action=export') ?>" class="btn btn-outline-success">Export CSV</a>
+                <?php endif; ?>
             </div>
         </div>
 
@@ -55,7 +59,7 @@ if (get('action') === 'export') {
                     <table class="table table-hover table-striped mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>ID</th>
+                                <?php if ($isAdmin): ?><th><input type="checkbox" data-select-all="page-readings" aria-label="Select all readings"></th><?php endif; ?>
                                 <th>Location</th>
                                 <th>Risk</th>
                                 <th>1h Rain</th>
@@ -77,7 +81,7 @@ if (get('action') === 'export') {
                                 $staleClass = $r['stale'] ? 'text-muted' : '';
                             ?>
                             <tr class="<?= $staleClass ?>">
-                                <td><?= $r['id'] ?></td>
+                                <?php if ($isAdmin): ?><td><input type="checkbox" form="bulkReadingsPageForm" name="reading_ids[]" value="<?= (int)$r['id'] ?>" data-bulk-item="page-readings" aria-label="Select reading <?= (int)$r['id'] ?>"></td><?php endif; ?>
                                 <td>
                                     <?= e($loc['name'] ?? 'Unknown') ?>
                                     <?php if ($loc['purok'] ?? ''): ?>
@@ -113,10 +117,6 @@ if (get('action') === 'export') {
                                     <td>
                                         <a href="<?= url('actions/save_reading.php?reading_id=' . $r['id']) ?>"
                                            class="btn btn-xs btn-outline-primary">Edit</a>
-                                        <form method="post" action="<?= e(url('actions/delete_reading.php')) ?>" class="d-inline" onsubmit="return confirm('Remove this reading?')">
-                                            <?= csrf_field() ?><input type="hidden" name="reading_id" value="<?= (int)$r['id'] ?>">
-                                            <button class="btn btn-sm btn-outline-danger">Delete</button>
-                                        </form>
                                     </td>
                                 <?php endif; ?>
                             </tr>
@@ -136,5 +136,6 @@ if (get('action') === 'export') {
     </div>
 
     <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
+    <?php if ($isAdmin): ?><script src="<?= e(url('assets/js/bulk-select.js')) ?>"></script><?php endif; ?>
 </body>
 </html>

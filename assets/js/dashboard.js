@@ -49,8 +49,24 @@
         $('<p>').addClass('text-muted small').text('Preliminary rainfall screening, not an official warning. Forecast and soil moisture are model estimates.').appendTo(panel);
 
         const tbody = $('#recent-readings-body').empty();
+        const selectAll = document.querySelector('[data-select-all="dashboard-readings"]');
+        if (selectAll) {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+        }
         data.readings.forEach(row => {
             const tr = $('<tr>').toggleClass('text-muted', Number(row.stale) === 1).appendTo(tbody);
+            if (settings.isAdmin) {
+                const checkbox = $('<input>').attr({
+                    type: 'checkbox',
+                    form: 'bulkDashboardReadingsForm',
+                    name: 'reading_ids[]',
+                    value: row.id,
+                    'data-bulk-item': 'dashboard-readings',
+                    'aria-label': 'Select reading ' + row.id
+                });
+                $('<td>').append(checkbox).appendTo(tr);
+            }
             appendLocation($('<td>').appendTo(tr), data.location);
             $('<td>').text(value(row.risk_level).toUpperCase()).appendTo(tr);
             ['rainfall_1h','rainfall_24h','rainfall_72h','rainfall_forecast_24h','precipitation_probability_24h'].forEach(key => $('<td>').text(value(row[key])).appendTo(tr));
@@ -60,11 +76,6 @@
             if (settings.isAdmin) {
                 const td = $('<td>').appendTo(tr);
                 $('<a>').attr('href', settings.editUrl + encodeURIComponent(row.id)).addClass('btn btn-sm btn-outline-primary me-1').text('Edit').appendTo(td);
-                const form = $('<form>').attr({method:'post',action:settings.deleteUrl}).addClass('d-inline').appendTo(td);
-                $('<input>').attr({type:'hidden',name:'csrf_token'}).val(settings.csrf).appendTo(form);
-                $('<input>').attr({type:'hidden',name:'reading_id'}).val(row.id).appendTo(form);
-                $('<button>').addClass('btn btn-sm btn-outline-danger').text('Delete').appendTo(form);
-                form.on('submit', () => confirm('Remove this reading?'));
             }
         });
         if (window.updateMapRisk) window.updateMapRisk(settings.locationId, r.risk_level);
