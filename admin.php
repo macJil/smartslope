@@ -8,63 +8,45 @@ $readings = get_all_readings(50);
 $reports = get_reports();
 $pendingCounts = get_pending_counts();
 
-// Handle actions
+// Mutating actions require an administrator, POST, and a session-bound token.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Update reading risk level
-    if (isset($_POST['update_reading'])) {
-        $readingId = (int)post('reading_id');
-        $riskLevel = post('risk_level');
-        
-        $pdo = db();
-        $stmt = $pdo->prepare("UPDATE events SET risk_level = ? WHERE id = ? AND type = 'reading'");
-        $stmt->execute([$riskLevel, $readingId]);
-        flash('success', 'Reading risk level updated successfully');
-        redirect('admin.php');
+    require_post_csrf();
+    $action = (string)post('action');
+    $id = filter_var(post('id'), FILTER_VALIDATE_INT);
+    if (!$id || $id < 1) {
+        http_response_code(422);
+        exit('Invalid record.');
     }
-}
-
-// Update report status
-if (get('action') === 'review' && get('report_id')) {
-    update_report((int)get('report_id'), 'reviewed', (int)$_SESSION['user_id']);
-    flash('success', 'Report marked as reviewed');
+    if ($action === 'review' || $action === 'resolve') {
+        update_report($id, $action === 'review' ? 'reviewed' : 'resolved', (int)$_SESSION['user_id']);
+    } elseif ($action === 'delete_report') {
+        delete_report($id);
+    } elseif ($action === 'remove_location') {
+        deactivate_location($id);
+    } else {
+        http_response_code(422);
+        exit('Invalid action.');
+    }
+    flash('success', 'Changes saved.');
     redirect('admin.php');
 }
 
-if (get('action') === 'resolve' && get('report_id')) {
-    update_report((int)get('report_id'), 'resolved', (int)$_SESSION['user_id']);
-    flash('success', 'Report marked as resolved');
-    redirect('admin.php');
-}
-
-if (get('action') === 'delete' && get('report_id')) {
-    delete_report((int)get('report_id'));
-    flash('success', 'Report deleted');
-    redirect('admin.php');
-}
-
-// Delete reading
-if (get('action') === 'delete_reading' && get('reading_id')) {
-    $pdo = db();
-    $stmt = $pdo->prepare("DELETE FROM events WHERE id = ? AND type = 'reading'");
-    $stmt->execute([(int)get('reading_id')]);
-    flash('success', 'Reading deleted');
-    redirect('admin.php');
-}
-
-// Export readings CSV
-if (get('action') === 'export') {
-    $allReadings = get_all_readings(1000);
-    header('Content-Type: text/csv');
-    header('Content-Disposition: attachment; filename="readings_'.date('Y-m-d').'.csv"');
-    echo export_readings_csv($allReadings);
+if (get('action') === 'export' || get('action') === 'export_reports') {
+    $reportsCsv = get('action') === 'export_reports';
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="' . ($reportsCsv ? 'reports_' : 'readings_') . date('Y-m-d') . '.csv"');
+    if ($reportsCsv) {
+        $stream = fopen('php://output', 'w');
+        fputcsv($stream, ['ID','Location','Reporter','Phone','Email','Message','Status','Submitted UTC']);
+        foreach (get_reports() as $r) {
+            fputcsv($stream, [$r['id'],csv_cell($r['location_name']),csv_cell($r['reporter_name']),
+                csv_cell($r['contact_phone']),csv_cell($r['contact_email']),csv_cell($r['message']),
+                $r['status'],$r['created_at']]);
+        }
+    } else {
+        echo export_readings_csv(get_all_readings(PHP_INT_MAX));
+    }
     exit;
-}
-
-// Delete location
-if (get('action') === 'delete_location' && get('location_id')) {
-    delete_location((int)get('location_id'));
-    flash('success', 'Location deleted successfully');
-    redirect('admin.php');
 }
 ?>
 <!DOCTYPE html>
@@ -86,7 +68,7 @@ if (get('action') === 'delete_location' && get('location_id')) {
                 <a class="nav-link" href="<?= url('dashboard.php') ?>">Dashboard</a>
                 <a class="nav-link" href="<?= url('admin.php') ?>">Admin Panel</a>
                 <a class="nav-link" href="<?= url('readings.php') ?>">All Readings</a>
-                <a class="nav-link" href="<?= url('logout.php') ?>">Logout</a>
+                <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
             </div>
         </div>
     </nav>
@@ -148,7 +130,7 @@ if (get('action') === 'delete_location' && get('location_id')) {
         <!-- All Reports Section -->
         <div class="card mb-4">
             <div class="card-header">
-                <h5>All Reports</h5>
+                <h5>All Reports</h5><a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export_reports')) ?>">Download reports CSV</a>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
@@ -166,7 +148,7 @@ if (get('action') === 'delete_location' && get('location_id')) {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($reports as $r): 
+                            <?php foreach ($reports as $r):
                                 $loc = get_location($r['location_id']);
                                 $reporterName = 'Anonymous';
                                 if ($r['user_id']) {
@@ -183,9 +165,9 @@ if (get('action') === 'delete_location' && get('location_id')) {
                                 <td><?= e($loc['name'] ?? 'Unknown') ?></td>
                                 <td><?= e(substr($r['message'], 0, 40)) ?>...</td>
                                 <td><?= e($reporterName) ?></td>
-                                <td><?= e($r['contact_phone'] ?? 'N/A') ?></td>
+                                <td><?= e($r['contact_phone'] ?? 'N/A') ?><br><small><?= e($r['contact_email'] ?? '') ?></small></td>
                                 <td>
-                                    <span class="badge bg-<?= 
+                                    <span class="badge bg-<?=
                                         ['pending' => 'warning', 'reviewed' => 'info', 'resolved' => 'success'][$r['status']] ?? 'secondary'
                                     ?>">
                                         <?= ucfirst($r['status']) ?>
@@ -193,27 +175,23 @@ if (get('action') === 'delete_location' && get('location_id')) {
                                 </td>
                                 <td><?= local_date($r['created_at']) ?></td>
                                 <td>
-                                    <button class="btn btn-xs btn-info view-report-btn" 
+                                    <button class="btn btn-xs btn-info view-report-btn"
                                             data-report-id="<?= $r['id'] ?>"
                                             data-location="<?= e($loc['name'] ?? 'Unknown') ?>"
                                             data-message="<?= e($r['message']) ?>"
                                             data-reporter="<?= e($reporterName) ?>"
-                                            data-contact="<?= e($r['contact_phone'] ?? 'N/A') ?>"
+                                            data-contact="<?= e(($r['contact_phone'] ?? 'N/A') . ' / ' . ($r['contact_email'] ?? 'No email')) ?>"
                                             data-status="<?= e($r['status']) ?>"
                                             data-date="<?= local_date($r['created_at']) ?>">
                                         View
                                     </button>
                                     <?php if ($r['status'] === 'pending'): ?>
-                                        <a href="<?= url('admin.php?action=review&report_id=' . $r['id']) ?>" 
-                                           class="btn btn-xs btn-primary">Review</a>
+                                        <form method="post" class="d-inline"><?= csrf_field() ?><input type="hidden" name="action" value="review"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-primary">Review</button></form>
                                     <?php endif; ?>
                                     <?php if ($r['status'] === 'reviewed'): ?>
-                                        <a href="<?= url('admin.php?action=resolve&report_id=' . $r['id']) ?>" 
-                                           class="btn btn-xs btn-success">Resolve</a>
+                                        <form method="post" class="d-inline"><?= csrf_field() ?><input type="hidden" name="action" value="resolve"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-success">Resolve</button></form>
                                     <?php endif; ?>
-                                    <a href="<?= url('admin.php?action=delete&report_id=' . $r['id']) ?>" 
-                                       class="btn btn-xs btn-danger" 
-                                       onclick="return confirm('Delete this report? This cannot be undone!')">Delete</a>
+                                    <form method="post" class="d-inline" onsubmit="return confirm('Delete this report?')"><?= csrf_field() ?><input type="hidden" name="action" value="delete_report"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-danger">Delete</button></form>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -263,9 +241,7 @@ if (get('action') === 'delete_location' && get('location_id')) {
                                     </span>
                                 </td>
                                 <td>
-                                    <a href="<?= url('admin.php?action=delete_location&location_id=' . $loc['id']) ?>" 
-                                       class="btn btn-xs btn-outline-danger"
-                                       onclick="return confirm('Delete this location? This cannot be undone!')">Delete</a>
+                                    <form method="post" onsubmit="return confirm('Remove this location from active maps? Its history is kept.')"><?= csrf_field() ?><input type="hidden" name="action" value="remove_location"><input type="hidden" name="id" value="<?= (int)$loc['id'] ?>"><button class="btn btn-sm btn-outline-danger">Remove</button></form>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -301,23 +277,23 @@ if (get('action') === 'delete_location' && get('location_id')) {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($readings as $r): 
+                            <?php foreach ($readings as $r):
                                 $loc = get_location($r['location_id']);
                             ?>
                             <tr>
                                 <td><?= $r['id'] ?></td>
                                 <td><?= e($loc['name'] ?? 'Unknown') ?></td>
                                 <td>
-                                    <span class="badge bg-<?= 
-                                        ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger'] 
+                                    <span class="badge bg-<?=
+                                        ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger']
                                         [$r['risk_level']] ?? 'secondary'
                                     ?> badge-risk">
                                         <?= ucfirst($r['risk_level']) ?>
                                     </span>
                                 </td>
                                 <td>
-                                    <?= ($r['rainfall_1h'] ?? 'N/A') ?> / 
-                                    <?= ($r['rainfall_24h'] ?? 'N/A') ?> / 
+                                    <?= ($r['rainfall_1h'] ?? 'N/A') ?> /
+                                    <?= ($r['rainfall_24h'] ?? 'N/A') ?> /
                                     <?= ($r['rainfall_72h'] ?? 'N/A') ?> mm
                                 </td>
                                 <td><?= $r['rainfall_forecast_24h'] ?? 'N/A' ?> mm</td>
@@ -326,11 +302,9 @@ if (get('action') === 'delete_location' && get('location_id')) {
                                 <td><?= $r['temperature'] ?? 'N/A' ?>°C</td>
                                 <td><?= local_date($r['observed_at']) ?></td>
                                 <td>
-                                    <a href="<?= url('save_reading.php?reading_id=' . $r['id']) ?>" 
+                                    <a href="<?= url('actions/save_reading.php?reading_id=' . $r['id']) ?>"
                                        class="btn btn-xs btn-outline-primary">Edit</a>
-                                    <a href="<?= url('delete_reading.php?reading_id=' . $r['id'] . '&from=admin.php') ?>" 
-                                       class="btn btn-xs btn-outline-danger"
-                                       onclick="return confirm('Delete this reading? This cannot be undone!')">Delete</a>
+                                    <form method="post" action="<?= e(url('actions/delete_reading.php')) ?>" class="d-inline" onsubmit="return confirm('Remove this reading?')"><?= csrf_field() ?><input type="hidden" name="reading_id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-outline-danger">Delete</button></form>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -356,22 +330,22 @@ if (get('action') === 'delete_location' && get('location_id')) {
                     <dl class="row">
                         <dt class="col-sm-3">Report ID:</dt>
                         <dd class="col-sm-9" id="modalReportId"></dd>
-                        
+
                         <dt class="col-sm-3">Location:</dt>
                         <dd class="col-sm-9" id="modalReportLocation"></dd>
-                        
+
                         <dt class="col-sm-3">Message:</dt>
                         <dd class="col-sm-9" id="modalReportMessage"></dd>
-                        
+
                         <dt class="col-sm-3">Reporter:</dt>
                         <dd class="col-sm-9" id="modalReportReporter"></dd>
-                        
+
                         <dt class="col-sm-3">Contact:</dt>
                         <dd class="col-sm-9" id="modalReportContact"></dd>
-                        
+
                         <dt class="col-sm-3">Status:</dt>
                         <dd class="col-sm-9" id="modalReportStatus"></dd>
-                        
+
                         <dt class="col-sm-3">Date:</dt>
                         <dd class="col-sm-9" id="modalReportDate"></dd>
                     </dl>
@@ -383,38 +357,7 @@ if (get('action') === 'delete_location' && get('location_id')) {
         </div>
     </div>
 
-    <!-- Edit Reading Modal -->
-    <div class="modal fade" id="editReadingModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <form method="post">
-                    <input type="hidden" name="reading_id" id="modalReadingId">
-                    <input type="hidden" name="update_reading" value="1">
-                    <div class="modal-header">
-                        <h5 class="modal-title">Edit Reading Risk Level</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="mb-3">
-                            <label class="form-label">Risk Level</label>
-                            <select name="risk_level" id="modalRiskLevel" class="form-select" required>
-                                <option value="low">Low</option>
-                                <option value="normal">Normal</option>
-                                <option value="medium">Medium</option>
-                                <option value="high">High</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Save Changes</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <script src="<?= url('assets/js/bootstrap.bundle.min.js') ?>"></script>
+    <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
     <script>
         // View Report modal
         const viewReportModal = document.getElementById('viewReportModal');
@@ -427,7 +370,7 @@ if (get('action') === 'delete_location' && get('location_id')) {
                 const contact = this.getAttribute('data-contact');
                 const status = this.getAttribute('data-status');
                 const date = this.getAttribute('data-date');
-                
+
                 viewReportModal.querySelector('#modalReportId').textContent = reportId;
                 viewReportModal.querySelector('#modalReportLocation').textContent = location;
                 viewReportModal.querySelector('#modalReportMessage').textContent = message;
@@ -435,25 +378,12 @@ if (get('action') === 'delete_location' && get('location_id')) {
                 viewReportModal.querySelector('#modalReportContact').textContent = contact;
                 viewReportModal.querySelector('#modalReportStatus').textContent = status;
                 viewReportModal.querySelector('#modalReportDate').textContent = date;
-                
+
                 const bootstrapModal = new bootstrap.Modal(viewReportModal);
                 bootstrapModal.show();
             });
         });
-        
-        // Edit reading modal
-        const editModal = document.getElementById('editReadingModal');
-        editModal.addEventListener('show.bs.modal', function(event) {
-            const button = event.relatedTarget;
-            const readingId = button.getAttribute('data-reading-id');
-            const riskLevel = button.getAttribute('data-risk-level');
-            
-            const modalReadingId = editModal.querySelector('#modalReadingId');
-            const modalRiskLevel = editModal.querySelector('#modalRiskLevel');
-            
-            modalReadingId.value = readingId;
-            modalRiskLevel.value = riskLevel;
-        });
+
     </script>
 </body>
 </html>

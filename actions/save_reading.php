@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/app/config.php';
+require_once __DIR__ . '/../app/config.php';
 start_session();
 require_admin();
 
@@ -22,13 +22,17 @@ if (!$reading) {
 
 // Handle POST - update risk level
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['update_reading'])) {
+    require_post_csrf();
     $riskLevel = post('risk_level');
-    
-    $stmt = $pdo->prepare("UPDATE events SET risk_level = ? WHERE id = ? AND type = 'reading'");
-    $stmt->execute([$riskLevel, $readingId]);
-    
+    if (!in_array($riskLevel, ['low', 'normal', 'medium', 'high'], true)) {
+        http_response_code(422);
+        exit('Invalid risk level.');
+    }
+
+    update_reading_risk($readingId, $riskLevel);
+
     flash('success', 'Reading risk level updated successfully');
-    redirect(get('from', 'admin.php'));
+    redirect('admin.php');
 }
 
 $loc = get_location($reading['location_id']);
@@ -51,42 +55,42 @@ $loc = get_location($reading['location_id']);
                     </div>
                     <div class="card-body">
                         <form method="post">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="update_reading" value="1">
-                            <input type="hidden" name="from" value="<?= e(get('from', 'admin.php')) ?>">
-                            
+
                             <div class="mb-3">
                                 <label class="form-label">Location</label>
                                 <p class="form-control-plaintext">
-                                    <?= e($loc['name'] ?? 'Unknown') ?> 
+                                    <?= e($loc['name'] ?? 'Unknown') ?>
                                     <?php if ($loc['lat'] && $loc['lng']): ?>
                                         (<?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?>)
                                     <?php endif; ?>
                                 </p>
                             </div>
-                            
+
                             <div class="mb-3">
                                 <label class="form-label">Observed At</label>
                                 <p class="form-control-plaintext"><?= local_date($reading['observed_at']) ?></p>
                             </div>
-                            
+
                             <div class="mb-3">
                                 <label class="form-label">Rainfall</label>
                                 <p class="form-control-plaintext">
-                                    1h: <?= $reading['rainfall_1h'] ?? 'N/A' ?> mm | 
-                                    24h: <?= $reading['rainfall_24h'] ?? 'N/A' ?> mm | 
+                                    1h: <?= $reading['rainfall_1h'] ?? 'N/A' ?> mm |
+                                    24h: <?= $reading['rainfall_24h'] ?? 'N/A' ?> mm |
                                     72h: <?= $reading['rainfall_72h'] ?? 'N/A' ?> mm
                                 </p>
                             </div>
-                            
+
                             <?php if ($reading['temperature'] || $reading['humidity'] || $reading['wind_speed']): ?>
                             <div class="mb-3">
                                 <label class="form-label">Weather Data</label>
                                 <p class="form-control-plaintext">
                                     <?php if ($reading['temperature']): ?>
-                                        Temp: <?= $reading['temperature'] ?>°C | 
+                                        Temp: <?= $reading['temperature'] ?>°C |
                                     <?php endif; ?>
                                     <?php if ($reading['humidity']): ?>
-                                        Humidity: <?= $reading['humidity'] ?>% | 
+                                        Humidity: <?= $reading['humidity'] ?>% |
                                     <?php endif; ?>
                                     <?php if ($reading['wind_speed']): ?>
                                         Wind: <?= $reading['wind_speed'] ?> km/h
@@ -94,19 +98,19 @@ $loc = get_location($reading['location_id']);
                                 </p>
                             </div>
                             <?php endif; ?>
-                            
+
                             <div class="mb-3">
                                 <label class="form-label">Current Risk Level</label>
                                 <p class="form-control-plaintext">
-                                    <span class="badge bg-<?= 
-                                        ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger'] 
+                                    <span class="badge bg-<?=
+                                        ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger']
                                         [$reading['risk_level']] ?? 'secondary'
                                     ?>">
                                         <?= ucfirst($reading['risk_level']) ?>
                                     </span>
                                 </p>
                             </div>
-                            
+
                             <div class="mb-3">
                                 <label class="form-label">New Risk Level *</label>
                                 <select name="risk_level" class="form-select" required>
@@ -117,9 +121,9 @@ $loc = get_location($reading['location_id']);
                                     <option value="high" <?= $reading['risk_level'] === 'high' ? 'selected' : '' ?>>High</option>
                                 </select>
                             </div>
-                            
+
                             <div class="d-flex gap-2">
-                                <a href="<?= url(get('from', 'admin.php')) ?>" class="btn btn-secondary">Cancel</a>
+                                <a href="<?= e(url('admin.php')) ?>" class="btn btn-secondary">Cancel</a>
                                 <button type="submit" class="btn btn-primary">Save Changes</button>
                             </div>
                         </form>

@@ -8,20 +8,13 @@ $isAdmin = is_admin();
 
 // Export CSV
 if (get('action') === 'export') {
+    require_admin();
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="readings_'.date('Y-m-d').'.csv"');
-    echo export_readings_csv($readings);
+    echo export_readings_csv(get_all_readings(PHP_INT_MAX));
     exit;
 }
 
-// Delete reading
-if (get('action') === 'delete' && get('reading_id')) {
-    $pdo = db();
-    $stmt = $pdo->prepare("DELETE FROM events WHERE id = ? AND type = 'reading'");
-    $stmt->execute([(int)get('reading_id')]);
-    flash('success', 'Reading deleted successfully');
-    redirect('readings.php');
-}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -41,7 +34,7 @@ if (get('action') === 'delete' && get('reading_id')) {
             <div class="navbar-nav">
                 <a class="nav-link" href="<?= url('dashboard.php') ?>">Dashboard</a>
                 <a class="nav-link" href="<?= url('readings.php') ?>">All Readings</a>
-                <a class="nav-link" href="<?= url('logout.php') ?>">Logout</a>
+                <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
             </div>
         </div>
     </nav>
@@ -50,9 +43,9 @@ if (get('action') === 'delete' && get('reading_id')) {
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2>All Weather Readings</h2>
             <div>
-                <a href="<?= url('readings.php?action=export') ?>" class="btn btn-outline-success">
+                <?php if ($isAdmin): ?><a href="<?= url('readings.php?action=export') ?>" class="btn btn-outline-success">
                     Export CSV
-                </a>
+                </a><?php endif; ?>
             </div>
         </div>
 
@@ -79,7 +72,7 @@ if (get('action') === 'delete' && get('reading_id')) {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($readings as $r): 
+                            <?php foreach ($readings as $r):
                                 $loc = get_location($r['location_id']);
                                 $staleClass = $r['stale'] ? 'text-muted' : '';
                             ?>
@@ -87,8 +80,8 @@ if (get('action') === 'delete' && get('reading_id')) {
                                 <td><?= $r['id'] ?></td>
                                 <td><?= e($loc['name'] ?? 'Unknown') ?></td>
                                 <td>
-                                    <span class="badge bg-<?= 
-                                        ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger'] 
+                                    <span class="badge bg-<?=
+                                        ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger']
                                         [$r['risk_level']] ?? 'secondary'
                                     ?> badge-risk">
                                         <?= ucfirst($r['risk_level']) ?>
@@ -106,11 +99,12 @@ if (get('action') === 'delete' && get('reading_id')) {
                                 <td><?= $r['archived'] ? 'Archived' : ($r['stale'] ? 'Stale' : 'Current') ?></td>
                                 <?php if ($isAdmin): ?>
                                     <td>
-                                        <a href="<?= url('save_reading.php?reading_id=' . $r['id']) ?>" 
+                                        <a href="<?= url('actions/save_reading.php?reading_id=' . $r['id']) ?>"
                                            class="btn btn-xs btn-outline-primary">Edit</a>
-                                        <a href="<?= url('readings.php?action=delete&reading_id=' . $r['id']) ?>" 
-                                           class="btn btn-xs btn-outline-danger"
-                                           onclick="return confirm('Delete this reading? This cannot be undone!')">Delete</a>
+                                        <form method="post" action="<?= e(url('actions/delete_reading.php')) ?>" class="d-inline" onsubmit="return confirm('Remove this reading?')">
+                                            <?= csrf_field() ?><input type="hidden" name="reading_id" value="<?= (int)$r['id'] ?>">
+                                            <button class="btn btn-sm btn-outline-danger">Delete</button>
+                                        </form>
                                     </td>
                                 <?php endif; ?>
                             </tr>
@@ -128,7 +122,7 @@ if (get('action') === 'delete' && get('reading_id')) {
             </div>
         </div>
     </div>
-    
-    <script src="<?= url('assets/js/bootstrap.bundle.min.js') ?>"></script>
+
+    <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
 </body>
 </html>

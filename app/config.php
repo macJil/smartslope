@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__ . '/RiskAnalyzer.php';
 
 // Ultra-simplified configuration - combines config.php, paths.php, and helpers
 
@@ -53,7 +54,11 @@ $config = [
 // PATHS
 // ============================================================================
 define('APP_ROOT', dirname(__DIR__));
-define('APP_BASE_PATH', $config['base_path']);
+$scriptDirectory = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/index.php'));
+if (in_array(basename($scriptDirectory), ['actions', 'api', 'pages'], true)) {
+    $scriptDirectory = dirname($scriptDirectory);
+}
+define('APP_BASE_PATH', $config['base_path'] !== '' ? $config['base_path'] : ($scriptDirectory === '/' ? '' : $scriptDirectory));
 
 // ============================================================================
 // DATABASE CONNECTION
@@ -94,7 +99,8 @@ function get(string $key, $default = '') {
 
 // Build URL
 function url(string $path = ''): string {
-    return APP_BASE_PATH . '/' . ltrim($path, '/');
+    $base = '/' . trim(APP_BASE_PATH, '/');
+    return rtrim($base, '/') . '/' . ltrim($path, '/');
 }
 
 // Redirect
@@ -116,6 +122,29 @@ function start_session(): void {
         $isHttps = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
         session_set_cookie_params(['httponly' => true, 'secure' => $isHttps, 'samesite' => 'Lax']);
         session_start();
+    }
+}
+
+function csrf_token(): string {
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+function csrf_field(): string {
+    return '<input type="hidden" name="csrf_token" value="' . e(csrf_token()) . '">';
+}
+
+function valid_csrf(): bool {
+    return ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' &&
+        hash_equals(csrf_token(), (string)($_POST['csrf_token'] ?? ''));
+}
+
+function require_post_csrf(): void {
+    if (!valid_csrf()) {
+        http_response_code(403);
+        exit('Invalid request token. Reload the page and try again.');
     }
 }
 
@@ -210,38 +239,6 @@ function get_location(int $id): ?array {
     return $stmt->fetch() ?: null;
 }
 
-// Create location
-function create_location(array $data): int {
-    $pdo = db();
-    $stmt = $pdo->prepare(
-        "INSERT INTO locations (name, purok, landmark, lat, lng, susceptibility, active)
-         VALUES (?, ?, ?, ?, ?, ?, 1)"
-    );
-    $stmt->execute([
-        $data['name'],
-        $data['purok'] ?? null,
-        $data['landmark'] ?? null,
-        $data['lat'] ?? null,
-        $data['lng'] ?? null,
-        $data['susceptibility'] ?? 'unknown'
-    ]);
-    return (int)$pdo->lastInsertId();
-}
-
-// Update location
-function update_location(int $id, array $data): bool {
-    $pdo = db();
-    $sets = [];
-    $values = [];
-    foreach ($data as $key => $value) {
-        $sets[] = "$key = ?";
-        $values[] = $value;
-    }
-    $values[] = $id;
-    $stmt = $pdo->prepare("UPDATE locations SET " . implode(',', $sets) . " WHERE id = ?");
-    return $stmt->execute($values);
-}
-
 // Deactivate location
 function deactivate_location(int $id): bool {
     $pdo = db();
@@ -269,7 +266,9 @@ function get_readings(int $locationId, int $limit = 50): array {
          WHERE location_id = ? AND type = 'reading' AND archived = 0
          ORDER BY observed_at DESC, id DESC LIMIT ?"
     );
-    $stmt->execute([$locationId, $limit]);
+    $stmt->bindValue(1, $locationId, PDO::PARAM_INT);
+    $stmt->bindValue(2, max(1, $limit), PDO::PARAM_INT);
+    $stmt->execute();
     return $stmt->fetchAll();
 }
 
@@ -282,7 +281,7 @@ function get_all_readings(int $limit = 100): array {
          JOIN locations l ON l.id = e.location_id
          WHERE e.type = 'reading' AND e.archived = 0 AND l.active = 1
          ORDER BY e.observed_at DESC, e.id DESC
-         LIMIT $limit"
+         LIMIT " . max(1, (int)$limit)
     )->fetchAll();
 }
 
@@ -319,14 +318,9 @@ function create_reading(array $data): int {
 
 // Calculate risk level
 function calculate_risk(?float $r1, ?float $r24, ?float $r72): string {
-    $r1 = $r1 ?? 0;
-    $r24 = $r24 ?? 0;
-    $r72 = $r72 ?? 0;
-
-    if ($r1 >= 50 || $r24 >= 100 || $r72 >= 150) return 'high';
-    if ($r1 >= 25 || $r24 >= 50 || $r72 >= 100) return 'medium';
-    if ($r1 >= 10 || $r24 >= 25 || $r72 >= 50) return 'normal';
-    return 'low';
+    $level = (new RiskAnalyzer())->analyze($r1, $r24, $r72);
+    if ($level === null) throw new RuntimeException('Rainfall history is incomplete; no risk category was saved.');
+    return $level;
 }
 
 // Get all reports
@@ -337,7 +331,7 @@ function get_reports(?string $status = null): array {
             FROM events e
             JOIN locations l ON l.id = e.location_id
             LEFT JOIN users u ON u.id = e.user_id
-            WHERE e.type = 'report' AND l.active = 1";
+            WHERE e.type = 'report'";
     $params = [];
     if ($status) {
         $sql .= " AND e.status = ?";
@@ -387,8 +381,8 @@ function create_report(array $data): int {
 // Update report status
 function update_report(int $id, string $status, int $adminId): bool {
     $pdo = db();
-    $stmt = $pdo->prepare("UPDATE events SET status = ?, user_id = ? WHERE id = ? AND type = 'report'");
-    return $stmt->execute([$status, $adminId, $id]);
+    $stmt = $pdo->prepare("UPDATE events SET status = ? WHERE id = ? AND type = 'report'");
+    return $stmt->execute([$status, $id]);
 }
 
 // Delete report
@@ -402,8 +396,21 @@ function delete_report(int $id): bool {
 // Archive reading
 function archive_reading(int $id): bool {
     $pdo = db();
-    $stmt = $pdo->prepare("UPDATE events SET archived = 1 WHERE id = ? AND type = 'reading'");
-    return $stmt->execute([$id]);
+    $stmt = $pdo->prepare("UPDATE events SET archived = 1 WHERE id = ? AND type = 'reading' AND archived = 0");
+    $stmt->execute([$id]);
+    return $stmt->rowCount() === 1;
+}
+
+function update_reading_risk(int $readingId, string $risk): void {
+    if (!in_array($risk, ['low', 'normal', 'medium', 'high'], true)) {
+        throw new InvalidArgumentException('Invalid risk category.');
+    }
+    $pdo = db();
+    $exists = $pdo->prepare("SELECT id FROM events WHERE id = ? AND type = 'reading' AND archived = 0");
+    $exists->execute([$readingId]);
+    if (!$exists->fetchColumn()) throw new InvalidArgumentException('Reading not found.');
+    $stmt = $pdo->prepare("UPDATE events SET risk_level = ? WHERE id = ? AND type = 'reading' AND archived = 0");
+    $stmt->execute([$risk, $readingId]);
 }
 
 // ============================================================================
@@ -418,7 +425,7 @@ function fetch_weather(float $lat, float $lng): array {
         'longitude' => $lng,
         'current' => 'temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m',
         'hourly' => 'precipitation,precipitation_probability,soil_moisture_9_to_27cm,soil_moisture_27_to_81cm',
-        'past_days' => 3,
+        'past_hours' => 73,
         'forecast_hours' => 25,
         'timezone' => 'UTC'
     ];
@@ -426,10 +433,20 @@ function fetch_weather(float $lat, float $lng): array {
     $ch = curl_init($url . http_build_query($params));
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
     $response = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-
-    return json_decode($response, true) ?: [];
+    if ($response === false || $status !== 200) {
+        throw new RuntimeException('Weather provider is unavailable.');
+    }
+    $decoded = json_decode($response, true);
+    if (!is_array($decoded) || empty($decoded['current']['time'])) {
+        throw new RuntimeException('Weather provider returned incomplete data.');
+    }
+    return $decoded;
 }
 
 // Calculate rainfall from hourly data
@@ -498,7 +515,7 @@ function calculate_weather_indicators(array $hourly, string $currentTime): array
     }
 
     foreach ($rainfallTotals as $windowHours => $total) {
-        if ($rainfallCounts[$windowHours] > 0) {
+        if ($rainfallCounts[$windowHours] === $windowHours) {
             $indicators['rainfall_' . $windowHours . 'h'] = round($total, 2);
         }
     }
@@ -525,7 +542,7 @@ function get_or_create_location(float $lat, float $lng): array {
 
     if ($loc = $stmt->fetch()) {
         if (!$loc['active']) {
-            $pdo->prepare("UPDATE locations SET active = 1 WHERE id = ?")->execute([$loc['id']]);
+            throw new InvalidArgumentException('This monitoring point was removed by an administrator.');
         }
         return $loc;
     }
@@ -540,13 +557,68 @@ function get_or_create_location(float $lat, float $lng): array {
     return get_location((int)$pdo->lastInsertId());
 }
 
+function refresh_location(int $locationId): array {
+    $location = get_location($locationId);
+    if (!$location || !$location['active'] || !$location['lat'] || !$location['lng'] ||
+        !is_in_irisan((float)$location['lat'], (float)$location['lng'])) {
+        throw new InvalidArgumentException('Select an active Irisan location.');
+    }
+    $weather = fetch_weather((float)$location['lat'], (float)$location['lng']);
+    $current = $weather['current'];
+    $indicators = calculate_weather_indicators($weather['hourly'] ?? [], $current['time']);
+    $risk = calculate_risk($indicators['rainfall_1h'], $indicators['rainfall_24h'], $indicators['rainfall_72h']);
+    $observed = strtotime($current['time'] . ' UTC');
+    if ($observed === false || abs(time() - $observed) > 3 * 3600) {
+        throw new RuntimeException('The provider observation is stale or in the future.');
+    }
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $id = create_reading(array_merge($indicators, [
+            'location_id' => $locationId, 'risk_level' => $risk,
+            'temperature' => $current['temperature_2m'] ?? null,
+            'humidity' => $current['relative_humidity_2m'] ?? null,
+            'wind_speed' => $current['wind_speed_10m'] ?? null,
+            'weather_code' => $current['weather_code'] ?? null,
+            'observed_at' => gmdate('Y-m-d H:i:s', $observed),
+        ]));
+        $pdo->prepare("UPDATE events SET stale = (id <> ?) WHERE location_id = ? AND type = 'reading' AND archived = 0")
+            ->execute([$id, $locationId]);
+        $pdo->commit();
+        return get_latest_reading($locationId);
+    } catch (Throwable $error) {
+        $pdo->rollBack();
+        throw $error;
+    }
+}
+
 // ============================================================================
 // MAP BOUNDARY CHECK
 // ============================================================================
 
 // Simple bounds check for Barangay Irisan
 function is_in_irisan(float $lat, float $lng): bool {
-    return $lat >= 16.407 && $lat <= 16.435 && $lng >= 120.543 && $lng <= 120.576;
+    $geo = json_decode((string)file_get_contents(APP_ROOT . '/assets/map/irisan.geojson'), true);
+    if (!is_array($geo)) return false;
+    $geometry = $geo['type'] === 'FeatureCollection'
+        ? ($geo['features'][0]['geometry'] ?? null)
+        : ($geo['geometry'] ?? $geo);
+    $rings = $geometry['type'] === 'Polygon' ? [$geometry['coordinates']] : ($geometry['coordinates'] ?? []);
+    foreach ($rings as $polygon) {
+        $inside = false;
+        foreach ($polygon as $ringIndex => $ring) {
+            $crosses = false;
+            for ($i = 0, $j = count($ring) - 1; $i < count($ring); $j = $i++) {
+                [$x1, $y1] = $ring[$i]; [$x2, $y2] = $ring[$j];
+                if (($y1 > $lat) !== ($y2 > $lat) &&
+                    $lng < ($x2 - $x1) * ($lat - $y1) / ($y2 - $y1) + $x1) $crosses = !$crosses;
+            }
+            if ($ringIndex === 0) $inside = $crosses;
+            elseif ($crosses) $inside = false;
+        }
+        if ($inside) return true;
+    }
+    return false;
 }
 
 // ============================================================================
@@ -564,7 +636,7 @@ function export_readings_csv(array $readings): string {
     foreach ($readings as $r) {
         fputcsv($stream, [
             $r['id'],
-            $r['location_name'] ?? '',
+            csv_cell($r['location_name'] ?? ''),
             $r['risk_level'],
             $r['rainfall_1h'] ?? '',
             $r['rainfall_24h'] ?? '',
@@ -581,4 +653,9 @@ function export_readings_csv(array $readings): string {
     $csv = stream_get_contents($stream);
     fclose($stream);
     return $csv;
+}
+
+function csv_cell($value): string {
+    $value = (string)$value;
+    return preg_match('/^[\s]*[=+\-@\t\r]/u', $value) ? "'" . $value : $value;
 }

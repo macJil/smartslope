@@ -22,51 +22,6 @@ foreach ($locations as $loc) {
     }
 }
 
-if (get('refresh') && $selectedLocId) {
-    if ($selectedLoc && $selectedLoc['lat'] && $selectedLoc['lng']) {
-        try {
-            $weatherData = fetch_weather((float)$selectedLoc['lat'], (float)$selectedLoc['lng']);
-            if (!empty($weatherData['current'])) {
-                $current = $weatherData['current'];
-                $hourly = $weatherData['hourly'] ?? [];
-                $indicators = calculate_weather_indicators($hourly, $current['time']);
-                $riskLevel = calculate_risk(
-                    $indicators['rainfall_1h'],
-                    $indicators['rainfall_24h'],
-                    $indicators['rainfall_72h']
-                );
-
-                create_reading([
-                    'location_id' => $selectedLocId,
-                    'rainfall_1h' => $indicators['rainfall_1h'],
-                    'rainfall_24h' => $indicators['rainfall_24h'],
-                    'rainfall_72h' => $indicators['rainfall_72h'],
-                    'rainfall_forecast_24h' => $indicators['rainfall_forecast_24h'],
-                    'precipitation_probability_24h' => $indicators['precipitation_probability_24h'],
-                    'soil_moisture_9_27cm' => $indicators['soil_moisture_9_27cm'],
-                    'soil_moisture_27_81cm' => $indicators['soil_moisture_27_81cm'],
-                    'risk_level' => $riskLevel,
-                    'temperature' => $current['temperature_2m'] ?? null,
-                    'humidity' => $current['relative_humidity_2m'] ?? null,
-                    'wind_speed' => $current['wind_speed_10m'] ?? null,
-                    'weather_code' => $current['weather_code'] ?? null,
-                    'observed_at' => $current['time'],
-                    'source' => 'openmeteo'
-                ]);
-
-                $pdo = db();
-                $stmt = $pdo->prepare("UPDATE events SET stale = 1 WHERE location_id = ? AND type = 'reading' AND stale = 0");
-                $stmt->execute([$selectedLocId]);
-
-                flash('success', 'Weather data refreshed!');
-                redirect('dashboard.php?location_id=' . $selectedLocId);
-            }
-        } catch (Exception $e) {
-            flash('error', 'Failed to refresh weather: ' . $e->getMessage());
-        }
-    }
-}
-
 if ($selectedLocId) {
     $readings = get_readings($selectedLocId, 10);
 } else {
@@ -83,20 +38,22 @@ if ($selectedLocId) {
     <link rel="stylesheet" href="<?= url('assets/vendor/leaflet/leaflet.css') ?>">
     <style>
         .map-card {
+            width: 100%;
             overflow: hidden;
             border: 0;
-            border-radius: 0;
+            border-radius: .5rem;
         }
         .map-surface {
             position: relative;
             width: 100%;
+            height: clamp(420px, 64vh, 680px);
+            overflow: hidden;
         }
         #dashboard-map {
-            display: block;
-            height: 520px;
+            position: absolute;
+            inset: 0;
             width: 100%;
-            min-height: 520px;
-            overflow: hidden;
+            height: 100%;
         }
         .leaflet-container {
             width: 100%;
@@ -174,9 +131,8 @@ if ($selectedLocId) {
             max-width: calc(100% - 2rem);
         }
         @media (max-width: 575.98px) {
-            #dashboard-map {
-                height: 440px;
-                min-height: 440px;
+            .map-surface {
+                height: 420px;
             }
             .map-legend {
                 left: 1rem;
@@ -195,12 +151,12 @@ if ($selectedLocId) {
                     <a class="nav-link" href="<?= url('report.php') ?>">Submit Report</a>
                 <?php endif; ?>
                 <a class="nav-link" href="<?= url('readings.php') ?>">All Readings</a>
-                <a class="nav-link" href="<?= url('logout.php') ?>">Logout</a>
+                <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
             </div>
         </div>
     </nav>
 
-    <div class="container my-4">
+    <div class="container-fluid px-3 px-lg-4 my-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2>Welcome, <?= e($_SESSION['full_name']) ?> (<?= e($_SESSION['role']) ?>)</h2>
         </div>
@@ -243,13 +199,12 @@ if ($selectedLocId) {
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h5>Risk Status</h5>
                         <?php if ($selectedLocId && $selectedLoc): ?>
-                            <a href="<?= url('dashboard.php?location_id=' . $selectedLocId . '&refresh=1') ?>"
-                               class="btn btn-sm btn-outline-primary">
+                            <button type="button" id="refresh-weather" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-arrow-clockwise"></i> Refresh Weather
-                            </a>
+                            </button>
                         <?php endif; ?>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" id="risk-content" data-location="<?= e($selectedLoc['name'] ?? '') ?>">
                         <?php if ($selectedLoc && $latestReading): ?>
                             <div class="display-6 fw-bold text-<?=
                                 ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger'][$latestReading['risk_level']] ?? 'secondary'
@@ -337,7 +292,7 @@ if ($selectedLocId) {
                                 <?php if ($isAdmin): ?><th>Actions</th><?php endif; ?>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody id="recent-readings-body">
                             <?php foreach ($readings as $r):
                                 $loc = get_location($r['location_id']);
                                 $staleClass = $r['stale'] ? 'text-muted' : '';
@@ -361,11 +316,9 @@ if ($selectedLocId) {
                                 <td><?= $r['stale'] ? 'Stale' : 'Current' ?></td>
                                 <?php if ($isAdmin): ?>
                                     <td>
-                                        <a href="<?= url('save_reading.php?reading_id=' . $r['id']) ?>"
+                                        <a href="<?= url('actions/save_reading.php?reading_id=' . $r['id']) ?>"
                                            class="btn btn-xs btn-outline-primary">Edit</a>
-                                        <a href="<?= url('delete_reading.php?reading_id=' . $r['id'] . '&from=dashboard.php') ?>"
-                                           class="btn btn-xs btn-outline-danger"
-                                           onclick="return confirm('Delete this reading? This cannot be undone!')">Delete</a>
+                                        <form method="post" action="<?= e(url('actions/delete_reading.php')) ?>" class="d-inline" onsubmit="return confirm('Remove this reading?')"><?= csrf_field() ?><input type="hidden" name="reading_id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-outline-danger">Delete</button></form>
                                     </td>
                                 <?php endif; ?>
                             </tr>
@@ -428,8 +381,7 @@ if ($selectedLocId) {
                                 </td>
                                 <td><?= local_date($r['created_at']) ?></td>
                                 <td>
-                                    <a href="<?= url('admin.php?action=review&report_id=' . $r['id']) ?>"
-                                       class="btn btn-xs btn-primary">Review</a>
+                                    <form method="post" action="<?= e(url('admin.php')) ?>"><?= csrf_field() ?><input type="hidden" name="action" value="review"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-primary">Review</button></form>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -446,10 +398,17 @@ if ($selectedLocId) {
         <?php endif; ?>
     </div>
 
-    <script src="<?= url('assets/js/bootstrap.bundle.min.js') ?>"></script>
+    <form id="map-selection-form" method="post" action="<?= e(url('actions/save_location.php')) ?>" hidden>
+        <?= csrf_field() ?><input type="hidden" name="location_id"><input type="hidden" name="lat"><input type="hidden" name="lng">
+    </form>
+    <script>window.SmartSlope = <?= json_encode(['locationId'=>$selectedLocId,'apiUrl'=>url('api/readings.php'),'csrf'=>csrf_token(),'isAdmin'=>$isAdmin,'editUrl'=>url('actions/save_reading.php?reading_id='),'deleteUrl'=>url('actions/delete_reading.php')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
+    <script src="<?= e(url('assets/js/vendor/jquery.min.js')) ?>"></script>
+    <script src="<?= e(url('assets/js/dashboard.js')) ?>"></script>
+    <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
     <script src="<?= url('assets/vendor/leaflet/leaflet.js') ?>"></script>
+    <script src="<?= e(url('assets/js/irisan-boundary.js')) ?>"></script>
     <script>
-        const locations = <?= json_encode($locations) ?>;
+        const locations = <?= json_encode($locations, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) ?>;
         const selectedLocId = <?= $selectedLocId ?>;
         const baseUrl = '<?= url() ?>';
 
@@ -460,34 +419,50 @@ if ($selectedLocId) {
 
         const map = L.map('dashboard-map', {
             zoomControl: true,
-            scrollWheelZoom: true
-        }).fitBounds(irisanBounds.pad(0.18));
+            scrollWheelZoom: true,
+            maxBounds: irisanBounds.pad(0.3),
+            maxBoundsViscosity: 1,
+            minZoom: 12,
+            maxZoom: 16
+        }).fitBounds(irisanBounds, { padding: [18, 18], maxZoom: 15 });
 
         L.tileLayer('<?= url("assets/map-tiles/{z}/{x}/{y}.png") ?>', {
             attribution: 'Barangay Irisan offline map tiles',
-            maxZoom: 15,
+            maxNativeZoom: 15,
+            maxZoom: 16,
             minZoom: 12,
             tileSize: 256,
-            noWrap: true,
-            bounds: irisanBounds
+            noWrap: true
         }).addTo(map);
 
-        setTimeout(() => map.invalidateSize(), 120);
+        new ResizeObserver(() => map.invalidateSize({ pan: false })).observe(document.getElementById('dashboard-map'));
+        requestAnimationFrame(() => map.invalidateSize());
 
         fetch('<?= url("assets/map/irisan.geojson") ?>')
             .then(response => response.json())
             .then(data => {
+                IrisanBoundary.load(data);
                 const boundaryLayer = L.geoJSON(data, {
-                    style: { color: '#3388ff', weight: 2, fillOpacity: 0.1 }
+                    interactive: false,
+                    style: { color: '#13589e', weight: 3, fillOpacity: 0.08 }
                 }).addTo(map);
-                map.fitBounds(boundaryLayer.getBounds().pad(0.18));
+                map.fitBounds(boundaryLayer.getBounds(), { padding: [18, 18], maxZoom: 15 });
             })
             .catch(() => {
-                L.rectangle(irisanBounds, {color: '#3388ff', weight: 2, fillOpacity: 0.1}).addTo(map);
-                map.fitBounds(irisanBounds.pad(0.18));
+                L.rectangle(irisanBounds, {color: '#13589e', weight: 3, fillOpacity: 0.08, interactive: false}).addTo(map);
+                map.fitBounds(irisanBounds, { padding: [18, 18], maxZoom: 15 });
             });
 
         const markersLayer = L.layerGroup();
+        const markersById = new Map();
+        window.updateMapRisk = function(id, risk) {
+            const marker = markersById.get(Number(id));
+            if (!marker) return;
+            marker.setIcon(L.divIcon({
+                html: `<div class="marker-icon marker-color-${risk}">${risk[0].toUpperCase()}</div>`,
+                className: 'marker-div-icon', iconSize: [30, 30], iconAnchor: [15, 15]
+            }));
+        };
 
         locations.forEach(loc => {
             if (loc.lat && loc.lng) {
@@ -510,17 +485,23 @@ if ($selectedLocId) {
 
                 const marker = L.marker([loc.lat, loc.lng], { icon: icon });
 
-                let popupContent = `<b>${loc.name}</b><br>`;
+                let popupContent = `<b>${String(loc.name).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}</b><br>`;
                 if (latest) {
                     popupContent += `Risk: <strong>${latest.risk_level ? latest.risk_level.toUpperCase() : 'Unknown'}</strong><br>`;
-                    popupContent += `1h: ${latest.rainfall_1h || 'N/A'}mm, 24h: ${latest.rainfall_24h || 'N/A'}mm<br>`;
-                    popupContent += `Temp: ${latest.temperature || 'N/A'}°C<br>`;
-                    popupContent += `Observed: ${latest.observed_at || 'N/A'}`;
+                    popupContent += `1h: ${latest.rainfall_1h ?? 'N/A'}mm, 24h: ${latest.rainfall_24h ?? 'N/A'}mm<br>`;
+                    popupContent += `Temp: ${latest.temperature ?? 'N/A'}°C<br>`;
+                    popupContent += `Observed: ${latest.observed_at ?? 'N/A'}`;
                 }
                 popupContent += `<br><small>Pending: ${loc.pending || 0}</small>`;
 
                 marker.bindPopup(popupContent);
+                marker.on('click', () => {
+                    const form = document.getElementById('map-selection-form');
+                    form.elements.location_id.value = loc.id;
+                    form.submit();
+                });
                 marker.locId = loc.id;
+                markersById.set(Number(loc.id), marker);
                 markersLayer.addLayer(marker);
             }
         });
@@ -532,7 +513,7 @@ if ($selectedLocId) {
         map.on('click', function(e) {
             const {lat, lng} = e.latlng;
 
-            if (!irisanBounds.contains([lat, lng])) {
+            if (!IrisanBoundary.contains(lat, lng)) {
                 alert('Please click inside Barangay Irisan boundary');
                 return;
             }
@@ -562,14 +543,19 @@ if ($selectedLocId) {
                         Math.pow(loc.lat - lat, 2) + Math.pow(loc.lng - lng, 2)
                     );
                     if (dist < 0.0005) {
-                        window.location.href = baseUrl + 'dashboard.php?location_id=' + loc.id;
+                        const form = document.getElementById('map-selection-form');
+                        form.elements.location_id.value = loc.id;
+                        form.submit();
                         found = true;
                     }
                 }
             });
 
             if (!found) {
-                window.location.href = baseUrl + 'save_location.php?lat=' + lat + '&lng=' + lng;
+                const form = document.getElementById('map-selection-form');
+                form.elements.lat.value = lat;
+                form.elements.lng.value = lng;
+                form.submit();
             }
         });
 

@@ -6,13 +6,18 @@ require_login();
 $locations = get_locations();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_post_csrf();
     $locationId = (int)post('location_id');
     $message = post('message');
     $contactPhone = post('contact_phone');
     $contactEmail = post('contact_email');
     $houseLandmark = post('house_landmark');
 
-    if (!$locationId || !$message || !$contactPhone) {
+    $location = get_location($locationId);
+    if (!$location || !$location['active'] || trim((string)$message) === '' ||
+        !preg_match('/^\+?[0-9]{10,15}$/', trim((string)$contactPhone)) ||
+        ($contactEmail !== '' && !filter_var($contactEmail, FILTER_VALIDATE_EMAIL)) ||
+        trim((string)$houseLandmark) === '') {
         flash('error', 'Please fill all required fields');
         redirect('report.php');
     }
@@ -40,20 +45,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="<?= url('assets/vendor/leaflet/leaflet.css') ?>">
     <style>
         .map-card {
+            width: 100%;
             overflow: hidden;
             border: 0;
-            border-radius: 0;
+            border-radius: .5rem;
         }
         .map-surface {
             position: relative;
             width: 100%;
+            height: clamp(380px, 55vh, 580px);
+            overflow: hidden;
         }
         #report-map {
-            display: block;
-            height: 420px;
+            position: absolute;
+            inset: 0;
             width: 100%;
-            min-height: 420px;
-            overflow: hidden;
+            height: 100%;
         }
         .leaflet-container {
             width: 100%;
@@ -118,9 +125,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             margin: 0;
         }
         @media (max-width: 575.98px) {
-            #report-map {
+            .map-surface {
                 height: 380px;
-                min-height: 380px;
             }
         }
     </style>
@@ -132,12 +138,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="navbar-nav ms-auto">
                 <a class="nav-link" href="<?= url('dashboard.php') ?>">Dashboard</a>
                 <a class="nav-link" href="<?= url('report.php') ?>">Submit Report</a>
-                <a class="nav-link" href="<?= url('logout.php') ?>">Logout</a>
+                <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
             </div>
         </div>
     </nav>
 
-    <div class="container my-4">
+    <div class="container-fluid px-3 px-lg-4 my-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h2>Submit Ground Report</h2>
             <a href="<?= url('dashboard.php') ?>" class="btn btn-outline-secondary">Back to Dashboard</a>
@@ -167,6 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div class="card-body">
                         <form method="post" id="reportForm">
+                            <?= csrf_field() ?>
                             <div class="mb-3">
                                 <label class="form-label">Location *</label>
                                 <select name="location_id" id="locationSelect" class="form-select" required>
@@ -219,10 +226,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
 
-    <script src="<?= url('assets/js/bootstrap.bundle.min.js') ?>"></script>
+    <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
     <script src="<?= url('assets/vendor/leaflet/leaflet.js') ?>"></script>
+    <script src="<?= e(url('assets/js/irisan-boundary.js')) ?>"></script>
     <script>
-        const locations = <?= json_encode($locations) ?>;
+        const locations = <?= json_encode($locations, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) ?>;
 
         const irisanBounds = L.latLngBounds(
             [16.407, 120.543],
@@ -231,31 +239,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         const map = L.map('report-map', {
             zoomControl: true,
-            scrollWheelZoom: true
-        }).fitBounds(irisanBounds.pad(0.18));
+            scrollWheelZoom: true,
+            maxBounds: irisanBounds.pad(0.3),
+            maxBoundsViscosity: 1,
+            minZoom: 12,
+            maxZoom: 16
+        }).fitBounds(irisanBounds, { padding: [18, 18], maxZoom: 15 });
 
         L.tileLayer('<?= url("assets/map-tiles/{z}/{x}/{y}.png") ?>', {
             attribution: 'Barangay Irisan offline map tiles',
-            maxZoom: 15,
+            maxNativeZoom: 15,
+            maxZoom: 16,
             minZoom: 12,
             tileSize: 256,
-            noWrap: true,
-            bounds: irisanBounds
+            noWrap: true
         }).addTo(map);
 
-        setTimeout(() => map.invalidateSize(), 120);
+        new ResizeObserver(() => map.invalidateSize({ pan: false })).observe(document.getElementById('report-map'));
+        requestAnimationFrame(() => map.invalidateSize());
 
         fetch('<?= url("assets/map/irisan.geojson") ?>')
             .then(response => response.json())
             .then(data => {
+                IrisanBoundary.load(data);
                 const boundaryLayer = L.geoJSON(data, {
-                    style: { color: '#3388ff', weight: 2, fillOpacity: 0.1 }
+                    interactive: false,
+                    style: { color: '#13589e', weight: 3, fillOpacity: 0.08 }
                 }).addTo(map);
-                map.fitBounds(boundaryLayer.getBounds().pad(0.18));
+                map.fitBounds(boundaryLayer.getBounds(), { padding: [18, 18], maxZoom: 15 });
             })
             .catch(() => {
-                L.rectangle(irisanBounds, {color: '#3388ff', weight: 2, fillOpacity: 0.1}).addTo(map);
-                map.fitBounds(irisanBounds.pad(0.18));
+                L.rectangle(irisanBounds, {color: '#13589e', weight: 3, fillOpacity: 0.08, interactive: false}).addTo(map);
+                map.fitBounds(irisanBounds, { padding: [18, 18], maxZoom: 15 });
             });
 
         const markersLayer = L.layerGroup();
@@ -271,9 +286,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
 
                 const marker = L.marker([loc.lat, loc.lng], { icon: icon });
-                let popupContent = `<b>${loc.name}</b><br>`;
+                let popupContent = `<b>${String(loc.name).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}</b><br>`;
                 popupContent += `<br><small>Click to select</small>`;
                 marker.bindPopup(popupContent);
+                marker.on('click', () => {
+                    document.getElementById('locationSelect').value = loc.id;
+                    document.getElementById('locationSelect').dispatchEvent(new Event('change'));
+                });
                 marker.locId = loc.id;
                 markersLayer.addLayer(marker);
             }
@@ -285,7 +304,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         map.on('click', function(e) {
             const {lat, lng} = e.latlng;
-            if (!irisanBounds.contains([lat, lng])) {
+            if (!IrisanBoundary.contains(lat, lng)) {
                 alert('Please click inside Barangay Irisan boundary');
                 return;
             }

@@ -9,6 +9,7 @@ if (is_logged_in()) {
 
 // Handle login
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
+    require_post_csrf();
     $username = trim($_POST['username'] ?? '');
     $password = $_POST['password'] ?? '';
 
@@ -31,14 +32,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
 
 // Handle registration
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
+    require_post_csrf();
     $fullName = trim($_POST['full_name'] ?? '');
     $username = trim($_POST['username'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
     $password = $_POST['password'] ?? '';
 
-    if (empty($fullName) || empty($username) || empty($email) || empty($phone) || empty($password)) {
-        flash('error', 'All fields are required');
+    if ($fullName === '' || !preg_match('/^[a-zA-Z0-9_]{3,50}$/', $username) ||
+        !filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^\+?[0-9]{10,15}$/', $phone) ||
+        strlen($password) < 8) {
+        flash('error', 'Enter a valid username, email, phone and password (at least 8 characters).');
         redirect('index.php');
     }
 
@@ -50,7 +54,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
         redirect('index.php');
     }
 
-    create_user($fullName, $username, $email, $phone, $password);
+    try {
+        create_user($fullName, $username, $email, $phone, $password);
+    } catch (PDOException $error) {
+        if ($error->getCode() !== '23000') throw $error;
+        flash('error', 'Username, email, or phone already exists');
+        redirect('index.php');
+    }
     flash('success', 'Registration successful! Please login.');
     redirect('index.php');
 }
@@ -61,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SmartSlope - Login</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>">
 </head>
 <body>
     <div class="container my-5">
@@ -82,6 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
 
                         <h3 class="h5 mb-3">Login</h3>
                         <form method="post" class="mb-4">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="login" value="1">
                             <div class="mb-3">
                                 <label class="form-label">Username</label>
@@ -98,6 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
 
                         <h3 class="h5 mb-3">Register</h3>
                         <form method="post">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="register" value="1">
                             <div class="mb-3">
                                 <label class="form-label">Full Name</label>
@@ -117,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
                             </div>
                             <div class="mb-3">
                                 <label class="form-label">Password</label>
-                                <input type="password" name="password" class="form-control" required>
+                                <input type="password" name="password" class="form-control" minlength="8" required>
                             </div>
                             <button type="submit" class="btn btn-outline-secondary w-100">Register</button>
                         </form>
@@ -127,6 +139,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
 </body>
 </html>
