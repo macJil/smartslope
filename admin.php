@@ -60,6 +60,23 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
     <style>
         .badge-risk { font-size: 0.85em; }
         #reportMap { height: 300px; width: 100%; }
+        .report-risk-icon { background: transparent; border: 0; }
+        .report-risk-pin {
+            display: block;
+            padding: 0.35rem 0.55rem;
+            border: 2px solid #fff;
+            border-radius: 999px;
+            color: #fff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-align: center;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+        }
+        .report-risk-low { background: #198754; }
+        .report-risk-normal { background: #0d6efd; }
+        .report-risk-medium { background: #ffc107; color: #212529; }
+        .report-risk-high { background: #dc3545; }
+        .report-risk-unavailable { background: #6c757d; }
     </style>
 </head>
 <body>
@@ -154,9 +171,11 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                 $loc = get_location($r['location_id']);
                                 $locationAddress = array_filter([
                                     $loc['name'] ?? 'Unknown',
+                                    !empty($r['house_landmark']) ? 'Reported address: ' . $r['house_landmark'] : null,
                                     !empty($loc['landmark']) ? 'Street/Landmark: ' . $loc['landmark'] : null,
                                     !empty($loc['purok']) ? 'Purok ' . $loc['purok'] : null,
-                                    'Barangay Irisan', 'Baguio City', 'Benguet', 'Philippines'
+                                    'Barangay Irisan', 'Baguio City', 'Benguet', 'Philippines',
+                                    !empty($loc['lat']) && !empty($loc['lng']) ? sprintf('Coordinates: %.5f, %.5f', $loc['lat'], $loc['lng']) : null
                                 ]);
                                 $reporterName = 'Anonymous';
                                 if ($r['user_id']) {
@@ -172,9 +191,11 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                 <td><?= $r['id'] ?></td>
                                 <td>
                                     <?= e($loc['name'] ?? 'Unknown') ?>
+                                    <?php if ($r['house_landmark'] ?? ''): ?><br><small class="text-muted">Reported address: <?= e($r['house_landmark']) ?></small><?php endif; ?>
                                     <?php if ($loc['landmark'] ?? ''): ?><br><small class="text-muted">Street/Landmark: <?= e($loc['landmark']) ?></small><?php endif; ?>
                                     <?php if ($loc['purok'] ?? ''): ?><br><small class="text-muted">Purok: <?= e($loc['purok']) ?></small><?php endif; ?>
                                     <br><small class="text-muted">Barangay Irisan, Baguio City, Benguet, Philippines</small>
+                                    <?php if (!empty($loc['lat']) && !empty($loc['lng'])): ?><br><small class="text-muted">Coordinates: <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?></small><?php endif; ?>
                                 </td>
                                 <td><?= e(substr($r['message'], 0, 40)) ?>...</td>
                                 <td><?= e($reporterName) ?></td>
@@ -197,7 +218,8 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                             data-status="<?= e($r['status']) ?>"
                                             data-date="<?= local_date($r['created_at']) ?>"
                                             data-lat="<?= $loc['lat'] ?? '' ?>"
-                                            data-lng="<?= $loc['lng'] ?? '' ?>">
+                                            data-lng="<?= $loc['lng'] ?? '' ?>"
+                                            data-risk="<?= e($r['location_risk_level'] ?? 'unavailable') ?>">
                                         View
                                     </button>
                                     <?php if ($r['status'] === 'pending'): ?>
@@ -363,6 +385,9 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                 <dt class="col-sm-4">Location:</dt>
                                 <dd class="col-sm-8" id="modalReportLocation"></dd>
 
+                                <dt class="col-sm-4">Risk status:</dt>
+                                <dd class="col-sm-8" id="modalReportRisk"></dd>
+
                                 <dt class="col-sm-4">Message:</dt>
                                 <dd class="col-sm-8" id="modalReportMessage"></dd>
 
@@ -415,9 +440,11 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                 const date = this.getAttribute('data-date');
                 const lat = this.getAttribute('data-lat');
                 const lng = this.getAttribute('data-lng');
+                const risk = this.getAttribute('data-risk');
 
                 viewReportModal.querySelector('#modalReportId').textContent = reportId;
                 viewReportModal.querySelector('#modalReportLocation').textContent = location;
+                viewReportModal.querySelector('#modalReportRisk').textContent = risk.toUpperCase();
                 viewReportModal.querySelector('#modalReportMessage').textContent = message;
                 viewReportModal.querySelector('#modalReportReporter').textContent = reporter;
                 viewReportModal.querySelector('#modalReportContact').textContent = contact;
@@ -435,6 +462,9 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
             const lat = parseFloat(viewReportModal.querySelector('#modalReportLat').value);
             const lng = parseFloat(viewReportModal.querySelector('#modalReportLng').value);
             if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+            const risk = viewReportModal.querySelector('#modalReportRisk').textContent.toLowerCase();
+            const riskLabel = ['low', 'normal', 'medium', 'high'].includes(risk) ? risk : 'unavailable';
+            const location = viewReportModal.querySelector('#modalReportLocation').textContent;
 
             if (!window.reportMap) {
                 window.reportMap = L.map('reportMap').setView([lat, lng], 16);
@@ -452,7 +482,20 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
             window.reportMap.eachLayer(layer => {
                 if (layer instanceof L.Marker) window.reportMap.removeLayer(layer);
             });
-            L.marker([lat, lng]).addTo(window.reportMap).bindPopup('Report submitted here');
+            const riskIcon = L.divIcon({
+                html: `<span class="report-risk-pin report-risk-${riskLabel}">${riskLabel.toUpperCase()}</span>`,
+                className: 'report-risk-icon',
+                iconSize: [112, 34],
+                iconAnchor: [56, 17]
+            });
+            const marker = L.marker([lat, lng], { icon: riskIcon }).addTo(window.reportMap);
+            const popup = document.createElement('div');
+            const address = document.createElement('div');
+            address.textContent = location;
+            const status = document.createElement('strong');
+            status.textContent = 'Risk status: ' + riskLabel.toUpperCase();
+            popup.append(address, status);
+            marker.bindPopup(popup).openPopup();
             setTimeout(() => window.reportMap.invalidateSize(), 100);
         });
 

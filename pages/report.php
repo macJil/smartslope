@@ -254,6 +254,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
     <script src="<?= url('assets/vendor/leaflet/leaflet.js') ?>"></script>
+    <script src="<?= e(url('assets/js/location-address.js')) ?>"></script>
     <script src="<?= e(url('assets/js/irisan-boundary.js')) ?>"></script>
     <script>
         const locations = <?= json_encode($locations, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) ?>;
@@ -327,55 +328,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         map.addLayer(markersLayer);
 
         let selectedMarker = null;
-        const addressCache = new Map();
-        let lastAddressLookup = 0;
-
-        async function lookupAddress(lat, lng) {
-            const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+        function lookupAddress(lat, lng) {
             const addressField = document.getElementById('reportAddress');
             const addressLabel = document.getElementById('selectedAddress');
             addressField.value = '';
             addressLabel.textContent = 'Looking up street address...';
-
-            if (!addressCache.has(key)) {
-                const delay = Math.max(0, 1000 - (Date.now() - lastAddressLookup));
-                if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-                lastAddressLookup = Date.now();
-                try {
-                    const params = new URLSearchParams({
-                        format: 'jsonv2',
-                        lat: String(lat),
-                        lon: String(lng),
-                        zoom: '18',
-                        addressdetails: '1'
-                    });
-                    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`);
-                    if (!response.ok) throw new Error('Address lookup failed');
-                    const result = await response.json();
-                    const parts = result.address ? [
-                        result.address.house_number,
-                        result.address.road,
-                        result.address.neighbourhood,
-                        result.address.suburb,
-                        result.address.city_district,
-                        result.address.city || result.address.town || result.address.village,
-                        result.address.county,
-                        result.address.state,
-                        result.address.country
-                    ].filter(Boolean) : [];
-                    const address = [...new Set(parts)].join(', ') || result.display_name || '';
-                    addressCache.set(key, Array.from(address).slice(0, 255).join(''));
-                } catch {
-                    addressCache.set(key, '');
-                }
-            }
-
-            const address = addressCache.get(key);
-            const selectedLat = Number(addressField.dataset.lat);
-            const selectedLng = Number(addressField.dataset.lng);
-            if (selectedLat !== lat || selectedLng !== lng) return;
-            addressField.value = address;
-            addressLabel.textContent = address || 'Street address unavailable; use the house/landmark field below.';
+            window.lookupLocationAddress(lat, lng).then(address => {
+                if (Number(addressField.dataset.lat) !== lat || Number(addressField.dataset.lng) !== lng) return;
+                addressField.value = address;
+                addressLabel.textContent = address || 'Street address unavailable; use the house/landmark field below.';
+            });
         }
 
         map.on('click', function(e) {
@@ -458,6 +420,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 document.getElementById('reportLat').value = '';
                 document.getElementById('reportLng').value = '';
+                document.getElementById('reportAddress').value = '';
+                document.getElementById('selectedAddress').textContent = '';
             }
         });
     </script>

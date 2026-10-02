@@ -375,6 +375,9 @@ if ($selectedLocId) {
                             <tr>
                                 <td>
                                     <?= e($loc['name'] ?? 'Unknown') ?>
+                                    <?php if ($r['house_landmark'] ?? ''): ?>
+                                        <br><small class="text-muted">Reported address: <?= e($r['house_landmark']) ?></small>
+                                    <?php endif; ?>
                                     <?php if ($loc['purok'] ?? ''): ?>
                                         <br><small class="text-muted">Purok: <?= e($loc['purok']) ?></small>
                                     <?php endif; ?>
@@ -423,13 +426,14 @@ if ($selectedLocId) {
     </div>
 
     <form id="map-selection-form" method="post" action="<?= e(url('actions/save_location.php')) ?>" hidden>
-        <?= csrf_field() ?><input type="hidden" name="location_id"><input type="hidden" name="lat"><input type="hidden" name="lng">
+        <?= csrf_field() ?><input type="hidden" name="location_id"><input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="address">
     </form>
     <script>window.SmartSlope = <?= json_encode(['locationId'=>$selectedLocId,'apiUrl'=>url('api/readings.php'),'csrf'=>csrf_token(),'isAdmin'=>$isAdmin,'editUrl'=>url('actions/save_reading.php?reading_id='),'deleteUrl'=>url('actions/delete_reading.php')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
     <script src="<?= e(url('assets/js/vendor/jquery.min.js')) ?>"></script>
     <script src="<?= e(url('assets/js/dashboard.js')) ?>"></script>
     <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
     <script src="<?= url('assets/vendor/leaflet/leaflet.js') ?>"></script>
+    <script src="<?= e(url('assets/js/location-address.js')) ?>"></script>
     <script src="<?= e(url('assets/js/irisan-boundary.js')) ?>"></script>
     <script>
         const locations = <?= json_encode($locations, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_INVALID_UTF8_SUBSTITUTE) ?>;
@@ -479,13 +483,76 @@ if ($selectedLocId) {
 
         const markersLayer = L.layerGroup();
         const markersById = new Map();
+        const riskLevels = ['low', 'normal', 'medium', 'high'];
+        const riskTextColors = {low: 'success', normal: 'primary', medium: 'warning', high: 'danger', unavailable: 'secondary'};
+        async function submitLocationSelection(locationId, lat, lng) {
+            const form = document.getElementById('map-selection-form');
+            form.elements.location_id.value = locationId || '';
+            form.elements.lat.value = lat;
+            form.elements.lng.value = lng;
+            form.elements.address.value = await window.lookupLocationAddress(lat, lng);
+            form.submit();
+        }
+        function normalizedRisk(risk) {
+            return riskLevels.includes(String(risk || '').toLowerCase()) ? String(risk).toLowerCase() : 'unavailable';
+        }
+        function createLocationPopupContent(location, risk) {
+            const content = document.createElement('div');
+            const name = document.createElement('strong');
+            name.textContent = location.name || 'Unknown';
+            content.append(name);
+
+            [
+                location.landmark ? 'Street/Landmark: ' + location.landmark : '',
+                location.purok ? 'Purok: ' + location.purok : '',
+                'Barangay Irisan, Baguio City, Benguet, Philippines',
+                location.lat && location.lng ? 'Coordinates: ' + Number(location.lat).toFixed(5) + ', ' + Number(location.lng).toFixed(5) : ''
+            ].filter(Boolean).forEach(addressLine => {
+                const line = document.createElement('div');
+                line.textContent = addressLine;
+                content.append(line);
+            });
+
+            const riskStatus = document.createElement('div');
+            riskStatus.className = 'location-risk-status fw-bold mt-2 text-' + riskTextColors[risk];
+            riskStatus.textContent = 'Risk status: ' + risk.toUpperCase();
+            content.append(riskStatus);
+
+            if (location.latest) {
+                const reading = document.createElement('small');
+                reading.className = 'd-block mt-1';
+                reading.textContent = `1h: ${location.latest.rainfall_1h ?? 'N/A'}mm, 24h: ${location.latest.rainfall_24h ?? 'N/A'}mm; Temp: ${location.latest.temperature ?? 'N/A'}°C`;
+                content.append(reading);
+            }
+            const pendingReports = document.createElement('small');
+            pendingReports.className = 'd-block';
+            pendingReports.textContent = 'Pending reports: ' + (location.pending || 0);
+            content.append(pendingReports);
+
+            const selectButton = document.createElement('button');
+            selectButton.type = 'button';
+            selectButton.className = 'btn btn-sm btn-primary mt-2';
+            selectButton.textContent = 'View readings';
+            selectButton.addEventListener('click', () => {
+                submitLocationSelection(location.id, location.lat, location.lng);
+            });
+            content.append(selectButton);
+            return content;
+        }
         window.updateMapRisk = function(id, risk) {
             const marker = markersById.get(Number(id));
             if (!marker) return;
+            const level = normalizedRisk(risk);
             marker.setIcon(L.divIcon({
-                html: `<div class="marker-icon marker-color-${risk}">${risk[0].toUpperCase()}</div>`,
+                html: `<div class="marker-icon marker-color-${level === 'unavailable' ? 'unknown' : level}">${level === 'unavailable' ? '?' : level[0].toUpperCase()}</div>`,
                 className: 'marker-div-icon', iconSize: [30, 30], iconAnchor: [15, 15]
             }));
+            const popupContent = marker.getPopup().getContent();
+            const riskStatus = popupContent.querySelector('.location-risk-status');
+            if (riskStatus) {
+                riskStatus.className = 'location-risk-status fw-bold mt-2 text-' + riskTextColors[level];
+                riskStatus.textContent = 'Risk status: ' + level.toUpperCase();
+            }
         };
 
         locations.forEach(loc => {
@@ -494,9 +561,10 @@ if ($selectedLocId) {
                 let colorClass = 'marker-color-unknown';
                 let riskLevel = '?';
 
-                if (latest && latest.risk_level) {
-                    colorClass = 'marker-color-' + latest.risk_level;
-                    riskLevel = latest.risk_level.toUpperCase().substring(0, 1);
+                const locationRisk = latest && !Number(latest.stale) ? normalizedRisk(latest.risk_level) : 'unavailable';
+                if (locationRisk !== 'unavailable') {
+                    colorClass = 'marker-color-' + locationRisk;
+                    riskLevel = locationRisk[0].toUpperCase();
                 }
 
                 const markerHtml = `<div class="marker-icon ${colorClass}">${riskLevel}</div>`;
@@ -509,21 +577,7 @@ if ($selectedLocId) {
 
                 const marker = L.marker([loc.lat, loc.lng], { icon: icon });
 
-                let popupContent = `<b>${String(loc.name).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}</b><br>`;
-                if (latest) {
-                    popupContent += `Risk: <strong>${latest.risk_level ? latest.risk_level.toUpperCase() : 'Unknown'}</strong><br>`;
-                    popupContent += `1h: ${latest.rainfall_1h ?? 'N/A'}mm, 24h: ${latest.rainfall_24h ?? 'N/A'}mm<br>`;
-                    popupContent += `Temp: ${latest.temperature ?? 'N/A'}°C<br>`;
-                    popupContent += `Observed: ${latest.observed_at ?? 'N/A'}`;
-                }
-                popupContent += `<br><small>Pending: ${loc.pending || 0}</small>`;
-
-                marker.bindPopup(popupContent);
-                marker.on('click', () => {
-                    const form = document.getElementById('map-selection-form');
-                    form.elements.location_id.value = loc.id;
-                    form.submit();
-                });
+                marker.bindPopup(createLocationPopupContent(loc, locationRisk));
                 marker.locId = loc.id;
                 markersById.set(Number(loc.id), marker);
                 markersLayer.addLayer(marker);
@@ -560,27 +614,23 @@ if ($selectedLocId) {
 
             map.setView([lat, lng], 16);
 
-            let found = false;
+            let nearestLocation = null;
+            let nearestDistance = Infinity;
             locations.forEach(loc => {
                 if (loc.lat && loc.lng) {
                     const dist = Math.sqrt(
                         Math.pow(loc.lat - lat, 2) + Math.pow(loc.lng - lng, 2)
                     );
-                    if (dist < 0.0005) {
-                        const form = document.getElementById('map-selection-form');
-                        form.elements.location_id.value = loc.id;
-                        form.submit();
-                        found = true;
+                    if (dist < nearestDistance) {
+                        nearestLocation = loc;
+                        nearestDistance = dist;
                     }
                 }
             });
 
-            if (!found) {
-                const form = document.getElementById('map-selection-form');
-                form.elements.lat.value = lat;
-                form.elements.lng.value = lng;
-                form.submit();
-            }
+            const locationId = nearestLocation && nearestDistance < 0.0005 ? nearestLocation.id : '';
+            const target = locationId ? nearestLocation : { lat, lng };
+            submitLocationSelection(locationId, target.lat, target.lng);
         });
 
         <?php if ($selectedLocId && $selectedLoc && $selectedLoc['lat'] && $selectedLoc['lng']): ?>

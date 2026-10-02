@@ -326,11 +326,24 @@ function calculate_risk(?float $r1, ?float $r24, ?float $r72): string {
 // Get all reports
 function get_reports(?string $status = null): array {
     $pdo = db();
-    $sql = "SELECT e.*, l.name as location_name, l.purok,
-                   u.full_name as reporter_name
+    $sql = "SELECT e.*, l.name as location_name, l.purok, l.landmark, l.lat, l.lng,
+                   u.full_name as reporter_name,
+                   CASE
+                       WHEN latest_reading.id IS NULL OR latest_reading.stale = 1 OR latest_reading.risk_level IS NULL THEN 'unavailable'
+                       ELSE latest_reading.risk_level
+                   END as location_risk_level
             FROM events e
             JOIN locations l ON l.id = e.location_id
             LEFT JOIN users u ON u.id = e.user_id
+            LEFT JOIN events latest_reading ON latest_reading.id = (
+                SELECT reading.id
+                FROM events reading
+                WHERE reading.location_id = e.location_id
+                  AND reading.type = 'reading'
+                  AND reading.archived = 0
+                ORDER BY reading.observed_at DESC, reading.id DESC
+                LIMIT 1
+            )
             WHERE e.type = 'report'";
     $params = [];
     if ($status) {
