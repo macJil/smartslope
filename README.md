@@ -1,4 +1,4 @@
-# SmartSlope — Barangay Irisan academic prototype
+# SmartSlope — Landslide Alert and Community Reporting System (Prototype)
 
 PHP 8.1+ / PDO MySQL, local Bootstrap and Leaflet, jQuery AJAX and an authenticated JSON reading endpoint. The three-table database is **unchanged**: `users`, `locations`, `events`. `events.type` separates API readings from ground reports; `events.source` identifies Open-Meteo. No physical sensors or official landslide warnings are claimed.
 
@@ -8,9 +8,15 @@ PHP 8.1+ / PDO MySQL, local Bootstrap and Leaflet, jQuery AJAX and an authentica
 | --- | --- |
 | `index.php`, `dashboard.php`, `admin.php`, `report.php`, `readings.php`, `logout.php` | Browser routes |
 | `pages/*.php` | Login, dashboard and report templates |
-| `actions/*.php` | POST-only map/reading changes |
+| `actions/*.php` | Map/reading actions; mutations require POST (the edit form itself uses GET) |
 | `api/readings.php` | GET saved readings as JSON; CSRF-protected POST refreshes and stores a provider reading |
-| `app/config.php`, `app/RiskAnalyzer.php` | Shared PDO/helpers and OOP risk rule |
+| `app/bootstrap.php` | Explicit shared dependency loader |
+| `app/config.php` | Environment, base path and lazy PDO connection |
+| `app/auth.php`, `app/helpers.php` | Sessions, authorization, CSRF, URLs, output escaping and CSV |
+| `app/repositories.php` | Database operations |
+| `app/weather.php` | Weather fetching, validation, aggregation and saving |
+| `app/RiskAnalyzer.php`, `app/assessment.php` | OOP rainfall rules, explanations, freshness and override detection |
+| `docs/` | Risk rules, API contract, installation checks and verification record |
 | `database/schema.sql` | Copy of the original s1 three-table SQL; **do not import into an existing DB** |
 | `assets/js/dashboard.js`, `assets/js/irisan-boundary.js`, `assets/js/vendor/` | AJAX, polygon validation and local jQuery |
 | `assets/vendor/leaflet/`, `assets/map/`, `assets/map-tiles/` | Offline map library, Irisan polygon and local map tiles |
@@ -33,8 +39,22 @@ Open-Meteo hourly precipitation feeds 1/24/72-hour totals. Complete windows are 
 
 ## Security and verification
 
-Registration validates inputs; passwords use `password_hash()` and `password_verify()`. Login regenerates the session ID and roles come from the server. All changes use POST with a small session-bound CSRF token; read-only exports and JSON GET are GET. PDO binds user inputs and map/report text is escaped before HTML insertion. The Apache `.htaccess` blocks `.env` and `.sql`; configure the same rule in another server and verify these URLs are denied. Do not commit `.env`.
+Registration validates inputs; passwords use `password_hash()` and `password_verify()`. Login regenerates the session ID and roles come from the server. All changes use POST with a small session-bound CSRF token; read-only exports and JSON GET are GET. PDO binds user inputs and map/report text is escaped before HTML insertion. The Apache `.htaccess` blocks secret files and internal directories. Herd uses Nginx and does not read `.htaccess`; follow `docs/backend-test-checklist.md` for equivalent rules and verify them locally. Do not commit `.env`.
 
-Check PHP syntax with `php -l` on modified PHP files, run `php tests/risk.php` and `node --test tests/map-boundary.test.cjs`, and test the real MySQL/HTTP flows under Herd and XAMPP. Try login/registration, a resident requesting admin actions, a forged POST without CSRF, two Irisan points, repeat refresh, provider failure, report review, reading correction/archival and CSV. `node --check assets/js/dashboard.js` checks JavaScript syntax. The project's Startup business-model deck and team presentation are separate deliverables.
+Check PHP syntax with `php -l` on modified PHP files, run `php tests/risk.php`, `php tests/weather.php`, `php tests/assessment.php` and `node --test tests/map-boundary.test.cjs`, and test the real MySQL/HTTP flows under Herd and XAMPP. Try login/registration, a resident requesting admin actions, a forged POST without CSRF, two Irisan points, repeat refresh, provider failure, report review, reading correction/archival and CSV. `node --check assets/js/dashboard.js` checks JavaScript syntax. The project's Startup business-model deck and team presentation are separate deliverables.
 
 WEBSYS1: PHP/MySQL CRUD, PDO, one OOP risk class, jQuery AJAX, JSON API and web security. IMDBSE2: linked frontend and database CRUD. **Teacher-specific sensor-table note:** this deliberately retains three tables and records the virtual weather provider in `events.source`; if your teacher explicitly grades a separate `sensors` table, a no-schema-change rule cannot satisfy that particular table requirement.
+
+## Backend stabilization release
+
+Patch base: branch `s4`, commit `f8e7c5002814afe8d8b416f8a55aafe8e2c9733d`.
+
+No table/column changes or SQL import are required. Preserve your existing `.env` and database. `READING_MAX_AGE_SECONDS` is optional and defaults to 10800. Every PHP entry point loads the shared bootstrap directly or through its page. Existing browser routes remain stable.
+
+Read `docs/risk-rules.md` for rainfall intervals, data status, adjustment detection and source limitations. Read `docs/backend-test-checklist.md` before the frontend handoff. `docs/verification.md` distinguishes completed automated checks from local browser/server checks still required.
+
+The readings JSON endpoint adds a top-level `assessment` and an `assessment` on each reading while retaining existing weather fields. GET reads only; POST requires a session-bound CSRF token and saves a new validated snapshot. Status codes are 401 (signed out), 403 (invalid CSRF), 422 (invalid ID), 404 (missing/inactive location), 405 (method), and 503 (database/provider failure). Observation and retrieval times are UTC strings; PHP and JavaScript display Philippine time.
+
+Freshness is calculated on each request from observation time. An open page updates when reloaded/refreshed. Outdated history remains visible, with neutral map markers. Missing/invalid data never silently becomes low. Administrator adjustments are identified by comparison with the calculated baseline; the unchanged schema cannot provide an edit audit trail.
+
+Keep this prototype scoped to Irisan and API-based rainfall alerts/community reporting. No new physical sensors, AI or unverified susceptibility dataset is included. The existing teacher-specific sensors-table requirement needs a separate scope agreement if still mandatory.

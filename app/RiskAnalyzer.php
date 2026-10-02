@@ -1,18 +1,39 @@
 <?php
 declare(strict_types=1);
 
+/** Prototype rainfall screening. Thresholds are not calibrated for Irisan. */
 final class RiskAnalyzer
 {
-    // Prototype rainfall screening in millimetres, not an official warning.
-    // Missing history must never be classified as low risk.
+    public const VERSION = 'prototype-1';
+    public const THRESHOLDS = [
+        'high' => [50, 100, 150],
+        'medium' => [25, 50, 100],
+        'normal' => [10, 25, 50],
+    ];
+
     public function analyze(?float $oneHour, ?float $day, ?float $threeDays): ?string
     {
-        if ($oneHour === null || $day === null || $threeDays === null) {
-            return null;
+        return $this->explain($oneHour, $day, $threeDays)['category'];
+    }
+
+    public function explain(?float $oneHour, ?float $day, ?float $threeDays): array
+    {
+        $values = [$oneHour, $day, $threeDays];
+        foreach ($values as $value) {
+            if ($value === null || !is_finite($value) || $value < 0) {
+                return ['category' => null, 'reasons' => ['Rainfall history is incomplete or invalid.'], 'rule_version' => self::VERSION];
+            }
         }
-        if ($oneHour >= 50 || $day >= 100 || $threeDays >= 150) return 'high';
-        if ($oneHour >= 25 || $day >= 50 || $threeDays >= 100) return 'medium';
-        if ($oneHour >= 10 || $day >= 25 || $threeDays >= 50) return 'normal';
-        return 'low';
+        $hours = [1, 24, 72];
+        foreach (self::THRESHOLDS as $level => $limits) {
+            $reasons = [];
+            foreach ($limits as $i => $limit) {
+                if ($values[$i] >= $limit) {
+                    $reasons[] = "{$hours[$i]}-hour rainfall ({$values[$i]} mm) reached the prototype {$level} threshold ({$limit} mm).";
+                }
+            }
+            if ($reasons) return ['category' => $level, 'reasons' => $reasons, 'rule_version' => self::VERSION];
+        }
+        return ['category' => 'low', 'reasons' => ['Rainfall is below all prototype thresholds. Low does not mean the slope is safe.'], 'rule_version' => self::VERSION];
     }
 }

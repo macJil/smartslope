@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../app/config.php';
+require_once __DIR__ . '/../app/bootstrap.php';
 start_session();
 require_login();
 
@@ -194,6 +194,7 @@ if ($selectedLocId) {
         if ($selectedLocId && $selectedLoc) {
             $latestReading = get_latest_reading($selectedLocId);
         }
+        $assessment = reading_assessment($latestReading, $selectedLoc ?? []);
         ?>
         <div class="row">
             <div class="col-md-6 mb-4">
@@ -209,9 +210,9 @@ if ($selectedLocId) {
                     <div class="card-body" id="risk-content" data-location="<?= e($selectedLoc['name'] ?? '') ?>">
                         <?php if ($selectedLoc && $latestReading): ?>
                             <div class="display-6 fw-bold text-<?=
-                                ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger'][$latestReading['risk_level']] ?? 'secondary'
+                                ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger'][$assessment['current_category'] ?? 'unavailable'] ?? 'secondary'
                             ?>">
-                                <?= ucfirst($latestReading['risk_level']) ?> Risk
+                                <?= e(ucfirst($assessment['category'] ?? 'unavailable')) ?>
                             </div>
                             <p class="mb-0">
                                 <strong>Location:</strong> <?= e($selectedLoc['name']) ?><br>
@@ -221,21 +222,21 @@ if ($selectedLocId) {
                                 <strong>1h Rainfall:</strong> <?= $latestReading['rainfall_1h'] ?? 'N/A' ?> mm<br>
                                 <strong>24h Rainfall:</strong> <?= $latestReading['rainfall_24h'] ?? 'N/A' ?> mm<br>
                                 <strong>72h Rainfall:</strong> <?= $latestReading['rainfall_72h'] ?? 'N/A' ?> mm<br>
-                                <strong>Next 24h forecast:</strong> <?= $latestReading['rainfall_forecast_24h'] ?? 'N/A' ?> mm
+                                <strong>24h forecast from last whole hour:</strong> <?= $latestReading['rainfall_forecast_24h'] ?? 'N/A' ?> mm
                                 (<?= $latestReading['precipitation_probability_24h'] ?? 'N/A' ?>% max chance)<br>
                                 <strong>Modeled soil moisture:</strong>
                                 <?= $latestReading['soil_moisture_9_27cm'] ?? 'N/A' ?> (9-27 cm) /
                                 <?= $latestReading['soil_moisture_27_81cm'] ?? 'N/A' ?> (27-81 cm) m³/m³<br>
-                                <strong>Observed:</strong> <?= local_date($latestReading['observed_at']) ?>
+                                <strong>Observed:</strong> <?= e(local_date($latestReading['observed_at'])) ?> PHT<br>
+                                <strong>Retrieved:</strong> <?= e(local_date($latestReading['created_at'])) ?> PHT
                             </p>
-                            <p class="text-muted small">Forecast and soil moisture are model estimates, not on-site sensor readings. Risk category remains a preliminary rainfall screening.</p>
                             <p class="text-muted small mb-0">
                                 Temperature: <?= $latestReading['temperature'] ?? 'N/A' ?>°C |
                                 Humidity: <?= $latestReading['humidity'] ?? 'N/A' ?>% |
                                 Wind: <?= $latestReading['wind_speed'] ?? 'N/A' ?> km/h
                             </p>
                         <?php else: ?>
-                            <p class="text-muted">No location selected. Click a location on the map to view risk status.</p>
+                            <p class="text-muted"><?= $selectedLoc ? 'No saved reading is available for this location. Try Refresh Weather.' : 'Select an Irisan location to view its assessment.' ?></p>
                             <div class="display-6 fw-bold text-secondary">Unavailable</div>
                         <?php endif; ?>
                     </div>
@@ -296,7 +297,7 @@ if ($selectedLocId) {
                                 <th>24h Rain</th>
                                 <th>72h Rain</th>
                                 <th>24h Forecast</th>
-                                <th>Rain Chance</th>
+                                <th>Max Hourly Chance (Next 24h)</th>
                                 <th>Soil Moisture</th>
                                 <th>Observed</th>
                                 <th>Status</th>
@@ -323,7 +324,7 @@ if ($selectedLocId) {
                                     <span class="badge bg-<?=
                                         ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger'][$r['risk_level']] ?? 'secondary'
                                     ?> risk-badge">
-                                        <?= ucfirst($r['risk_level']) ?>
+                                        <?= e(ucfirst($r['risk_level'] ?? 'unavailable')) ?>
                                     </span>
                                 </td>
                                 <td><?= $r['rainfall_1h'] ?? 'N/A' ?></td>
@@ -332,8 +333,8 @@ if ($selectedLocId) {
                                 <td><?= $r['rainfall_forecast_24h'] ?? 'N/A' ?> mm</td>
                                 <td><?= $r['precipitation_probability_24h'] ?? 'N/A' ?>%</td>
                                 <td><?= $r['soil_moisture_9_27cm'] ?? 'N/A' ?> / <?= $r['soil_moisture_27_81cm'] ?? 'N/A' ?> m³/m³</td>
-                                <td><?= local_date($r['observed_at']) ?></td>
-                                <td><?= $r['stale'] ? 'Stale' : 'Current' ?></td>
+                                <td><?= e(local_date($r['observed_at'])) ?><br><small><?= e(ucfirst($r['assessment']['data_status'])) ?><?= $r['assessment']['adjusted'] ? ' — Administrator-adjusted' : '' ?></small></td>
+                                <td><?= e(ucfirst($r['assessment']['data_status'])) ?></td>
                                 <?php if ($isAdmin): ?>
                                     <td>
                                         <a href="<?= url('actions/save_reading.php?reading_id=' . $r['id']) ?>"
@@ -491,12 +492,16 @@ if ($selectedLocId) {
         const markersById = new Map();
         const riskLevels = ['low', 'normal', 'medium', 'high'];
         const riskTextColors = {low: 'success', normal: 'primary', medium: 'warning', high: 'danger', unavailable: 'secondary'};
+        let selectionPending = false;
         async function submitLocationSelection(locationId, lat, lng) {
+            if (selectionPending) return;
+            selectionPending = true;
             const form = document.getElementById('map-selection-form');
             form.elements.location_id.value = locationId || '';
             form.elements.lat.value = lat;
             form.elements.lng.value = lng;
-            form.elements.address.value = await window.lookupLocationAddress(lat, lng);
+            try { form.elements.address.value = await window.lookupLocationAddress(lat, lng); }
+            catch (_) { form.elements.address.value = ''; }
             form.submit();
         }
         function normalizedRisk(risk) {
@@ -523,6 +528,13 @@ if ($selectedLocId) {
             riskStatus.className = 'location-risk-status fw-bold mt-2 text-' + riskTextColors[risk];
             riskStatus.textContent = 'Risk status: ' + risk.toUpperCase();
             content.append(riskStatus);
+            const freshness = document.createElement('div');
+            freshness.className = 'location-data-status';
+            const assessment = location.latest?.assessment;
+            freshness.textContent = assessment
+                ? assessment.data_status + ' — last saved: ' + (assessment.category || 'unavailable')
+                : 'No saved reading';
+            content.append(freshness);
 
             if (location.latest) {
                 const reading = document.createElement('small');
@@ -545,7 +557,7 @@ if ($selectedLocId) {
             content.append(selectButton);
             return content;
         }
-        window.updateMapRisk = function(id, risk) {
+        window.updateMapRisk = function(id, risk, assessment) {
             const marker = markersById.get(Number(id));
             if (!marker) return;
             const level = normalizedRisk(risk);
@@ -554,6 +566,8 @@ if ($selectedLocId) {
                 className: 'marker-div-icon', iconSize: [30, 30], iconAnchor: [15, 15]
             }));
             const popupContent = marker.getPopup().getContent();
+            const freshness = popupContent.querySelector('.location-data-status');
+            if (freshness && assessment) freshness.textContent = assessment.data_status + ' — last saved: ' + (assessment.category || 'unavailable');
             const riskStatus = popupContent.querySelector('.location-risk-status');
             if (riskStatus) {
                 riskStatus.className = 'location-risk-status fw-bold mt-2 text-' + riskTextColors[level];
@@ -567,7 +581,7 @@ if ($selectedLocId) {
                 let colorClass = 'marker-color-unknown';
                 let riskLevel = '?';
 
-                const locationRisk = latest && !Number(latest.stale) ? normalizedRisk(latest.risk_level) : 'unavailable';
+                const locationRisk = normalizedRisk(latest?.assessment?.current_category);
                 if (locationRisk !== 'unavailable') {
                     colorClass = 'marker-color-' + locationRisk;
                     riskLevel = locationRisk[0].toUpperCase();

@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/app/config.php';
+require_once __DIR__ . '/app/bootstrap.php';
 start_session();
 require_login();
 
@@ -66,7 +66,7 @@ if (get('action') === 'export') {
                                 <th>24h Rain</th>
                                 <th>72h Rain</th>
                                 <th>Next 24h Rain</th>
-                                <th>Rain Chance</th>
+                                <th>Max Hourly Chance (Next 24h)</th>
                                 <th>Soil Moisture (9-27 / 27-81 cm)</th>
                                 <th>Temp</th>
                                 <th>Wind</th>
@@ -100,7 +100,7 @@ if (get('action') === 'export') {
                                         ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger']
                                         [$r['risk_level']] ?? 'secondary'
                                     ?> badge-risk">
-                                        <?= ucfirst($r['risk_level']) ?>
+                                        <?= e(ucfirst($r['assessment']['category'] ?? 'unavailable')) ?>
                                     </span>
                                 </td>
                                 <td><?= $r['rainfall_1h'] ?? 'N/A' ?></td>
@@ -111,8 +111,8 @@ if (get('action') === 'export') {
                                 <td><?= $r['soil_moisture_9_27cm'] ?? 'N/A' ?> / <?= $r['soil_moisture_27_81cm'] ?? 'N/A' ?> m³/m³</td>
                                 <td><?= $r['temperature'] ?? 'N/A' ?>°C</td>
                                 <td><?= $r['wind_speed'] ?? 'N/A' ?> km/h</td>
-                                <td><?= local_date($r['observed_at']) ?></td>
-                                <td><?= $r['archived'] ? 'Archived' : ($r['stale'] ? 'Stale' : 'Current') ?></td>
+                                <td><?= e(local_date($r['observed_at'])) ?><br><small><?= e(ucfirst($r['assessment']['data_status'])) ?><?= $r['assessment']['adjusted'] ? ' — Administrator-adjusted' : '' ?></small></td>
+                                <td><?= e(ucfirst($r['assessment']['data_status'])) ?></td>
                                 <?php if ($isAdmin): ?>
                                     <td>
                                         <a href="<?= url('actions/save_reading.php?reading_id=' . $r['id']) ?>"

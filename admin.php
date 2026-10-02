@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/app/config.php';
+require_once __DIR__ . '/app/bootstrap.php';
 start_session();
 require_admin();
 
@@ -35,11 +35,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ), static fn($id) => $id !== false && $id > 0));
         if (!$selectedIds) {
             flash('error', 'Select at least one item first.');
-            $returnTo = $_POST['return_to'] ?? 'admin.php';
+            $returnTo = post('return_to', 'admin.php');
             redirect(in_array($returnTo, ['admin.php', 'dashboard.php', 'readings.php'], true) ? $returnTo : 'admin.php');
         }
 
         $changed = 0;
+        $pdo = db();
+        $pdo->beginTransaction();
+        try {
         foreach ($selectedIds as $selectedId) {
             $changed += match ($bulkAction['operation']) {
                 'delete_report' => delete_report((int)$selectedId),
@@ -47,8 +50,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'deactivate_location' => deactivate_location((int)$selectedId),
             } ? 1 : 0;
         }
+        $pdo->commit();
+        } catch (Throwable $error) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            error_log('Bulk operation failed: ' . $error->getMessage());
+            flash('error', 'No selected changes were saved. Please try again.');
+            redirect('admin.php');
+        }
         flash('success', $changed . ' ' . $bulkAction['label'] . '.');
-        $returnTo = $_POST['return_to'] ?? 'admin.php';
+        $returnTo = post('return_to', 'admin.php');
         redirect(in_array($returnTo, ['admin.php', 'dashboard.php', 'readings.php'], true) ? $returnTo : 'admin.php');
     }
 
@@ -262,7 +272,8 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                             data-date="<?= local_date($r['created_at']) ?>"
                                             data-lat="<?= e($r['lat'] ?? '') ?>"
                                             data-lng="<?= e($r['lng'] ?? '') ?>"
-                                            data-risk="<?= e($r['location_risk_level'] ?? 'unavailable') ?>">
+                                            data-risk="<?= e($r['location_risk_level'] ?? 'unavailable') ?>"
+                                            data-assessment="<?= e(ucfirst($r['location_assessment']['data_status']) . ' — last saved category: ' . ($r['location_assessment']['category'] ?? 'unavailable')) ?>">
                                         View
                                     </button>
                                     <?php if ($r['status'] === 'pending'): ?>
@@ -362,7 +373,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                 <th>Risk</th>
                                 <th>Rainfall (1h/24h/72h)</th>
                                 <th>Forecast (24h)</th>
-                                <th>Rain Chance</th>
+                                <th>Max Hourly Chance (Next 24h)</th>
                                 <th>Soil Moisture (9-27 / 27-81 cm)</th>
                                 <th>Temp</th>
                                 <th>Observed</th>
@@ -389,7 +400,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                         ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger']
                                         [$r['risk_level']] ?? 'secondary'
                                     ?> badge-risk">
-                                        <?= ucfirst($r['risk_level']) ?>
+                                        <?= e(ucfirst($r['assessment']['category'] ?? 'unavailable')) ?>
                                     </span>
                                 </td>
                                 <td>
@@ -401,7 +412,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                 <td><?= $r['precipitation_probability_24h'] ?? 'N/A' ?>%</td>
                                 <td><?= $r['soil_moisture_9_27cm'] ?? 'N/A' ?> / <?= $r['soil_moisture_27_81cm'] ?? 'N/A' ?> m³/m³</td>
                                 <td><?= $r['temperature'] ?? 'N/A' ?>°C</td>
-                                <td><?= local_date($r['observed_at']) ?></td>
+                                <td><?= e(local_date($r['observed_at'])) ?><br><small><?= e(ucfirst($r['assessment']['data_status'])) ?><?= $r['assessment']['adjusted'] ? ' — Administrator-adjusted' : '' ?></small></td>
                                 <td>
                                     <a href="<?= url('actions/save_reading.php?reading_id=' . $r['id']) ?>"
                                        class="btn btn-xs btn-outline-primary">Edit</a>
@@ -499,7 +510,8 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
 
                 viewReportModal.querySelector('#modalReportId').textContent = reportId;
                 viewReportModal.querySelector('#modalReportLocation').textContent = location;
-                viewReportModal.querySelector('#modalReportRisk').textContent = risk.toUpperCase();
+                viewReportModal.querySelector('#modalReportRisk').textContent = risk.toUpperCase() + ' (' + this.getAttribute('data-assessment') + ')';
+                viewReportModal.dataset.risk = risk;
                 viewReportModal.querySelector('#modalReportMessage').textContent = message;
                 viewReportModal.querySelector('#modalReportReporter').textContent = reporter;
                 viewReportModal.querySelector('#modalReportContact').textContent = contact;
@@ -517,7 +529,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
             const lat = parseFloat(viewReportModal.querySelector('#modalReportLat').value);
             const lng = parseFloat(viewReportModal.querySelector('#modalReportLng').value);
             if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-            const risk = viewReportModal.querySelector('#modalReportRisk').textContent.toLowerCase();
+            const risk = viewReportModal.dataset.risk || 'unavailable';
             const riskLabel = ['low', 'normal', 'medium', 'high'].includes(risk) ? risk : 'unavailable';
             const location = viewReportModal.querySelector('#modalReportLocation').textContent;
 

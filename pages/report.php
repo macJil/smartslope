@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../app/config.php';
+require_once __DIR__ . '/../app/bootstrap.php';
 start_session();
 require_login();
 
@@ -17,7 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $houseLandmark = post('house_landmark');
     $reportAddress = strlen((string)$reportAddress) <= 255 ? $reportAddress : '';
 
-    if (trim((string)$message) === '' ||
+    if (trim((string)$message) === '' || strlen((string)$message) > 65535 ||
+        strlen((string)$contactEmail) > 254 || strlen((string)$contactPhone) > 20 ||
         !preg_match('/^\+?[0-9]{10,15}$/', trim((string)$contactPhone)) ||
         ($contactEmail !== '' && !filter_var($contactEmail, FILTER_VALIDATE_EMAIL)) ||
         trim((string)$houseLandmark) === '' || strlen((string)$houseLandmark) > 255) {
@@ -44,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect('report.php');
     }
 
+    try {
     create_report([
         'location_id' => $location['id'],
         'user_id' => $_SESSION['user_id'],
@@ -52,6 +54,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'contact_email' => $contactEmail,
         'house_landmark' => $houseLandmark
     ]);
+
+    } catch (PDOException $error) {
+        error_log('Report submission failed: ' . $error->getMessage());
+        flash('error', 'Your report could not be saved. Please try again.');
+        redirect('report.php');
+    }
 
     flash('success', 'Thank you! Your report has been submitted.');
     redirect('dashboard.php');

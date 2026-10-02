@@ -4,10 +4,10 @@ if (PHP_SAPI !== 'cli') {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../app/config.php';
+require_once __DIR__ . '/../app/bootstrap.php';
 
 if ($argc !== 4 || !preg_match('/^[a-zA-Z0-9_]{3,50}$/', $argv[1]) ||
-    !filter_var($argv[2], FILTER_VALIDATE_EMAIL) || !preg_match('/^\+?[0-9]{10,15}$/', $argv[3])) {
+    strlen($argv[2]) > 254 || !filter_var($argv[2], FILTER_VALIDATE_EMAIL) || !preg_match('/^\+?[0-9]{10,15}$/', $argv[3])) {
     fwrite(STDERR, "Usage: php scripts/create_admin.php username email phone\n");
     exit(1);
 }
@@ -20,8 +20,8 @@ try {
     if ($hide) system('stty echo 2>/dev/null');
     fwrite(STDOUT, "\n");
 }
-if (strlen($password) < 12) {
-    fwrite(STDERR, "Password is too short.\n");
+if (strlen($password) < 12 || strlen($password) > 72) {
+    fwrite(STDERR, "Password must be 12-72 bytes.\n");
     exit(1);
 }
 try {

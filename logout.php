@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/app/config.php';
+require_once __DIR__ . '/app/bootstrap.php';
 start_session();
 
 require_post_csrf();

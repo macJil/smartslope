@@ -12,6 +12,8 @@
         if (delay) await new Promise(resolve => setTimeout(resolve, delay));
         lastLookupAt = Date.now();
 
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 4000);
         try {
             const params = new URLSearchParams({
                 format: 'jsonv2',
@@ -20,7 +22,7 @@
                 zoom: '18',
                 addressdetails: '1'
             });
-            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`);
+            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`, {signal: controller.signal});
             if (!response.ok) throw new Error('Address lookup failed');
             const result = await response.json();
             const address = result.address || {};
@@ -42,6 +44,8 @@
         } catch {
             addressCache.set(key, '');
             return '';
+        } finally {
+            clearTimeout(timeout);
         }
     };
 })();

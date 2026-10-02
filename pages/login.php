@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../app/config.php';
+require_once __DIR__ . '/../app/bootstrap.php';
 start_session();
 
 // If already logged in, redirect to dashboard
@@ -10,8 +10,8 @@ if (is_logged_in()) {
 // Handle login
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
     require_post_csrf();
-    $username = trim($_POST['username'] ?? '');
-    $password = $_POST['password'] ?? '';
+    $username = trim(post('username'));
+    $password = post('password');
 
     if ($user = authenticate($username, $password)) {
         session_regenerate_id(true);
@@ -33,16 +33,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
 // Handle registration
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
     require_post_csrf();
-    $fullName = trim($_POST['full_name'] ?? '');
-    $username = trim($_POST['username'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
-    $password = $_POST['password'] ?? '';
+    $fullName = trim(post('full_name'));
+    $username = trim(post('username'));
+    $email = trim(post('email'));
+    $phone = trim(post('phone'));
+    $password = post('password');
 
-    if ($fullName === '' || !preg_match('/^[a-zA-Z0-9_]{3,50}$/', $username) ||
+    if ($fullName === '' || strlen($fullName) > 100 || strlen($email) > 254 || strlen($phone) > 20 || strlen($password) > 72 || !preg_match('/^[a-zA-Z0-9_]{3,50}$/', $username) ||
         !filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^\+?[0-9]{10,15}$/', $phone) ||
         strlen($password) < 8) {
-        flash('error', 'Enter a valid username, email, phone and password (at least 8 characters).');
+        flash('error', 'Enter a valid username, email, phone and password (8-72 bytes).');
         redirect('index.php');
     }
 
@@ -57,8 +57,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
     try {
         create_user($fullName, $username, $email, $phone, $password);
     } catch (PDOException $error) {
-        if ($error->getCode() !== '23000') throw $error;
-        flash('error', 'Username, email, or phone already exists');
+        error_log('Registration failed: ' . $error->getMessage());
+        flash('error', $error->getCode() === '23000' ? 'Username, email, or phone already exists' : 'Registration is temporarily unavailable. Please try again.');
         redirect('index.php');
     }
     flash('success', 'Registration successful! Please login.');

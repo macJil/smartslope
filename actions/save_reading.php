@@ -1,5 +1,5 @@
 <?php
-require_once __DIR__ . '/../app/config.php';
+require_once __DIR__ . '/../app/bootstrap.php';
 start_session();
 require_admin();
 
@@ -14,6 +14,7 @@ $pdo = db();
 $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND type = 'reading'");
 $stmt->execute([$readingId]);
 $reading = $stmt->fetch();
+if ($reading) $reading = assess_reading($reading);
 
 if (!$reading) {
     flash('error', 'Reading not found');
@@ -54,6 +55,8 @@ $loc = get_location($reading['location_id']);
                         <h5>Edit Reading Risk Level</h5>
                     </div>
                     <div class="card-body">
+                        <p>Calculated rainfall category: <?= e($reading['assessment']['calculated_category'] ?? 'unavailable') ?>.
+                        An edited category is an administrator assessment. This prototype does not keep an edit audit trail.</p>
                         <form method="post">
                             <?= csrf_field() ?>
                             <input type="hidden" name="update_reading" value="1">
