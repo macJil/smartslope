@@ -14,6 +14,17 @@
             timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short'
         }).format(date) + ' PHT';
     }
+    function appendLocation(cell, location) {
+        $('<div>').text(location.name || 'Unknown').appendTo(cell);
+        const details = [];
+        if (location.landmark) details.push('Street/Landmark: ' + location.landmark);
+        if (location.purok) details.push('Purok: ' + location.purok);
+        details.push('Barangay Irisan, Baguio City, Benguet, Philippines');
+        if (location.lat !== null && location.lng !== null) {
+            details.push('Coordinates: ' + Number(location.lat).toFixed(5) + ', ' + Number(location.lng).toFixed(5));
+        }
+        details.forEach(detail => $('<small>').addClass('text-muted d-block').text(detail).appendTo(cell));
+    }
     function render(data) {
         const r = data.latest;
         if (!r) return;
@@ -40,7 +51,7 @@
         const tbody = $('#recent-readings-body').empty();
         data.readings.forEach(row => {
             const tr = $('<tr>').toggleClass('text-muted', Number(row.stale) === 1).appendTo(tbody);
-            $('<td>').text(data.location.name).appendTo(tr);
+            appendLocation($('<td>').appendTo(tr), data.location);
             $('<td>').text(value(row.risk_level).toUpperCase()).appendTo(tr);
             ['rainfall_1h','rainfall_24h','rainfall_72h','rainfall_forecast_24h','precipitation_probability_24h'].forEach(key => $('<td>').text(value(row[key])).appendTo(tr));
             $('<td>').text(value(row.soil_moisture_9_27cm) + ' / ' + value(row.soil_moisture_27_81cm)).appendTo(tr);

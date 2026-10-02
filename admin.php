@@ -56,8 +56,10 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SmartSlope - Admin</title>
     <link rel="stylesheet" href="<?= url('assets/css/bootstrap.min.css') ?>">
+    <link rel="stylesheet" href="<?= url('assets/vendor/leaflet/leaflet.css') ?>">
     <style>
         .badge-risk { font-size: 0.85em; }
+        #reportMap { height: 300px; width: 100%; }
     </style>
 </head>
 <body>
@@ -150,6 +152,12 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                         <tbody>
                             <?php foreach ($reports as $r):
                                 $loc = get_location($r['location_id']);
+                                $locationAddress = array_filter([
+                                    $loc['name'] ?? 'Unknown',
+                                    !empty($loc['landmark']) ? 'Street/Landmark: ' . $loc['landmark'] : null,
+                                    !empty($loc['purok']) ? 'Purok ' . $loc['purok'] : null,
+                                    'Barangay Irisan', 'Baguio City', 'Benguet', 'Philippines'
+                                ]);
                                 $reporterName = 'Anonymous';
                                 if ($r['user_id']) {
                                     $pdo = db();
@@ -162,7 +170,12 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                             ?>
                             <tr>
                                 <td><?= $r['id'] ?></td>
-                                <td><?= e($loc['name'] ?? 'Unknown') ?></td>
+                                <td>
+                                    <?= e($loc['name'] ?? 'Unknown') ?>
+                                    <?php if ($loc['landmark'] ?? ''): ?><br><small class="text-muted">Street/Landmark: <?= e($loc['landmark']) ?></small><?php endif; ?>
+                                    <?php if ($loc['purok'] ?? ''): ?><br><small class="text-muted">Purok: <?= e($loc['purok']) ?></small><?php endif; ?>
+                                    <br><small class="text-muted">Barangay Irisan, Baguio City, Benguet, Philippines</small>
+                                </td>
                                 <td><?= e(substr($r['message'], 0, 40)) ?>...</td>
                                 <td><?= e($reporterName) ?></td>
                                 <td><?= e($r['contact_phone'] ?? 'N/A') ?><br><small><?= e($r['contact_email'] ?? '') ?></small></td>
@@ -177,12 +190,14 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                 <td>
                                     <button class="btn btn-xs btn-info view-report-btn"
                                             data-report-id="<?= $r['id'] ?>"
-                                            data-location="<?= e($loc['name'] ?? 'Unknown') ?>"
+                                            data-location="<?= e(implode(', ', $locationAddress)) ?>"
                                             data-message="<?= e($r['message']) ?>"
                                             data-reporter="<?= e($reporterName) ?>"
                                             data-contact="<?= e(($r['contact_phone'] ?? 'N/A') . ' / ' . ($r['contact_email'] ?? 'No email')) ?>"
                                             data-status="<?= e($r['status']) ?>"
-                                            data-date="<?= local_date($r['created_at']) ?>">
+                                            data-date="<?= local_date($r['created_at']) ?>"
+                                            data-lat="<?= $loc['lat'] ?? '' ?>"
+                                            data-lng="<?= $loc['lng'] ?? '' ?>">
                                         View
                                     </button>
                                     <?php if ($r['status'] === 'pending'): ?>
@@ -282,7 +297,19 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                             ?>
                             <tr>
                                 <td><?= $r['id'] ?></td>
-                                <td><?= e($loc['name'] ?? 'Unknown') ?></td>
+                                <td>
+                                    <?= e($loc['name'] ?? 'Unknown') ?>
+                                    <?php if ($loc['purok'] ?? ''): ?>
+                                        <br><small class="text-muted">Purok: <?= e($loc['purok']) ?></small>
+                                    <?php endif; ?>
+                                    <?php if ($loc['landmark'] ?? ''): ?>
+                                        <br><small class="text-muted">Street/Landmark: <?= e($loc['landmark']) ?></small>
+                                    <?php endif; ?>
+                                    <br><small class="text-muted">Barangay Irisan, Baguio City, Benguet, Philippines</small>
+                                    <?php if ($loc['lat'] && $loc['lng']): ?>
+                                        <br><small class="text-muted">Coor: <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?></small>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <span class="badge bg-<?=
                                         ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger']
@@ -320,35 +347,51 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
 
     <!-- View Report Modal -->
     <div class="modal fade" id="viewReportModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Report Details</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <dl class="row">
-                        <dt class="col-sm-3">Report ID:</dt>
-                        <dd class="col-sm-9" id="modalReportId"></dd>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <dl class="row">
+                                <dt class="col-sm-4">Report ID:</dt>
+                                <dd class="col-sm-8" id="modalReportId"></dd>
 
-                        <dt class="col-sm-3">Location:</dt>
-                        <dd class="col-sm-9" id="modalReportLocation"></dd>
+                                <dt class="col-sm-4">Location:</dt>
+                                <dd class="col-sm-8" id="modalReportLocation"></dd>
 
-                        <dt class="col-sm-3">Message:</dt>
-                        <dd class="col-sm-9" id="modalReportMessage"></dd>
+                                <dt class="col-sm-4">Message:</dt>
+                                <dd class="col-sm-8" id="modalReportMessage"></dd>
 
-                        <dt class="col-sm-3">Reporter:</dt>
-                        <dd class="col-sm-9" id="modalReportReporter"></dd>
+                                <dt class="col-sm-4">Reporter:</dt>
+                                <dd class="col-sm-8" id="modalReportReporter"></dd>
 
-                        <dt class="col-sm-3">Contact:</dt>
-                        <dd class="col-sm-9" id="modalReportContact"></dd>
+                                <dt class="col-sm-4">Contact:</dt>
+                                <dd class="col-sm-8" id="modalReportContact"></dd>
 
-                        <dt class="col-sm-3">Status:</dt>
-                        <dd class="col-sm-9" id="modalReportStatus"></dd>
+                                <dt class="col-sm-4">Status:</dt>
+                                <dd class="col-sm-8" id="modalReportStatus"></dd>
 
-                        <dt class="col-sm-3">Date:</dt>
-                        <dd class="col-sm-9" id="modalReportDate"></dd>
-                    </dl>
+                                <dt class="col-sm-4">Date:</dt>
+                                <dd class="col-sm-8" id="modalReportDate"></dd>
+                            </dl>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">Report Location Map</h6>
+                                </div>
+                                <div class="card-body p-0">
+                                    <div id="reportMap"></div>
+                                </div>
+                            </div>
+                            <input type="hidden" id="modalReportLat" value="">
+                            <input type="hidden" id="modalReportLng" value="">
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -358,8 +401,8 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
     </div>
 
     <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
+    <script src="<?= url('assets/vendor/leaflet/leaflet.js') ?>"></script>
     <script>
-        // View Report modal
         const viewReportModal = document.getElementById('viewReportModal');
         document.querySelectorAll('.view-report-btn').forEach(button => {
             button.addEventListener('click', function() {
@@ -370,6 +413,8 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                 const contact = this.getAttribute('data-contact');
                 const status = this.getAttribute('data-status');
                 const date = this.getAttribute('data-date');
+                const lat = this.getAttribute('data-lat');
+                const lng = this.getAttribute('data-lng');
 
                 viewReportModal.querySelector('#modalReportId').textContent = reportId;
                 viewReportModal.querySelector('#modalReportLocation').textContent = location;
@@ -378,10 +423,44 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                 viewReportModal.querySelector('#modalReportContact').textContent = contact;
                 viewReportModal.querySelector('#modalReportStatus').textContent = status;
                 viewReportModal.querySelector('#modalReportDate').textContent = date;
+                viewReportModal.querySelector('#modalReportLat').value = lat;
+                viewReportModal.querySelector('#modalReportLng').value = lng;
 
                 const bootstrapModal = new bootstrap.Modal(viewReportModal);
                 bootstrapModal.show();
             });
+        });
+
+        viewReportModal.addEventListener('shown.bs.modal', function() {
+            const lat = parseFloat(viewReportModal.querySelector('#modalReportLat').value);
+            const lng = parseFloat(viewReportModal.querySelector('#modalReportLng').value);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+            if (!window.reportMap) {
+                window.reportMap = L.map('reportMap').setView([lat, lng], 16);
+
+                L.tileLayer('<?= e(url("assets/map-tiles/{z}/{x}/{y}.png")) ?>', {
+                    attribution: 'Barangay Irisan offline map tiles',
+                    maxNativeZoom: 15,
+                    maxZoom: 16,
+                    minZoom: 12,
+                    tileSize: 256,
+                    noWrap: true
+                }).addTo(window.reportMap);
+            }
+            window.reportMap.setView([lat, lng], 16);
+            window.reportMap.eachLayer(layer => {
+                if (layer instanceof L.Marker) window.reportMap.removeLayer(layer);
+            });
+            L.marker([lat, lng]).addTo(window.reportMap).bindPopup('Report submitted here');
+            setTimeout(() => window.reportMap.invalidateSize(), 100);
+        });
+
+        viewReportModal.addEventListener('hidden.bs.modal', function() {
+            if (window.reportMap) {
+                window.reportMap.remove();
+                window.reportMap = null;
+            }
         });
 
     </script>

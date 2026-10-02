@@ -78,7 +78,19 @@ if (get('action') === 'export') {
                             ?>
                             <tr class="<?= $staleClass ?>">
                                 <td><?= $r['id'] ?></td>
-                                <td><?= e($loc['name'] ?? 'Unknown') ?></td>
+                                <td>
+                                    <?= e($loc['name'] ?? 'Unknown') ?>
+                                    <?php if ($loc['purok'] ?? ''): ?>
+                                        <br><small class="text-muted">Purok: <?= e($loc['purok']) ?></small>
+                                    <?php endif; ?>
+                                    <?php if ($loc['landmark'] ?? ''): ?>
+                                        <br><small class="text-muted">Street/Landmark: <?= e($loc['landmark']) ?></small>
+                                    <?php endif; ?>
+                                    <br><small class="text-muted">Barangay Irisan, Baguio City, Benguet, Philippines</small>
+                                    <?php if ($loc['lat'] && $loc['lng']): ?>
+                                        <br><small class="text-muted">Coor: <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?></small>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <span class="badge bg-<?=
                                         ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger']

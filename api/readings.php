@@ -28,7 +28,14 @@ try {
         exit;
     }
     echo json_encode([
-        'location' => ['id' => (int)$location['id'], 'name' => $location['name']],
+        'location' => [
+            'id' => (int)$location['id'],
+            'name' => $location['name'],
+            'purok' => $location['purok'],
+            'landmark' => $location['landmark'],
+            'lat' => $location['lat'],
+            'lng' => $location['lng'],
+        ],
         'latest' => get_latest_reading($locationId),
         'readings' => get_readings($locationId, 10),
     ], JSON_INVALID_UTF8_SUBSTITUTE);

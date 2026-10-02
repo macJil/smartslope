@@ -529,7 +529,7 @@ function calculate_weather_indicators(array $hourly, string $currentTime): array
 }
 
 // Get or create location for coordinates
-function get_or_create_location(float $lat, float $lng): array {
+function get_or_create_location(float $lat, float $lng, ?string $landmark = null): array {
     $pdo = db();
 
     // Round to 5 decimal places
@@ -544,16 +544,22 @@ function get_or_create_location(float $lat, float $lng): array {
         if (!$loc['active']) {
             throw new InvalidArgumentException('This monitoring point was removed by an administrator.');
         }
+        if (empty($loc['landmark']) && trim((string)$landmark) !== '') {
+            $stmt = $pdo->prepare("UPDATE locations SET landmark = ? WHERE id = ? AND (landmark IS NULL OR landmark = '')");
+            $stmt->execute([trim((string)$landmark), $loc['id']]);
+            return get_location((int)$loc['id']) ?? $loc;
+        }
         return $loc;
     }
 
     // Create new
     $name = sprintf('Irisan %.5f, %.5f', $lat, $lng);
     $stmt = $pdo->prepare(
-        "INSERT INTO locations (name, purok, lat, lng, susceptibility, active)
-         VALUES (?, 'Map point', ?, ?, 'unknown', 1)"
+        "INSERT INTO locations (name, purok, landmark, lat, lng, susceptibility, active)
+         VALUES (?, 'Map point', ?, ?, ?, 'unknown', 1)"
     );
-    $stmt->execute([$name, $lat, $lng]);
+    $landmark = trim((string)$landmark);
+    $stmt->execute([$name, $landmark !== '' ? $landmark : null, $lat, $lng]);
     return get_location((int)$pdo->lastInsertId());
 }
 

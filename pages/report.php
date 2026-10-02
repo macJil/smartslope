@@ -7,23 +7,45 @@ $locations = get_locations();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_post_csrf();
-    $locationId = (int)post('location_id');
+    $locationId = filter_var(post('location_id'), FILTER_VALIDATE_INT);
+    $reportLat = post('report_lat');
+    $reportLng = post('report_lng');
+    $reportAddress = post('report_address');
     $message = post('message');
     $contactPhone = post('contact_phone');
     $contactEmail = post('contact_email');
     $houseLandmark = post('house_landmark');
+    $reportAddress = strlen((string)$reportAddress) <= 255 ? $reportAddress : '';
 
-    $location = get_location($locationId);
-    if (!$location || !$location['active'] || trim((string)$message) === '' ||
+    if (trim((string)$message) === '' ||
         !preg_match('/^\+?[0-9]{10,15}$/', trim((string)$contactPhone)) ||
         ($contactEmail !== '' && !filter_var($contactEmail, FILTER_VALIDATE_EMAIL)) ||
-        trim((string)$houseLandmark) === '') {
+        trim((string)$houseLandmark) === '' || strlen((string)$houseLandmark) > 255) {
         flash('error', 'Please fill all required fields');
         redirect('report.php');
     }
 
+    $location = null;
+    if ($reportLat !== '' || $reportLng !== '') {
+        $lat = filter_var($reportLat, FILTER_VALIDATE_FLOAT);
+        $lng = filter_var($reportLng, FILTER_VALIDATE_FLOAT);
+        if (is_float($lat) && is_float($lng) && is_in_irisan($lat, $lng)) {
+            $location = get_or_create_location(
+                $lat,
+                $lng,
+                trim((string)$reportAddress) !== '' ? trim((string)$reportAddress) : trim((string)$houseLandmark)
+            );
+        }
+    } elseif ($locationId) {
+        $location = get_location((int)$locationId);
+    }
+    if (!$location || !$location['active']) {
+        flash('error', 'Please select a location inside Barangay Irisan.');
+        redirect('report.php');
+    }
+
     create_report([
-        'location_id' => $locationId,
+        'location_id' => $location['id'],
         'user_id' => $_SESSION['user_id'],
         'message' => $message,
         'contact_phone' => $contactPhone,
@@ -160,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <div id="report-map"></div>
                         <div class="map-heading">
                             <h5>Select Location</h5>
-                            <p class="text-muted small">Click a monitoring point or use the dropdown.</p>
+                            <p class="text-muted small">Click anywhere inside Barangay Irisan or choose a monitoring point.</p>
                         </div>
                     </div>
                 </div>
@@ -176,7 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <?= csrf_field() ?>
                             <div class="mb-3">
                                 <label class="form-label">Location *</label>
-                                <select name="location_id" id="locationSelect" class="form-select" required>
+                                <select name="location_id" id="locationSelect" class="form-select">
                                     <option value="">Select a location...</option>
                                     <?php foreach ($locations as $loc): ?>
                                         <option value="<?= $loc['id'] ?>"
@@ -188,12 +210,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
+                                <input type="hidden" name="report_lat" id="reportLat" value="">
+                                <input type="hidden" name="report_lng" id="reportLng" value="">
+                                <input type="hidden" name="report_address" id="reportAddress" value="">
+                                <small id="selectedAddress" class="form-text text-muted"></small>
                             </div>
 
                             <div class="mb-3">
                                 <label class="form-label">House/Landmark *</label>
                                 <input type="text" name="house_landmark" class="form-control"
-                                       placeholder="Your address or nearby landmark" required>
+                                        placeholder="Your street, house number, or nearby landmark" maxlength="255" required>
                             </div>
 
                             <div class="mb-3">
@@ -247,7 +273,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }).fitBounds(irisanBounds, { padding: [18, 18], maxZoom: 15 });
 
         L.tileLayer('<?= url("assets/map-tiles/{z}/{x}/{y}.png") ?>', {
-            attribution: 'Barangay Irisan offline map tiles',
+            attribution: 'Barangay Irisan offline map tiles; Address data © OpenStreetMap contributors',
             maxNativeZoom: 15,
             maxZoom: 16,
             minZoom: 12,
@@ -301,6 +327,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         map.addLayer(markersLayer);
 
         let selectedMarker = null;
+        const addressCache = new Map();
+        let lastAddressLookup = 0;
+
+        async function lookupAddress(lat, lng) {
+            const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+            const addressField = document.getElementById('reportAddress');
+            const addressLabel = document.getElementById('selectedAddress');
+            addressField.value = '';
+            addressLabel.textContent = 'Looking up street address...';
+
+            if (!addressCache.has(key)) {
+                const delay = Math.max(0, 1000 - (Date.now() - lastAddressLookup));
+                if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+                lastAddressLookup = Date.now();
+                try {
+                    const params = new URLSearchParams({
+                        format: 'jsonv2',
+                        lat: String(lat),
+                        lon: String(lng),
+                        zoom: '18',
+                        addressdetails: '1'
+                    });
+                    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`);
+                    if (!response.ok) throw new Error('Address lookup failed');
+                    const result = await response.json();
+                    const parts = result.address ? [
+                        result.address.house_number,
+                        result.address.road,
+                        result.address.neighbourhood,
+                        result.address.suburb,
+                        result.address.city_district,
+                        result.address.city || result.address.town || result.address.village,
+                        result.address.county,
+                        result.address.state,
+                        result.address.country
+                    ].filter(Boolean) : [];
+                    const address = [...new Set(parts)].join(', ') || result.display_name || '';
+                    addressCache.set(key, Array.from(address).slice(0, 255).join(''));
+                } catch {
+                    addressCache.set(key, '');
+                }
+            }
+
+            const address = addressCache.get(key);
+            const selectedLat = Number(addressField.dataset.lat);
+            const selectedLng = Number(addressField.dataset.lng);
+            if (selectedLat !== lat || selectedLng !== lng) return;
+            addressField.value = address;
+            addressLabel.textContent = address || 'Street address unavailable; use the house/landmark field below.';
+        }
 
         map.on('click', function(e) {
             const {lat, lng} = e.latlng;
@@ -327,23 +403,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             map.setView([lat, lng], 16);
 
-            let found = false;
+            let nearestLocation = null;
+            let nearestDistance = Infinity;
             locations.forEach(loc => {
                 if (loc.lat && loc.lng) {
                     const dist = Math.sqrt(
                         Math.pow(loc.lat - lat, 2) + Math.pow(loc.lng - lng, 2)
                     );
-                    if (dist < 0.0005) {
-                        document.getElementById('locationSelect').value = loc.id;
-                        document.getElementById('locationSelect').dispatchEvent(new Event('change'));
-                        found = true;
+                    if (dist < nearestDistance) {
+                        nearestLocation = loc;
+                        nearestDistance = dist;
                     }
                 }
             });
 
-            if (!found) {
-                alert('No monitoring location near this point. Please use the dropdown.');
-            }
+            document.getElementById('reportLat').value = lat;
+            document.getElementById('reportLng').value = lng;
+            document.getElementById('reportAddress').dataset.lat = lat;
+            document.getElementById('reportAddress').dataset.lng = lng;
+            lookupAddress(lat, lng);
+            document.getElementById('locationSelect').value = nearestLocation && nearestDistance < 0.0005
+                ? nearestLocation.id
+                : '';
         });
 
         document.getElementById('locationSelect').addEventListener('change', function() {
@@ -351,6 +432,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (selected && selected.dataset.lat && selected.dataset.lng) {
                 const lat = parseFloat(selected.dataset.lat);
                 const lng = parseFloat(selected.dataset.lng);
+                document.getElementById('reportLat').value = lat;
+                document.getElementById('reportLng').value = lng;
+                document.getElementById('reportAddress').dataset.lat = lat;
+                document.getElementById('reportAddress').dataset.lng = lng;
+                lookupAddress(lat, lng);
 
                 if (selectedMarker) {
                     map.removeLayer(selectedMarker);
@@ -369,6 +455,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }).addTo(map);
 
                 map.setView([lat, lng], 16);
+            } else {
+                document.getElementById('reportLat').value = '';
+                document.getElementById('reportLng').value = '';
             }
         });
     </script>
