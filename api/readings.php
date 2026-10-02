@@ -25,11 +25,19 @@ try {
     if (!$location || !$location['active']) reading_json(404, ['error' => 'Location not found.']);
     if ($method === 'POST') refresh_location($locationId);
     $latest = get_latest_reading($locationId);
+    $assessment = reading_assessment($latest, $location);
+    $readings = get_readings($locationId, 10);
     reading_json(200, [
         'location' => array_intersect_key($location, array_flip(['id','name','purok','landmark','lat','lng','susceptibility'])),
         'latest' => $latest,
-        'assessment' => reading_assessment($latest, $location),
-        'readings' => get_readings($locationId, 10),
+        'assessment' => $assessment,
+        'readings' => $readings,
+        'view' => [
+            'assessment' => ui_assessment_panel($latest, $location, $assessment),
+            'readings' => ui_readings_rows($readings, is_admin(), 'dashboard-readings', 'bulkDashboardReadingsForm', [$locationId => $location]),
+            'high' => ui_current_count($readings, 'high'),
+            'medium' => ui_current_count($readings, 'medium'),
+        ],
     ]);
 } catch (Throwable $error) {
     error_log('SmartSlope reading endpoint: ' . $error->getMessage());

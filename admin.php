@@ -4,6 +4,7 @@ start_session();
 require_admin();
 
 $locations = get_locations();
+$uiLocations = array_column($locations, null, 'id');
 $readings = get_all_readings(50);
 $reports = get_reports();
 $pendingCounts = get_pending_counts();
@@ -129,6 +130,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
         .report-risk-unavailable { background: #6c757d; }
         .report-message { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 6rem; }
     </style>
+    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
@@ -161,6 +163,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
             <div class="alert alert-danger"><?= e($msg) ?></div>
         <?php endif; ?>
 
+        <p class="small text-muted">Reading counts cover the latest 50 saved readings across active locations. Current means observed within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours; these are reading counts, not location counts.</p>
         <!-- Stats Row -->
         <div class="row mb-4">
             <div class="col-md-3 col-6 mb-3">
@@ -175,7 +178,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                 <div class="card">
                     <div class="card-body text-center">
                         <h3 class="mb-0"><?= count($readings) ?></h3>
-                        <p class="text-muted mb-0 small">Total Readings</p>
+                        <p class="text-muted mb-0 small">Readings shown (latest 50)</p>
                     </div>
                 </div>
             </div>
@@ -190,8 +193,8 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
             <div class="col-md-3 col-6 mb-3">
                 <div class="card">
                     <div class="card-body text-center">
-                        <h3 class="mb-0"><?= count(array_filter($readings, fn($r) => $r['risk_level'] === 'high')) ?></h3>
-                        <p class="text-muted mb-0 small">High Risk</p>
+                        <h3 class="mb-0"><?= ui_current_count($readings, 'high') ?></h3>
+                        <p class="text-muted mb-0 small">Current high readings</p>
                     </div>
                 </div>
             </div>
@@ -210,7 +213,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                 </div>
             </div>
             <div class="card-body p-0">
-                <div class="table-responsive">
+                <div class="table-responsive" tabindex="0" role="region" aria-label="Scrollable records table">
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
@@ -304,7 +307,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                 </form>
             </div>
             <div class="card-body p-0">
-                <div class="table-responsive">
+                <div class="table-responsive" tabindex="0" role="region" aria-label="Scrollable records table">
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
@@ -364,64 +367,11 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                 </form>
             </div>
             <div class="card-body p-0">
-                <div class="table-responsive">
+                <div class="table-responsive" tabindex="0" role="region" aria-label="Scrollable records table">
                     <table class="table table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th><input type="checkbox" data-select-all="admin-readings" aria-label="Select all readings"></th>
-                                <th>Location</th>
-                                <th>Risk</th>
-                                <th>Rainfall (1h/24h/72h)</th>
-                                <th>Forecast (24h)</th>
-                                <th>Max Hourly Chance (Next 24h)</th>
-                                <th>Soil Moisture (9-27 / 27-81 cm)</th>
-                                <th>Temp</th>
-                                <th>Observed</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
+                        <?= ui_readings_head(true, 'admin-readings') ?>
                         <tbody>
-                            <?php foreach ($readings as $r):
-                                $loc = get_location($r['location_id']);
-                            ?>
-                            <tr>
-                                <td><input type="checkbox" form="bulkAdminReadingsForm" name="reading_ids[]" value="<?= (int)$r['id'] ?>" data-bulk-item="admin-readings" aria-label="Select reading <?= (int)$r['id'] ?>"></td>
-                                <td>
-                                    <?= e($loc['name'] ?? 'Unknown') ?>
-                                    <?php if ($loc['landmark'] ?? ''): ?>
-                                        <br><small class="text-muted">Street/Landmark: <?= e($loc['landmark']) ?></small>
-                                    <?php endif; ?>
-                                    <?php if ($loc['lat'] && $loc['lng']): ?>
-                                        <br><small class="text-muted">Coor: <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?></small>
-                                    <?php endif; ?>
-                                </td>
-                                <td>
-                                    <span class="badge bg-<?=
-                                        ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger']
-                                        [$r['risk_level']] ?? 'secondary'
-                                    ?> badge-risk">
-                                        <?= e(ucfirst($r['assessment']['category'] ?? 'unavailable')) ?>
-                                    </span>
-                                </td>
-                                <td>
-                                    <?= ($r['rainfall_1h'] ?? 'N/A') ?> /
-                                    <?= ($r['rainfall_24h'] ?? 'N/A') ?> /
-                                    <?= ($r['rainfall_72h'] ?? 'N/A') ?> mm
-                                </td>
-                                <td><?= $r['rainfall_forecast_24h'] ?? 'N/A' ?> mm</td>
-                                <td><?= $r['precipitation_probability_24h'] ?? 'N/A' ?>%</td>
-                                <td><?= $r['soil_moisture_9_27cm'] ?? 'N/A' ?> / <?= $r['soil_moisture_27_81cm'] ?? 'N/A' ?> m³/m³</td>
-                                <td><?= $r['temperature'] ?? 'N/A' ?>°C</td>
-                                <td><?= e(local_date($r['observed_at'])) ?><br><small><?= e(ucfirst($r['assessment']['data_status'])) ?><?= $r['assessment']['adjusted'] ? ' — Administrator-adjusted' : '' ?></small></td>
-                                <td>
-                                    <a href="<?= url('actions/save_reading.php?reading_id=' . $r['id']) ?>"
-                                       class="btn btn-xs btn-outline-primary">Edit</a>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                            <?php if (empty($readings)): ?>
-                                <tr><td colspan="10" class="text-center text-muted">No readings yet</td></tr>
-                            <?php endif; ?>
+                            <?= ui_readings_rows($readings, true, 'admin-readings', 'bulkAdminReadingsForm', $uiLocations) ?>
                         </tbody>
                     </table>
                 </div>
@@ -430,12 +380,12 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
     </div>
 
     <!-- View Report Modal -->
-    <div class="modal fade" id="viewReportModal" tabindex="-1">
+    <div class="modal fade" id="viewReportModal" tabindex="-1" aria-labelledby="reportModalTitle">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Report Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="reportModalTitle">Report Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close report details"></button>
                 </div>
                 <div class="modal-body">
                     <div class="row">

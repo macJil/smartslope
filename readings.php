@@ -5,6 +5,7 @@ require_login();
 
 $readings = get_all_readings(100);
 $isAdmin = is_admin();
+$uiLocations = array_column(get_locations(), null, 'id');
 
 // Export CSV
 if (get('action') === 'export') {
@@ -26,6 +27,7 @@ if (get('action') === 'export') {
     <style>
         .badge-risk { font-size: 0.85em; }
     </style>
+    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
@@ -41,7 +43,7 @@ if (get('action') === 'export') {
 
     <div class="container my-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>All Weather Readings</h2>
+            <h2>Weather Readings</h2>
             <div>
                 <?php if ($isAdmin): ?>
                     <form id="bulkReadingsPageForm" method="post" action="<?= e(url('admin.php')) ?>" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="d-inline">
@@ -53,81 +55,14 @@ if (get('action') === 'export') {
             </div>
         </div>
 
+        <p class="small text-muted">Latest 100 saved readings across active locations. Current means observed within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours. SmartSlope is an academic prototype, not an official warning service. Scroll the table or expand details for more weather information.</p>
         <div class="card">
             <div class="card-body p-0">
-                <div class="table-responsive">
+                <div class="table-responsive" tabindex="0" role="region" aria-label="Scrollable records table">
                     <table class="table table-hover table-striped mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <?php if ($isAdmin): ?><th><input type="checkbox" data-select-all="page-readings" aria-label="Select all readings"></th><?php endif; ?>
-                                <th>Location</th>
-                                <th>Risk</th>
-                                <th>1h Rain</th>
-                                <th>24h Rain</th>
-                                <th>72h Rain</th>
-                                <th>Next 24h Rain</th>
-                                <th>Max Hourly Chance (Next 24h)</th>
-                                <th>Soil Moisture (9-27 / 27-81 cm)</th>
-                                <th>Temp</th>
-                                <th>Wind</th>
-                                <th>Observed</th>
-                                <th>Status</th>
-                                <?php if ($isAdmin): ?><th>Actions</th><?php endif; ?>
-                            </tr>
-                        </thead>
+                        <?= ui_readings_head($isAdmin, 'page-readings') ?>
                         <tbody>
-                            <?php foreach ($readings as $r):
-                                $loc = get_location($r['location_id']);
-                                $staleClass = $r['stale'] ? 'text-muted' : '';
-                            ?>
-                            <tr class="<?= $staleClass ?>">
-                                <?php if ($isAdmin): ?><td><input type="checkbox" form="bulkReadingsPageForm" name="reading_ids[]" value="<?= (int)$r['id'] ?>" data-bulk-item="page-readings" aria-label="Select reading <?= (int)$r['id'] ?>"></td><?php endif; ?>
-                                <td>
-                                    <?= e($loc['name'] ?? 'Unknown') ?>
-                                    <?php if ($loc['purok'] ?? ''): ?>
-                                        <br><small class="text-muted">Purok: <?= e($loc['purok']) ?></small>
-                                    <?php endif; ?>
-                                    <?php if ($loc['landmark'] ?? ''): ?>
-                                        <br><small class="text-muted">Street/Landmark: <?= e($loc['landmark']) ?></small>
-                                    <?php endif; ?>
-                                    <br><small class="text-muted">Barangay Irisan, Baguio City, Benguet, Philippines</small>
-                                    <?php if ($loc['lat'] && $loc['lng']): ?>
-                                        <br><small class="text-muted">Coor: <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?></small>
-                                    <?php endif; ?>
-                                </td>
-                                <td>
-                                    <span class="badge bg-<?=
-                                        ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger']
-                                        [$r['risk_level']] ?? 'secondary'
-                                    ?> badge-risk">
-                                        <?= e(ucfirst($r['assessment']['category'] ?? 'unavailable')) ?>
-                                    </span>
-                                </td>
-                                <td><?= $r['rainfall_1h'] ?? 'N/A' ?></td>
-                                <td><?= $r['rainfall_24h'] ?? 'N/A' ?></td>
-                                <td><?= $r['rainfall_72h'] ?? 'N/A' ?></td>
-                                <td><?= $r['rainfall_forecast_24h'] ?? 'N/A' ?> mm</td>
-                                <td><?= $r['precipitation_probability_24h'] ?? 'N/A' ?>%</td>
-                                <td><?= $r['soil_moisture_9_27cm'] ?? 'N/A' ?> / <?= $r['soil_moisture_27_81cm'] ?? 'N/A' ?> m³/m³</td>
-                                <td><?= $r['temperature'] ?? 'N/A' ?>°C</td>
-                                <td><?= $r['wind_speed'] ?? 'N/A' ?> km/h</td>
-                                <td><?= e(local_date($r['observed_at'])) ?><br><small><?= e(ucfirst($r['assessment']['data_status'])) ?><?= $r['assessment']['adjusted'] ? ' — Administrator-adjusted' : '' ?></small></td>
-                                <td><?= e(ucfirst($r['assessment']['data_status'])) ?></td>
-                                <?php if ($isAdmin): ?>
-                                    <td>
-                                        <a href="<?= url('actions/save_reading.php?reading_id=' . $r['id']) ?>"
-                                           class="btn btn-xs btn-outline-primary">Edit</a>
-                                    </td>
-                                <?php endif; ?>
-                            </tr>
-                            <?php endforeach; ?>
-                            <?php if (empty($readings)): ?>
-                                <tr>
-                                    <td colspan="<?= $isAdmin ? 14 : 13 ?>" class="text-center text-muted">
-                                        No readings yet
-                                    </td>
-                                </tr>
-                            <?php endif; ?>
+                            <?= ui_readings_rows($readings, $isAdmin, 'page-readings', 'bulkReadingsPageForm', $uiLocations) ?>
                         </tbody>
                     </table>
                 </div>

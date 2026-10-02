@@ -6,6 +6,7 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/RiskAnalyzer.php';
 require_once __DIR__ . '/assessment.php';
+require_once __DIR__ . '/presentation.php';
 require_once __DIR__ . '/repositories.php';
 require_once __DIR__ . '/weather.php';
 

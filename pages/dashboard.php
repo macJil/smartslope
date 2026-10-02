@@ -5,6 +5,7 @@ require_login();
 
 // Get all active locations with latest readings
 $locations = get_locations();
+$uiLocations = array_column($locations, null, 'id');
 $pendingCounts = get_pending_counts();
 
 foreach ($locations as &$loc) {
@@ -141,6 +142,7 @@ if ($selectedLocId) {
             }
         }
     </style>
+    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
@@ -196,59 +198,31 @@ if ($selectedLocId) {
         }
         $assessment = reading_assessment($latestReading, $selectedLoc ?? []);
         ?>
+        <p id="weather-feedback" class="alert d-none" role="status" aria-live="polite"></p>
         <div class="row">
             <div class="col-md-6 mb-4">
                 <div class="card h-100">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5>Risk Status</h5>
+                        <h2 class="h5 mb-0">Rainfall assessment</h2>
                         <?php if ($selectedLocId && $selectedLoc): ?>
                             <button type="button" id="refresh-weather" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-arrow-clockwise"></i> Refresh Weather
                             </button>
                         <?php endif; ?>
                     </div>
-                    <div class="card-body" id="risk-content" data-location="<?= e($selectedLoc['name'] ?? '') ?>">
-                        <?php if ($selectedLoc && $latestReading): ?>
-                            <div class="display-6 fw-bold text-<?=
-                                ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger'][$assessment['current_category'] ?? 'unavailable'] ?? 'secondary'
-                            ?>">
-                                <?= e(ucfirst($assessment['category'] ?? 'unavailable')) ?>
-                            </div>
-                            <p class="mb-0">
-                                <strong>Location:</strong> <?= e($selectedLoc['name']) ?><br>
-                                <strong>Coordinates:</strong>
-                                <?= $selectedLoc['lat'] && $selectedLoc['lng'] ?
-                                    sprintf('%.5f, %.5f', $selectedLoc['lat'], $selectedLoc['lng']) : 'N/A' ?><br>
-                                <strong>1h Rainfall:</strong> <?= $latestReading['rainfall_1h'] ?? 'N/A' ?> mm<br>
-                                <strong>24h Rainfall:</strong> <?= $latestReading['rainfall_24h'] ?? 'N/A' ?> mm<br>
-                                <strong>72h Rainfall:</strong> <?= $latestReading['rainfall_72h'] ?? 'N/A' ?> mm<br>
-                                <strong>24h forecast from last whole hour:</strong> <?= $latestReading['rainfall_forecast_24h'] ?? 'N/A' ?> mm
-                                (<?= $latestReading['precipitation_probability_24h'] ?? 'N/A' ?>% max chance)<br>
-                                <strong>Modeled soil moisture:</strong>
-                                <?= $latestReading['soil_moisture_9_27cm'] ?? 'N/A' ?> (9-27 cm) /
-                                <?= $latestReading['soil_moisture_27_81cm'] ?? 'N/A' ?> (27-81 cm) m³/m³<br>
-                                <strong>Observed:</strong> <?= e(local_date($latestReading['observed_at'])) ?> PHT<br>
-                                <strong>Retrieved:</strong> <?= e(local_date($latestReading['created_at'])) ?> PHT
-                            </p>
-                            <p class="text-muted small mb-0">
-                                Temperature: <?= $latestReading['temperature'] ?? 'N/A' ?>°C |
-                                Humidity: <?= $latestReading['humidity'] ?? 'N/A' ?>% |
-                                Wind: <?= $latestReading['wind_speed'] ?? 'N/A' ?> km/h
-                            </p>
-                        <?php else: ?>
-                            <p class="text-muted"><?= $selectedLoc ? 'No saved reading is available for this location. Try Refresh Weather.' : 'Select an Irisan location to view its assessment.' ?></p>
-                            <div class="display-6 fw-bold text-secondary">Unavailable</div>
-                        <?php endif; ?>
+                    <div class="card-body" id="risk-content" aria-live="polite" aria-atomic="true" data-location="<?= e($selectedLoc['name'] ?? '') ?>">
+                        <?= ui_assessment_panel($latestReading, $selectedLoc ?? [], $assessment) ?>
                     </div>
                 </div>
             </div>
 
             <div class="col-md-6 mb-4">
-                <div class="card h-100">
+                <div class="card">
                     <div class="card-header">
-                        <h5>Quick Stats</h5>
+                        <h2 class="h5 mb-0">Reading summary</h2>
                     </div>
                     <div class="card-body">
+                        <p class="small text-muted">Category counts cover the latest <?= $selectedLocId ? 10 : 20 ?> saved readings <?= $selectedLocId ? 'for the selected location' : 'across active locations' ?>. Only observations within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours count as current. Counts represent readings, not distinct locations.</p>
                         <div class="row text-center">
                             <div class="col-6 mb-3">
                                 <h3 class="mb-0"><?= count($locations) ?></h3>
@@ -259,12 +233,12 @@ if ($selectedLocId) {
                                 <small class="text-muted">Pending Reports</small>
                             </div>
                             <div class="col-6">
-                                <h3 class="mb-0"><?= count(array_filter($readings, fn($r) => $r['risk_level'] === 'high')) ?></h3>
-                                <small class="text-muted">High Risk Readings</small>
+                                <h3 class="mb-0" id="current-high-count"><?= ui_current_count($readings, 'high') ?></h3>
+                                <small class="text-muted">Current high readings</small>
                             </div>
                             <div class="col-6">
-                                <h3 class="mb-0"><?= count(array_filter($readings, fn($r) => $r['risk_level'] === 'medium')) ?></h3>
-                                <small class="text-muted">Medium Risk Readings</small>
+                                <h3 class="mb-0" id="current-medium-count"><?= ui_current_count($readings, 'medium') ?></h3>
+                                <small class="text-muted">Current medium readings</small>
                             </div>
                         </div>
                     </div>
@@ -286,70 +260,11 @@ if ($selectedLocId) {
                 </div>
             </div>
             <div class="card-body p-0">
-                <div class="table-responsive">
+                <div class="table-responsive" tabindex="0" role="region" aria-label="Scrollable records table">
                     <table class="table table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <?php if ($isAdmin): ?><th><input type="checkbox" data-select-all="dashboard-readings" aria-label="Select all readings"></th><?php endif; ?>
-                                <th>Location</th>
-                                <th>Risk</th>
-                                <th>1h Rain</th>
-                                <th>24h Rain</th>
-                                <th>72h Rain</th>
-                                <th>24h Forecast</th>
-                                <th>Max Hourly Chance (Next 24h)</th>
-                                <th>Soil Moisture</th>
-                                <th>Observed</th>
-                                <th>Status</th>
-                                <?php if ($isAdmin): ?><th>Actions</th><?php endif; ?>
-                            </tr>
-                        </thead>
+                        <?= ui_readings_head($isAdmin, 'dashboard-readings') ?>
                         <tbody id="recent-readings-body">
-                            <?php foreach ($readings as $r):
-                                $loc = get_location($r['location_id']);
-                                $staleClass = $r['stale'] ? 'text-muted' : '';
-                            ?>
-                            <tr class="<?= $staleClass ?>">
-                                <?php if ($isAdmin): ?><td><input type="checkbox" form="bulkDashboardReadingsForm" name="reading_ids[]" value="<?= (int)$r['id'] ?>" data-bulk-item="dashboard-readings" aria-label="Select reading <?= (int)$r['id'] ?>"></td><?php endif; ?>
-                                <td>
-                                    <?= e($loc['name'] ?? 'Unknown') ?>
-                                    <?php if ($loc['landmark'] ?? ''): ?>
-                                        <br><small class="text-muted">Street/Landmark: <?= e($loc['landmark']) ?></small>
-                                    <?php endif; ?>
-                                    <?php if ($loc['lat'] && $loc['lng']): ?>
-                                        <br><small class="text-muted">Coor: <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?></small>
-                                    <?php endif; ?>
-                                </td>
-                                <td>
-                                    <span class="badge bg-<?=
-                                        ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger'][$r['risk_level']] ?? 'secondary'
-                                    ?> risk-badge">
-                                        <?= e(ucfirst($r['risk_level'] ?? 'unavailable')) ?>
-                                    </span>
-                                </td>
-                                <td><?= $r['rainfall_1h'] ?? 'N/A' ?></td>
-                                <td><?= $r['rainfall_24h'] ?? 'N/A' ?></td>
-                                <td><?= $r['rainfall_72h'] ?? 'N/A' ?></td>
-                                <td><?= $r['rainfall_forecast_24h'] ?? 'N/A' ?> mm</td>
-                                <td><?= $r['precipitation_probability_24h'] ?? 'N/A' ?>%</td>
-                                <td><?= $r['soil_moisture_9_27cm'] ?? 'N/A' ?> / <?= $r['soil_moisture_27_81cm'] ?? 'N/A' ?> m³/m³</td>
-                                <td><?= e(local_date($r['observed_at'])) ?><br><small><?= e(ucfirst($r['assessment']['data_status'])) ?><?= $r['assessment']['adjusted'] ? ' — Administrator-adjusted' : '' ?></small></td>
-                                <td><?= e(ucfirst($r['assessment']['data_status'])) ?></td>
-                                <?php if ($isAdmin): ?>
-                                    <td>
-                                        <a href="<?= url('actions/save_reading.php?reading_id=' . $r['id']) ?>"
-                                           class="btn btn-xs btn-outline-primary">Edit</a>
-                                    </td>
-                                <?php endif; ?>
-                            </tr>
-                            <?php endforeach; ?>
-                            <?php if (empty($readings)): ?>
-                                <tr>
-                                    <td colspan="<?= $isAdmin ? 12 : 10 ?>" class="text-center text-muted">
-                                        No readings yet. Select a location and click Refresh to fetch weather data.
-                                    </td>
-                                </tr>
-                            <?php endif; ?>
+                            <?= ui_readings_rows($readings, $isAdmin, 'dashboard-readings', 'bulkDashboardReadingsForm', $uiLocations) ?>
                         </tbody>
                     </table>
                 </div>
@@ -363,7 +278,7 @@ if ($selectedLocId) {
                 <a href="<?= url('admin.php') ?>" class="btn btn-sm btn-outline-primary">All Reports</a>
             </div>
             <div class="card-body p-0">
-                <div class="table-responsive">
+                <div class="table-responsive" tabindex="0" role="region" aria-label="Scrollable records table">
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
@@ -538,7 +453,7 @@ if ($selectedLocId) {
 
             if (location.latest) {
                 const reading = document.createElement('small');
-                reading.className = 'd-block mt-1';
+                reading.className = 'location-weather d-block mt-1';
                 reading.textContent = `1h: ${location.latest.rainfall_1h ?? 'N/A'}mm, 24h: ${location.latest.rainfall_24h ?? 'N/A'}mm; Temp: ${location.latest.temperature ?? 'N/A'}°C`;
                 content.append(reading);
             }
@@ -557,7 +472,7 @@ if ($selectedLocId) {
             content.append(selectButton);
             return content;
         }
-        window.updateMapRisk = function(id, risk, assessment) {
+        window.updateMapRisk = function(id, risk, assessment, latest) {
             const marker = markersById.get(Number(id));
             if (!marker) return;
             const level = normalizedRisk(risk);
@@ -566,6 +481,13 @@ if ($selectedLocId) {
                 className: 'marker-div-icon', iconSize: [30, 30], iconAnchor: [15, 15]
             }));
             const popupContent = marker.getPopup().getContent();
+            let weather = popupContent.querySelector('.location-weather');
+            if (!weather && latest) {
+                weather = document.createElement('small');
+                weather.className = 'location-weather d-block mt-1';
+                popupContent.append(weather);
+            }
+            if (weather && latest) weather.textContent = `1h: ${latest.rainfall_1h ?? 'N/A'}mm, 24h: ${latest.rainfall_24h ?? 'N/A'}mm; Temp: ${latest.temperature ?? 'N/A'}°C`;
             const freshness = popupContent.querySelector('.location-data-status');
             if (freshness && assessment) freshness.textContent = assessment.data_status + ' — last saved: ' + (assessment.category || 'unavailable');
             const riskStatus = popupContent.querySelector('.location-risk-status');

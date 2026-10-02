@@ -161,6 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     </style>
+    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
@@ -206,9 +207,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <form method="post" id="reportForm">
                             <?= csrf_field() ?>
                             <div class="mb-3">
-                                <label class="form-label">Location *</label>
-                                <select name="location_id" id="locationSelect" class="form-select">
+                                <label class="form-label" for="locationSelect">Location *</label>
+                                <select name="location_id" id="locationSelect" class="form-select" required aria-describedby="locationHelp selectedAddress">
                                     <option value="">Select a location...</option>
+                                    <option id="mapPointOption" value="map-point" hidden>Selected map point</option>
                                     <?php foreach ($locations as $loc): ?>
                                         <option value="<?= $loc['id'] ?>"
                                                 data-lat="<?= $loc['lat'] ?? '' ?>"
@@ -222,31 +224,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <input type="hidden" name="report_lat" id="reportLat" value="">
                                 <input type="hidden" name="report_lng" id="reportLng" value="">
                                 <input type="hidden" name="report_address" id="reportAddress" value="">
-                                <small id="selectedAddress" class="form-text text-muted"></small>
+                                <small id="locationHelp" class="form-text d-block">Choose an existing location or click inside the Irisan map to select a new point.</small>
+                                <small id="selectedAddress" class="form-text text-muted" aria-live="polite"></small>
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label">House/Landmark *</label>
-                                <input type="text" name="house_landmark" class="form-control"
+                                <label class="form-label" for="house_landmark">House/Landmark *</label>
+                                <input type="text" name="house_landmark" id="house_landmark" class="form-control"
                                         placeholder="Your street, house number, or nearby landmark" maxlength="255" required>
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label">Message *</label>
-                                <textarea name="message" class="form-control" rows="4"
+                                <label class="form-label" for="message">Message *</label>
+                                <textarea name="message" id="message" class="form-control" rows="4"
                                           placeholder="Describe the landslide risk or condition..." required></textarea>
                                 <small class="text-muted">Be as specific as possible about what you observed.</small>
                             </div>
 
                             <div class="row">
-                                <div class="col-6 mb-3">
-                                    <label class="form-label">Contact Phone *</label>
-                                    <input type="tel" name="contact_phone" class="form-control"
+                                <div class="col-sm-6 mb-3">
+                                    <label class="form-label" for="contact_phone">Contact Phone *</label>
+                                    <input type="tel" name="contact_phone" id="contact_phone" class="form-control" maxlength="16" pattern="\+?[0-9]{10,15}" autocomplete="tel" title="Use 10 to 15 digits, optionally starting with +."
                                            value="<?= e($_SESSION['phone'] ?? '') ?>" required>
                                 </div>
-                                <div class="col-6 mb-3">
-                                    <label class="form-label">Contact Email</label>
-                                    <input type="email" name="contact_email" class="form-control"
+                                <div class="col-sm-6 mb-3">
+                                    <label class="form-label" for="contact_email">Contact Email</label>
+                                    <input type="email" name="contact_email" id="contact_email" class="form-control" maxlength="254" autocomplete="email"
                                            value="<?= e($_SESSION['email'] ?? '') ?>">
                                 </div>
                             </div>
@@ -376,31 +379,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             map.setView([lat, lng], 16);
 
-            let nearestLocation = null;
-            let nearestDistance = Infinity;
-            locations.forEach(loc => {
-                if (loc.lat && loc.lng) {
-                    const dist = Math.sqrt(
-                        Math.pow(loc.lat - lat, 2) + Math.pow(loc.lng - lng, 2)
-                    );
-                    if (dist < nearestDistance) {
-                        nearestLocation = loc;
-                        nearestDistance = dist;
-                    }
-                }
-            });
-
             document.getElementById('reportLat').value = lat;
             document.getElementById('reportLng').value = lng;
             document.getElementById('reportAddress').dataset.lat = lat;
             document.getElementById('reportAddress').dataset.lng = lng;
             lookupAddress(lat, lng);
-            document.getElementById('locationSelect').value = nearestLocation && nearestDistance < 0.0005
-                ? nearestLocation.id
-                : '';
+            const mapOption = document.getElementById('mapPointOption');
+            mapOption.hidden = false;
+            mapOption.textContent = `Selected map point (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+            document.getElementById('locationSelect').value = 'map-point';
         });
 
         document.getElementById('locationSelect').addEventListener('change', function() {
+            if (this.value === 'map-point') return;
+            document.getElementById('mapPointOption').hidden = true;
             const selected = this.options[this.selectedIndex];
             if (selected && selected.dataset.lat && selected.dataset.lng) {
                 const lat = parseFloat(selected.dataset.lat);
@@ -429,6 +421,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 map.setView([lat, lng], 16);
             } else {
+                if (selectedMarker) { map.removeLayer(selectedMarker); selectedMarker = null; }
+                delete document.getElementById('reportAddress').dataset.lat;
+                delete document.getElementById('reportAddress').dataset.lng;
                 document.getElementById('reportLat').value = '';
                 document.getElementById('reportLng').value = '';
                 document.getElementById('reportAddress').value = '';
