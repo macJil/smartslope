@@ -1,13 +1,16 @@
-# Database and ERD explanation
+# Database, data dictionary and ERD
 
-The current schema is defined in `database/schema.sql`. It uses three InnoDB tables in `smartslope_mvp`. The `events` table holds both provider readings and resident reports; `events.type` separates those row types. This is a compact academic design, not a sensor-ingestion schema.
+`database/schema.sql` defines five InnoDB tables in `smartslope_mvp`: `users`, `locations`, `events`, `readings`, and `reports`. An event holds shared identity, location, submitter, type, and creation time. The application creates a corresponding detail row for each new reading or report. `readings.event_id` and `reports.event_id` are both primary keys and foreign keys to `events.id`. The foreign keys guarantee that a detail has a parent, but do not alone enforce that every event has one detail or that its `type` matches; application and migration checks handle those rules.
 
 ## Entity relationship
 
 ```mermaid
 erDiagram
     USERS ||--o{ EVENTS : submits
-    LOCATIONS ||--o{ EVENTS : has
+    LOCATIONS ||--o{ EVENTS : contains
+    EVENTS ||--o| READINGS : reading_detail
+    EVENTS ||--o| REPORTS : report_detail
+    USERS ||--o{ REPORTS : reviews
     USERS {
         int id PK
         string full_name
@@ -20,8 +23,6 @@ erDiagram
     LOCATIONS {
         int id PK
         string name
-        string purok
-        string landmark
         decimal lat
         decimal lng
         enum susceptibility
@@ -32,41 +33,48 @@ erDiagram
         int location_id FK
         int user_id FK
         enum type
+        timestamp created_at
+    }
+    READINGS {
+        int event_id PK, FK
         decimal rainfall_1h
         decimal rainfall_24h
         decimal rainfall_72h
         enum risk_level
         datetime observed_at
-        string source
-        string message
+        enum source
+        boolean archived
+    }
+    REPORTS {
+        int event_id PK, FK
+        text message
         enum status
-        int reviewed_by
+        string report_type
+        int reviewed_by FK
         datetime reviewed_at
     }
 ```
 
-`events.user_id` points to the submitting user for reports and may be null for provider readings. `events.location_id` is required. The schema sets location deletion to cascade and user deletion to set the event's user reference to null; the UI normally deactivates a location to preserve useful history. `events.reviewed_by` stores the administrator ID as review metadata, but the schema does not declare it as a foreign key.
+The `USERS`–`REPORTS` edge uses `reports.reviewed_by`, a real foreign key with `ON DELETE SET NULL`. The `USERS`–`EVENTS` edge uses nullable `events.user_id`. The schema does not impose a constraint that an event has exactly one of the two subtype rows.
 
-## Main fields
+## Table fields and purpose
 
-### `users`
+| Table | Identity and main fields | Role |
+| --- | --- | --- |
+| `users` | `id` PK; unique `username`, `email`, `phone`; `full_name`, `password`, `role`, `created_at` | Resident and admin accounts. `password` holds a PHP hash. Roles are assigned server-side. |
+| `locations` | `id` PK; `name`, `purok`, `landmark`, `lat`, `lng`, `susceptibility`, `active`, `created_at`; unique coordinate pair | Saved Irisan map points. `unknown` is the default susceptibility. |
+| `events` | `id` PK; `location_id` FK, nullable `user_id` FK, `type` (`reading` or `report`), `created_at` | Shared event ID and ownership. A provider reading normally has no submitting user. |
+| `readings` | `event_id` PK/FK; historical 1h/24h/72h rainfall, forecast/probability, modeled soil moisture, weather context, `risk_level`, `observed_at`, `source`, rule version, window end, provider payload, adjustment log, `archived`, `stale` | One saved weather snapshot. `stale` is retained for compatibility; current freshness is calculated from observation time. |
+| `reports` | `event_id` PK/FK; message, contact phone/email, house/landmark, status, report type, occurrence time, reviewer FK and review time | Resident observation and admin workflow, separate from calculated rainfall. |
 
-`id` is the unsigned integer primary key. `username`, `email`, and `phone` are unique. `password` stores the PHP password hash, never the plain-text password. `role` is `admin` or `user` and defaults to `user`.
+`events.location_id` cascades on location deletion and `events.user_id` becomes null on user deletion. Deleting an event cascades to its detail row. Deleting a reviewer sets `reports.reviewed_by` to null. The UI normally deactivates locations to preserve history. Contact data is for admin review. New provider payload and adjustment history are stored for provenance; ordinary reading JSON strips these raw fields.
 
-### `locations`
+## Migration and backups
 
-Stores a named Irisan map point, optional purok and landmark, latitude/longitude, a susceptibility enum and active flag. The default susceptibility is `unknown`. The coordinate pair has a unique key. A manually entered class is not treated as verified hazard evidence by the current assessment code.
+For a **new** database, import `database/schema.sql`. For an **existing legacy three-table** database with wide `events` rows, back it up and test on a disposable copy before running `php database/migrate-awareness.php` from the project root. The restartable migration adds missing legacy awareness columns as needed, creates `readings` and `reports`, copies subtype data while keeping event IDs, checks parent/detail presence and type, then drops old subtype columns from `events`. It does not convert an unrelated nine-table legacy schema. MySQL DDL is not fully transactional, so retain the backup and do not import the new schema over existing records. The admin page can invoke the same migration through a protected button when it detects an incomplete detail schema; the CLI is preferable for larger data sets.
 
-### `events`
+Check row counts and representative fields in all five tables after migration, then run the disposable database integration test in [testing](testing.md). The migration checks row presence and type; it is not a byte-for-byte comparison of every copied value. If migration fails, stop and inspect the backup and detail rows before continuing.
 
-`type='reading'` rows store Open-Meteo-derived weather/rainfall fields, risk category, observation time, source, forecast context, and current/archived state. `type='report'` rows store message, contact phone/email, landmark, report type, optional occurrence time, status and review metadata. Both types use the required location reference. Awareness columns retain rule version, rainfall-window end, normalized provider payload, risk-adjustment log, report type, occurrence timestamp, reviewer and review timestamp. `provider_payload` and `adjustment_log` are not returned by ordinary JSON reading responses.
+## Scope
 
-Dates are saved in UTC; the interface presents Philippine time. The `stale` column remains for compatibility. Current freshness is calculated from observation time on request, not from that flag.
-
-## Migration
-
-For an existing current three-table database, back it up and run `php database/migrate-awareness.php`. The idempotent CLI script adds missing awareness fields and a history index. Do not reimport `database/schema.sql` over the existing database. New databases may import the schema file. A different legacy schema requires a separate conversion and validation plan.
-
-## Deliberate limits
-
-There is no dedicated `sensors` table, no physical-device identifier, and no separate `readings`, `reports` or `alerts` tables in this branch. The weather provider is identified by `events.source`; system notices are calculated at request time. Confirm the instructor's specific sensor-table rubric before representing this design as satisfying it.
+There is no `sensors` or `alerts` table. Open-Meteo is identified by `readings.source`; notices are computed when data is requested. The teacher's specific sensor-table requirement still needs agreement if it is graded in this phase. Susceptibility is separate from the rainfall rule; a manually entered label is not verified hazard mapping.
