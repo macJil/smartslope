@@ -1,32 +1,21 @@
 # Verification record
 
-## Branch reviewed
-Documentation review used branch `f1` at application commit `2bc89e742301721c9815b8df59c22b908a0f6db3` on 2026-10-03. The repository contains focused PHP and Node tests; this document distinguishes the student's reported local run from checks independently repeated during documentation work.
+## Reviewed revision
 
-## Student-reported final test run
-On 2026-10-03 the student reported that the website components and features had been tested and were working. The shared command transcript lists:
+This documentation review inspected branch `f1` at application commit `ec7003130d1fd483dce3c167adbd07f662510407` (2026-10-03). That commit added normalized `readings` and `reports` detail tables, changed repository queries and migration, and accidentally introduced Git conflict markers into `README.md`. The README and documentation were corrected in subsequent documentation commits. The review inspected source and test definitions through GitHub; it did not provision a PHP/MySQL site or run the student's local browser session.
 
-- PHP syntax checks for repository PHP files
-- `php tests/risk.php`
-- `php tests/weather.php`
-- `php tests/assessment.php`
-- `php tests/presentation.php`
-- `php tests/awareness.php`
-- `node --check assets/js/dashboard.js`
-- `node --check assets/js/location-address.js`
-- `node tests/map-boundary.test.cjs`
+## Earlier team report
 
-This is the team's local verification report. The documentation pass reviewed the branch files and test definitions; it did not provision the team's local database or re-run their browser/server session.
+On 2026-10-03, before the five-table commit, the student reported that the website components worked locally and shared a transcript with PHP lint, `tests/risk.php`, `tests/weather.php`, `tests/assessment.php`, `tests/presentation.php`, `tests/awareness.php`, JavaScript syntax checks and `tests/map-boundary.test.cjs`. That is useful evidence for the earlier revision, not a passing test report for the new schema and migration.
 
-## Earlier recorded validation
-The previous verification notes in this repository record syntax/unit checks, disposable MySQL/MariaDB integration, provider and headless-browser checks from earlier branch work. Those records are historical evidence for those tested revisions; they should not be interpreted as fresh Herd/Nginx or XAMPP checks on the current `f1` commit.
+Historical verification in this repository also describes disposable database and browser checks on earlier branches. Do not treat them as fresh Herd or XAMPP acceptance for the current commit.
 
-## Remaining environment-specific checks
-Before deployment or a graded demonstration, run the included checks on the final checkout and verify actual HTTP behavior on the chosen host. In particular:
+## Required final checks on the chosen checkout
 
-- Herd/Nginx access rules must block `.env` and internal directories; `.htaccess` does not apply there.
-- XAMPP/Apache must have overrides enabled for its `.htaccess` protections to work.
-- Confirm PDO MySQL/cURL, existing-database migration, resident/admin workflows, provider failure handling and CSV output on the actual local setup.
-- Keep all test accounts and reports synthetic.
+1. Run PHP lint on all PHP files, the PHP test commands in `docs/testing.md`, the Node boundary and syntax checks.
+2. Back up the legacy wide-`events` database and run `php database/migrate-awareness.php` against a disposable copy first. Confirm five tables, matching `events`/`readings` and `events`/`reports` counts, representative copied values, event IDs, contacts, review status and audit fields. Then rehearse an interrupted/repeated migration if feasible. MySQL DDL is not fully transactional.
+3. Run `php tests/integration-awareness.php` only on a disposable database ending in `_test`. It writes and deletes test rows.
+4. On the actual Herd/Nginx and XAMPP/Apache setup used for demonstration, test registration/login, resident/admin boundaries, refresh and provider failure, report review, reading edit/archival, location import/export and CSV, and direct access denial for `.env`/internal paths. Nginx ignores `.htaccess`.
+5. Keep synthetic test accounts/reports. `docs/local-validation.csv` contains headings only; software tests do not establish landslide prediction accuracy.
 
-Software tests verify code paths and rendering rules, not landslide prediction accuracy. No local event catalogue or validated susceptibility subset is included. `docs/local-validation.csv` contains column headings only.
+Record the final commit SHA, commands, output and test environment in the team's defense evidence after these steps pass. Until then, describe the current revision as **reviewed but not independently integration tested**.
