@@ -18,9 +18,9 @@ No. It is an academic prototype. Its rainfall categories are not official warnin
 
 It provides weather model data at requested coordinates without a physical sensor installation. Those values are estimates for a model grid, not device readings at the selected property. We store the source and timestamps and separate forecast from historical rainfall.
 
-### Why does the database have only three tables?
+### Why does the database have five tables?
 
-The current academic schema keeps users and locations separate, then stores both readings and reports in `events`. The `type` column distinguishes those records. It reduces schema complexity for this prototype, but it does not satisfy a rubric that specifically requires a separate sensor table. We must confirm that requirement with the instructor.
+Users and locations have their own tables. `events` stores each record's shared ID, location, submitter, type and creation time. A one-to-one `readings` or `reports` row stores fields specific to that type. This reduces empty subtype columns and keeps a shared event ID. It does not satisfy a rubric that specifically requires a sensor table; we must confirm that requirement with the instructor.
 
 ### Where are the sensors?
 
