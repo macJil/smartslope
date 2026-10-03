@@ -21,7 +21,7 @@ Content-Type: application/x-www-form-urlencoded
 location_id=1&csrf_token=<session-token>
 ```
 
-The dashboard obtains the token from the page and includes it with the request. The server fetches and validates current provider data, computes rainfall totals and category, and appends one `events` reading row. Repeated provider timestamps still produce separate snapshots.
+The dashboard obtains the token from the page and includes it with the request. The server fetches and validates current provider data, computes rainfall totals and category, and appends one shared `events` row and linked `readings` row in a transaction. Repeated provider timestamps still produce separate snapshots.
 
 ### Successful response
 
