@@ -379,6 +379,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
         </div>
     </div>
 
+    <?= ui_weather_modal() ?>
     <!-- View Report Modal -->
     <div class="modal fade" id="viewReportModal" tabindex="-1" aria-labelledby="reportModalTitle">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -439,6 +440,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
     </div>
 
     <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
+    <script src="<?= e(url('assets/js/reading-modal.js')) ?>"></script>
     <script src="<?= url('assets/vendor/leaflet/leaflet.js') ?>"></script>
     <script src="<?= e(url('assets/js/offline-map.js')) ?>"></script>
     <script src="<?= e(url('assets/js/bulk-select.js')) ?>"></script>

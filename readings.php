@@ -70,7 +70,9 @@ if (get('action') === 'export') {
         </div>
     </div>
 
+    <?= ui_weather_modal() ?>
     <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
+    <script src="<?= e(url('assets/js/reading-modal.js')) ?>"></script>
     <?php if ($isAdmin): ?><script src="<?= e(url('assets/js/bulk-select.js')) ?>"></script><?php endif; ?>
 </body>
 </html>

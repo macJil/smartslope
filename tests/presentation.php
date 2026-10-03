@@ -27,16 +27,24 @@ $location = ['id'=>1, 'name'=>'<img src=x onerror=alert(1)>', 'susceptibility'=>
 $hostile = $current; $hostile['reasons'] = ['<script>alert(1)</script>'];
 $html = ui_assessment_panel($reading, $location, $hostile);
 check_ui(!str_contains($html, '<script>') && !str_contains($html, '<img '), 'Assessment data must be escaped.');
-check_ui(str_contains($html, '&lt;script&gt;'), 'Escaped explanations should remain readable.');
-foreach (['Data status:', 'Baseline susceptibility:', '24-hour forecast outlook', 'Observed:', 'Retrieved:', 'Source:', 'not official warnings'] as $label) {
+check_ui(!str_contains($html, 'Why this category?') && !str_contains($html, 'Baseline susceptibility:') &&
+    !str_contains($html, '24-hour forecast outlook'), 'Documentation content should not appear in the compact analyzer.');
+foreach (['Data status:', 'Current risk category', 'Observed:', 'Retrieved:', 'Source:', 'More weather details'] as $label) {
     check_ui(str_contains($html, $label), 'Missing assessment context: ' . $label);
 }
+check_ui(str_contains($html, '<template id="assessment-weather-details">'), 'Analyzer details need a dialog template.');
+check_ui(str_contains(ui_location_label(['name'=>'Irisan 16.42428, 120.55864','lat'=>16.42428,'lng'=>120.55864]),
+    'Barangay Irisan, Baguio City, Benguet, Philippines (16.42428, 120.55864)'), 'Generated names need a meaningful geographic fallback.');
+check_ui(str_contains(ui_location_label(['name'=>'Irisan 16.42428, 120.55864','landmark'=>'Purok 7, Irisan']),
+    'Purok 7, Irisan, Barangay Irisan, Baguio City'), 'A stored landmark should lead the address.');
 $reading['assessment'] = $current;
 foreach ([false, true] as $admin) {
     $row = ui_readings_rows([$reading], $admin, 'test', 'testForm', [1=>$location]);
     check_ui(substr_count($row, '<td') === ($admin ? 8 : 6), 'Table column count mismatch.');
     check_ui(str_contains($row, 'reading_ids[]') === $admin, 'Bulk controls must be admin-only.');
     check_ui(str_contains($row, 'actions/save_reading.php') === $admin, 'Edit links must be admin-only.');
-    check_ui(str_contains($row, '<details') && !str_contains($row, '<img '), 'Details must preserve escaped content.');
+    check_ui(str_contains($row, 'data-weather-dialog') && str_contains($row, '<template') &&
+        !str_contains($row, '<details') && !str_contains($row, '<img '), 'Modal details must preserve escaped content.');
 }
+check_ui(str_contains(ui_weather_modal(), 'aria-labelledby="readingWeatherTitle"'), 'Weather dialog needs an accessible title.');
 echo "$checks presentation checks passed.\n";

@@ -200,10 +200,37 @@ if ($selectedLocId) {
         ?>
         <p id="weather-feedback" class="alert d-none" role="status" aria-live="polite"></p>
         <div class="row">
-            <div class="col-md-6 mb-4">
+            <div class="col-12 mb-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="h5 mb-0">Reading summary</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-6 col-md-3 mb-3">
+                                <h3 class="mb-0"><?= count($locations) ?></h3>
+                                <small class="text-muted">Monitored Locations</small>
+                            </div>
+                            <div class="col-6 col-md-3 mb-3">
+                                <h3 class="mb-0"><?= array_sum(array_column($locations, 'pending')) ?></h3>
+                                <small class="text-muted">Pending Reports</small>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <h3 class="mb-0" id="current-high-count"><?= ui_current_count($readings, 'high') ?></h3>
+                                <small class="text-muted">Current high readings</small>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <h3 class="mb-0" id="current-medium-count"><?= ui_current_count($readings, 'medium') ?></h3>
+                                <small class="text-muted">Current medium readings</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 mb-4">
                 <div class="card h-100">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h2 class="h5 mb-0">Rainfall assessment</h2>
+                        <h2 class="h5 mb-0">Risk analyzer</h2>
                         <?php if ($selectedLocId && $selectedLoc): ?>
                             <button type="button" id="refresh-weather" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-arrow-clockwise"></i> Refresh Weather
@@ -216,34 +243,6 @@ if ($selectedLocId) {
                 </div>
             </div>
 
-            <div class="col-md-6 mb-4">
-                <div class="card">
-                    <div class="card-header">
-                        <h2 class="h5 mb-0">Reading summary</h2>
-                    </div>
-                    <div class="card-body">
-                        <p class="small text-muted">Category counts cover the latest <?= $selectedLocId ? 10 : 20 ?> saved readings <?= $selectedLocId ? 'for the selected location' : 'across active locations' ?>. Only observations within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours count as current. Counts represent readings, not distinct locations.</p>
-                        <div class="row text-center">
-                            <div class="col-6 mb-3">
-                                <h3 class="mb-0"><?= count($locations) ?></h3>
-                                <small class="text-muted">Monitored Locations</small>
-                            </div>
-                            <div class="col-6 mb-3">
-                                <h3 class="mb-0"><?= array_sum(array_column($locations, 'pending')) ?></h3>
-                                <small class="text-muted">Pending Reports</small>
-                            </div>
-                            <div class="col-6">
-                                <h3 class="mb-0" id="current-high-count"><?= ui_current_count($readings, 'high') ?></h3>
-                                <small class="text-muted">Current high readings</small>
-                            </div>
-                            <div class="col-6">
-                                <h3 class="mb-0" id="current-medium-count"><?= ui_current_count($readings, 'medium') ?></h3>
-                                <small class="text-muted">Current medium readings</small>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
 
         <div class="card mb-4">
@@ -344,6 +343,7 @@ if ($selectedLocId) {
         <?php endif; ?>
     </div>
 
+    <?= ui_weather_modal() ?>
     <form id="map-selection-form" method="post" action="<?= e(url('actions/save_location.php')) ?>" hidden>
         <?= csrf_field() ?><input type="hidden" name="location_id"><input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="address">
     </form>
@@ -351,6 +351,7 @@ if ($selectedLocId) {
     <script src="<?= e(url('assets/js/vendor/jquery.min.js')) ?>"></script>
     <script src="<?= e(url('assets/js/dashboard.js')) ?>"></script>
     <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
+    <script src="<?= e(url('assets/js/reading-modal.js')) ?>"></script>
     <?php if ($isAdmin): ?><script src="<?= e(url('assets/js/bulk-select.js')) ?>"></script><?php endif; ?>
     <script src="<?= url('assets/vendor/leaflet/leaflet.js') ?>"></script>
     <script src="<?= e(url('assets/js/offline-map.js')) ?>"></script>

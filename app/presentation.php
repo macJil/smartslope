@@ -29,6 +29,28 @@ function ui_source(?string $source): string {
     };
 }
 
+function ui_location_label(array $location): string {
+    $name = trim((string)($location['name'] ?? $location['location_name'] ?? ''));
+    $landmark = trim((string)($location['landmark'] ?? ''));
+    $purok = trim((string)($location['purok'] ?? ''));
+    // A generated coordinate label is not a street address.
+    $generated = preg_match('/^Irisan\s+-?\d+(?:\.\d+)?,\s*-?\d+(?:\.\d+)?$/i', $name);
+    $parts = [];
+    if ($landmark !== '') {
+        $parts[] = $landmark;
+    } elseif ($name !== '' && !$generated && strcasecmp($name, 'Irisan') !== 0) {
+        $parts[] = $name;
+    }
+    if ($landmark !== '' && stripos($landmark, 'Baguio') !== false) return $landmark;
+    if ($purok !== '' && stripos(implode(', ', $parts), $purok) === false) $parts[] = $purok;
+    $parts[] = 'Barangay Irisan, Baguio City, Benguet, Philippines';
+    $address = implode(', ', $parts);
+    if ($generated && $landmark === '' && isset($location['lat'], $location['lng'])) {
+        $address .= sprintf(' (%.5f, %.5f)', $location['lat'], $location['lng']);
+    }
+    return $address;
+}
+
 function ui_category_badge(array $assessment): string {
     $category = ui_current_category($assessment);
     $color = ['low'=>'success', 'normal'=>'primary', 'medium'=>'warning text-dark', 'high'=>'danger'][$category ?? ''] ?? 'secondary';
@@ -64,40 +86,30 @@ function ui_weather_details(array $reading): string {
 
 function ui_assessment_panel(?array $reading, array $location, array $assessment): string {
     $status = $assessment['data_status'] ?? 'unavailable';
-    $baseline = str_replace('_', ' ', (string)($assessment['susceptibility'] ?? 'unknown'));
     ob_start(); ?>
-    <h3 class="h6 text-muted">Current rainfall category</h3>
+    <h3 class="h6 text-muted">Current risk category</h3>
     <div class="assessment-category mb-2"><?= ui_category_badge($assessment) ?></div>
     <p class="mb-2"><strong>Data status:</strong> <?= e(ucfirst($status)) ?></p>
     <?php if ($status !== 'current'): ?>
         <p class="alert alert-secondary py-2">A current assessment is unavailable. <?= $location ? 'Refresh weather to request an updated reading.' : 'Select an Irisan location to view its assessment.' ?></p>
     <?php endif; ?>
-    <p><strong>Location:</strong> <?= e($location['name'] ?? 'No location selected') ?></p>
-    <h3 class="h6">Why this category?</h3>
-    <ul class="assessment-reasons">
-        <?php foreach ($assessment['reasons'] ?? ['No saved reading is available.'] as $reason): ?>
-            <li><?= e($reason) ?></li>
-        <?php endforeach; ?>
-    </ul>
+    <p><strong>Location:</strong> <?= e($location ? ui_location_label($location) : 'No location selected') ?></p>
     <div class="row g-2 mb-3">
         <?php foreach (['1h'=>'rainfall_1h', '24h'=>'rainfall_24h', '72h'=>'rainfall_72h'] as $period=>$field): ?>
         <div class="col-4"><div class="border rounded p-2 h-100"><small class="d-block text-muted"><?= e($period) ?> rainfall</small><strong><?= e(ui_number($reading[$field] ?? null, ' mm')) ?></strong></div></div>
         <?php endforeach; ?>
     </div>
-    <p><strong>Baseline susceptibility:</strong> <?= e(ucfirst($baseline)) ?><br>
-        <small class="text-muted"><?= $baseline === 'unknown' ? 'No baseline susceptibility is recorded for this point.' : 'Stored location baseline; assess its source separately.' ?> This is separate from the rainfall category.</small>
-    </p>
-    <section class="border-top pt-3">
-        <h3 class="h6">24-hour forecast outlook</h3>
-        <p><?= e(ui_number($reading['rainfall_forecast_24h'] ?? null, ' mm')) ?> forecast rainfall;<br>
-            <?= e(ui_number($reading['precipitation_probability_24h'] ?? null, '%')) ?> maximum hourly rain chance.</p>
-        <p class="small text-muted">Period starts at the last whole hour of the saved weather request. Forecast and modeled soil moisture are context; the category uses the 1h, 24h and 72h rainfall history. This outlook belongs to the saved reading and may be outdated.</p>
-    </section>
     <p class="small mb-2"><strong>Observed:</strong> <?= e(ui_time($reading['observed_at'] ?? null)) ?><br>
         <strong>Retrieved:</strong> <?= e(ui_time($reading['created_at'] ?? null)) ?><br>
         <strong>Source:</strong> <?= e(ui_source($reading['source'] ?? null)) ?></p>
-    <details><summary>More weather details</summary><div class="pt-2"><?= ui_weather_details($reading ?? []) ?></div></details>
-    <p class="small text-muted border-top pt-3 mt-3 mb-0">SmartSlope is an academic prototype. These assessments are not official warnings or validated landslide predictions.</p>
+    <?php if ($reading): ?>
+        <button type="button" class="btn btn-outline-primary btn-sm" data-weather-dialog
+                data-template-id="assessment-weather-details" data-details-title="Weather details for <?= e($location['name'] ?? 'selected location') ?>">More weather details</button>
+        <template id="assessment-weather-details">
+            <p><strong>Location:</strong> <?= e(ui_location_label($location)) ?></p>
+            <?= ui_weather_details($reading) ?>
+        </template>
+    <?php endif; ?>
     <?php return (string)ob_get_clean();
 }
 
@@ -118,7 +130,9 @@ function ui_readings_rows(array $readings, bool $admin, string $group, string $f
     foreach ($readings as $reading):
         $assessment = $reading['assessment'] ?? reading_assessment($reading);
         $location = $locations[(int)$reading['location_id']] ?? [];
-        $name = $location['name'] ?? $reading['location_name'] ?? 'Unknown'; ?>
+        if (!$location) $location = $reading;
+        $name = ui_location_label($location);
+        $templateId = 'weather-details-' . $group . '-' . (int)$reading['id']; ?>
         <tr>
             <?php if ($admin): ?><td><input type="checkbox" form="<?= e($formId) ?>" name="reading_ids[]" value="<?= (int)$reading['id'] ?>" data-bulk-item="<?= e($group) ?>" aria-label="Select reading <?= (int)$reading['id'] ?>"></td><?php endif; ?>
             <td class="reading-location"><?= e($name) ?></td>
@@ -126,13 +140,15 @@ function ui_readings_rows(array $readings, bool $admin, string $group, string $f
             <td><?= e(ui_number($reading['rainfall_1h'] ?? null)) ?> / <?= e(ui_number($reading['rainfall_24h'] ?? null)) ?> / <?= e(ui_number($reading['rainfall_72h'] ?? null)) ?></td>
             <td><?= e($reading['observed_at'] ? local_date($reading['observed_at']) : 'Unavailable') ?></td>
             <td><?= e(ucfirst($assessment['data_status'] ?? 'unavailable')) ?></td>
-            <td><details class="reading-details"><summary aria-label="Weather details for reading <?= (int)$reading['id'] ?>">View details</summary>
-                <div class="pt-2"><?= ui_weather_details($reading) ?>
-                    <?php if (!empty($location['landmark'])): ?><p><strong>Street/landmark:</strong> <?= e($location['landmark']) ?></p><?php endif; ?>
-                    <?php if (isset($location['lat'], $location['lng'])): ?><p><strong>Coordinates:</strong> <?= e($location['lat']) ?>, <?= e($location['lng']) ?></p><?php endif; ?>
-                    <ul><?php foreach ($assessment['reasons'] ?? [] as $reason): ?><li><?= e($reason) ?></li><?php endforeach; ?></ul>
-                </div>
-            </details></td>
+            <td>
+                <button type="button" class="btn btn-sm btn-outline-primary" data-weather-dialog
+                        data-template-id="<?= e($templateId) ?>" data-details-title="Weather details for reading <?= (int)$reading['id'] ?>">View details</button>
+                <template id="<?= e($templateId) ?>">
+                    <p><strong>Location:</strong> <?= e($name) ?></p>
+                    <p><strong>Observed:</strong> <?= e(ui_time($reading['observed_at'] ?? null)) ?></p>
+                    <?= ui_weather_details($reading) ?>
+                </template>
+            </td>
             <?php if ($admin): ?><td><a class="btn btn-sm btn-outline-primary" href="<?= e(url('actions/save_reading.php?reading_id=' . (int)$reading['id'])) ?>">Edit</a></td><?php endif; ?>
         </tr>
     <?php endforeach;
@@ -140,4 +156,14 @@ function ui_readings_rows(array $readings, bool $admin, string $group, string $f
         <tr><td colspan="<?= $admin ? 8 : 6 ?>" class="text-center text-muted">No saved readings. Select a location and refresh weather from the dashboard.</td></tr>
     <?php endif;
     return (string)ob_get_clean();
+}
+
+function ui_weather_modal(): string {
+    return '<div class="modal fade" id="readingWeatherModal" tabindex="-1" aria-labelledby="readingWeatherTitle" aria-hidden="true">'
+        . '<div class="modal-dialog modal-dialog-scrollable"><div class="modal-content">'
+        . '<div class="modal-header"><h2 class="modal-title h5" id="readingWeatherTitle">Weather details</h2>'
+        . '<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close weather details"></button></div>'
+        . '<div class="modal-body" id="readingWeatherBody"></div>'
+        . '<div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>'
+        . '</div></div></div>';
 }

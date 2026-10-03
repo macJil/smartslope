@@ -15,9 +15,19 @@ The highest threshold reached by any window wins. All three rainfall totals must
 
 Normal is the second category. Low/normal do not guarantee slope safety. The explanation identifies the window(s) triggering the winning level.
 
+### Reading the assessment
+
+For a low reading, the analyzer may explain: “Rainfall is below all prototype thresholds. Low does not mean the slope is safe.” Each higher category is triggered by one or more rainfall windows in the table above. The explanation remains available in the JSON assessment, while the dashboard shows the category, data status and observed rainfall.
+
+Baseline susceptibility is separate from the current rainfall category. If a location shows **Unknown**, no baseline susceptibility is recorded for that point. A recorded baseline still needs its own verified source; the rainfall category does not validate it.
+
+SmartSlope is an academic prototype. Its categories are not official warnings or validated landslide predictions. A low value is never a claim that a location is safe.
+
 ## Weather semantics
 
 Open-Meteo model estimates are not measurements from a physical device at the clicked point. Hourly precipitation represents the preceding hour. Totals end at the last complete UTC hour at or before the current provider timestamp. Forecast totals cover the following 24 complete hourly intervals, starting from that same whole-hour boundary; they are not added to past totals. For example, at 06:15 UTC historical totals end at 06:00 and forecast accumulation spans 06:00 to 06:00 the following day.
+
+The saved 24-hour forecast outlook contains forecast rainfall and the maximum hourly rain chance. A reading might show **5.30 mm** and **100%**, for example; those numbers describe that saved forecast, not a landslide probability. The period starts at the last whole hour of the weather request. Forecast and modeled soil moisture are context; the current category uses only the saved 1h, 24h and 72h rainfall history. The outlook belongs to the saved reading and may become outdated. Secondary weather values remain available through the weather details dialog.
 
 All historical windows require consecutive, distinct timestamps and valid precipitation. A missing historical window blocks saving a new assessed snapshot. An incomplete forecast becomes null; it does not invalidate otherwise complete history. Missing/invalid optional soil moisture becomes null. Current weather units and numeric ranges are checked. Units are mm, degrees Celsius, km/h, percent and volumetric water content m3/m3. Soil moisture is not a saturation percentage.
 
