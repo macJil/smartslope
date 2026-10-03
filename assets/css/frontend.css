@@ -98,7 +98,6 @@ h1, h2, h3, h4, h5, h6 { color: #263d30; }
 .auth-register h2 { color: var(--slope-brown); }
 .auth-section .btn { min-height: 2.75rem; font-weight: 600; }
 .auth-section .form-text { line-height: 1.5; margin-top: .5rem; }
-.methodology-page { max-width: 960px; }
 .methodology-page > h2 { margin-top: 2rem; border-bottom: 1px solid var(--slope-border); padding-bottom: .5rem; }
 .methodology-page .table-responsive { border: 1px solid var(--slope-border); border-radius: .5rem; }
 .report-location-status { border-left: 3px solid var(--slope-green); background: #edf4ec; border-radius: .4rem; }

@@ -11,6 +11,7 @@ $pendingCounts = get_pending_counts();
 foreach ($locations as &$loc) {
     $loc['latest'] = get_latest_reading($loc['id']);
     $loc['pending'] = $pendingCounts[$loc['id']] ?? 0;
+    $loc['display_label'] = ui_location_label($loc);
 }
 unset($loc); // End the reference before iterating locations again.
 
@@ -225,7 +226,7 @@ if ($selectedLocId) {
                             </button>
                         <?php endif; ?>
                     </div>
-                    <div class="card-body" id="risk-content" aria-live="polite" aria-atomic="true" data-location="<?= e($selectedLoc['name'] ?? '') ?>">
+                    <div class="card-body" id="risk-content" aria-live="polite" aria-atomic="true" data-location="<?= e($selectedLoc ? ui_location_label($selectedLoc) : '') ?>">
                         <?= ui_assessment_panel($latestReading, $selectedLoc ?? [], $assessment) ?>
                     </div>
                 </div>
@@ -288,15 +289,9 @@ if ($selectedLocId) {
                             ?>
                             <tr>
                                 <td>
-                                    <?= e($loc['name'] ?? 'Unknown') ?>
+                                    <?= e($loc ? ui_location_label($loc) : 'Unknown') ?>
                                     <?php if ($r['house_landmark'] ?? ''): ?>
                                         <br><small class="text-muted">Reported address: <?= e($r['house_landmark']) ?></small>
-                                    <?php endif; ?>
-                                    <?php if ($loc['landmark'] ?? ''): ?>
-                                        <br><small class="text-muted">Street/Landmark: <?= e($loc['landmark']) ?></small>
-                                    <?php endif; ?>
-                                    <?php if ($loc['lat'] && $loc['lng']): ?>
-                                        <br><small class="text-muted">Coor: <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?></small>
                                     <?php endif; ?>
                                 </td>
                                 <td><?= e(substr($r['message'], 0, 50)) ?>...</td>
@@ -418,19 +413,8 @@ if ($selectedLocId) {
         function createLocationPopupContent(location, risk) {
             const content = document.createElement('div');
             const name = document.createElement('strong');
-            name.textContent = location.name || 'Unknown';
+            name.textContent = location.display_label || 'Unknown location';
             content.append(name);
-
-            [
-                location.landmark ? 'Street/Landmark: ' + location.landmark : '',
-                location.purok ? 'Purok: ' + location.purok : '',
-                'Barangay Irisan, Baguio City, Benguet, Philippines',
-                location.lat && location.lng ? 'Coordinates: ' + Number(location.lat).toFixed(5) + ', ' + Number(location.lng).toFixed(5) : ''
-            ].filter(Boolean).forEach(addressLine => {
-                const line = document.createElement('div');
-                line.textContent = addressLine;
-                content.append(line);
-            });
 
             const riskStatus = document.createElement('div');
             riskStatus.className = 'location-risk-status fw-bold mt-2 text-' + riskTextColors[risk];

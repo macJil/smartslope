@@ -4,6 +4,8 @@ start_session();
 require_login();
 
 $locations = get_locations();
+foreach ($locations as &$loc) $loc['display_label'] = ui_location_label($loc);
+unset($loc);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_post_csrf();
@@ -219,14 +221,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <div class="form-floating">
                                     <select name="location_id" id="locationSelect" class="form-select" required aria-describedby="locationHelp selectedAddress">
                                     <option value="">Select a location...</option>
-                                    <option id="mapPointOption" value="map-point" hidden>Selected map point</option>
+                                    <option id="mapPointOption" value="map-point" hidden>Selected location</option>
                                     <?php foreach ($locations as $loc): ?>
                                         <option value="<?= $loc['id'] ?>"
                                                 data-lat="<?= $loc['lat'] ?? '' ?>"
                                                 data-lng="<?= $loc['lng'] ?? '' ?>">
-                                            <?= e($loc['name']) ?>
-                                            <?= $loc['purok'] ? '(' . e($loc['purok']) . ')' : '' ?>
-                                            <?= $loc['lat'] ? ' - ' . sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) : '' ?>
+                                            <?= e($loc['display_label']) ?>
                                         </option>
                                     <?php endforeach; ?>
                                     </select>
@@ -344,9 +344,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
 
                 const marker = L.marker([loc.lat, loc.lng], { icon: icon });
-                let popupContent = `<b>${String(loc.name).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}</b><br>`;
-                popupContent += `<br><small>Click to select</small>`;
-                marker.bindPopup(popupContent);
+                const popup = document.createElement('div');
+                const title = document.createElement('strong');
+                title.textContent = loc.display_label;
+                const hint = document.createElement('small');
+                hint.className = 'd-block mt-1';
+                hint.textContent = 'Click to select';
+                popup.append(title, hint);
+                marker.bindPopup(popup);
                 marker.on('click', () => {
                     document.getElementById('locationSelect').value = loc.id;
                     document.getElementById('locationSelect').dispatchEvent(new Event('change'));
@@ -359,15 +364,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         map.addLayer(markersLayer);
 
         let selectedMarker = null;
-        function lookupAddress(lat, lng) {
+        function locationLabel(address, lat, lng) {
+            const name = String(address || '').trim() || 'Barangay Irisan, Baguio City, Benguet, Philippines';
+            return `${name} (${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)})`;
+        }
+        function lookupAddress(lat, lng, fallback = '') {
             const addressField = document.getElementById('reportAddress');
             const addressLabel = document.getElementById('selectedAddress');
             addressField.value = '';
-            addressLabel.textContent = 'Looking up street address...';
+            addressLabel.textContent = fallback || locationLabel('', lat, lng);
             window.lookupLocationAddress(lat, lng).then(address => {
                 if (Number(addressField.dataset.lat) !== lat || Number(addressField.dataset.lng) !== lng) return;
                 addressField.value = address;
-                addressLabel.textContent = address || 'Street address unavailable; use the house/landmark field below.';
+                const label = address ? locationLabel(address, lat, lng) : (fallback || locationLabel('', lat, lng));
+                addressLabel.textContent = label;
+                if (document.getElementById('locationSelect').value === 'map-point') {
+                    document.getElementById('mapPointOption').textContent = label;
+                }
             });
         }
 
@@ -400,11 +413,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             document.getElementById('reportLng').value = lng;
             document.getElementById('reportAddress').dataset.lat = lat;
             document.getElementById('reportAddress').dataset.lng = lng;
-            lookupAddress(lat, lng);
             const mapOption = document.getElementById('mapPointOption');
             mapOption.hidden = false;
-            mapOption.textContent = `Selected map point (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+            mapOption.textContent = locationLabel('', lat, lng);
             document.getElementById('locationSelect').value = 'map-point';
+            lookupAddress(lat, lng);
         });
 
         document.getElementById('locationSelect').addEventListener('change', function() {
@@ -418,7 +431,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 document.getElementById('reportLng').value = lng;
                 document.getElementById('reportAddress').dataset.lat = lat;
                 document.getElementById('reportAddress').dataset.lng = lng;
-                lookupAddress(lat, lng);
+                lookupAddress(lat, lng, selected.textContent.trim());
 
                 if (selectedMarker) {
                     map.removeLayer(selectedMarker);

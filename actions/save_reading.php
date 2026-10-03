@@ -76,10 +76,7 @@ $loc = get_location($reading['location_id']);
                             <div class="mb-3">
                                 <label class="form-label">Location</label>
                                 <p class="form-control-plaintext">
-                                    <?= e($loc['name'] ?? 'Unknown') ?>
-                                    <?php if ($loc['lat'] && $loc['lng']): ?>
-                                        (<?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?>)
-                                    <?php endif; ?>
+                                    <?= e($loc ? ui_location_label($loc) : 'Unknown location') ?>
                                 </p>
                             </div>
 

@@ -69,19 +69,23 @@ function ui_location_label(array $location): string {
     $name = trim((string)($location['name'] ?? $location['location_name'] ?? ''));
     $landmark = trim((string)($location['landmark'] ?? ''));
     $purok = trim((string)($location['purok'] ?? ''));
-    // A generated coordinate label is not a street address.
+    $landmark = trim((string)preg_replace('/^Map point\s*,\s*/i', '', $landmark));
+    // Generated database names and the old "Map point" purok are not addresses.
     $generated = preg_match('/^Irisan\s+-?\d+(?:\.\d+)?,\s*-?\d+(?:\.\d+)?$/i', $name);
+    if (strcasecmp($purok, 'Map point') === 0) $purok = '';
+    if (strcasecmp($landmark, 'Map point') === 0) $landmark = '';
     $parts = [];
     if ($landmark !== '') {
         $parts[] = $landmark;
-    } elseif ($name !== '' && !$generated && strcasecmp($name, 'Irisan') !== 0) {
+    } elseif ($name !== '' && !$generated && strcasecmp($name, 'Irisan') !== 0 && strcasecmp($name, 'Map point') !== 0) {
         $parts[] = $name;
     }
-    if ($landmark !== '' && stripos($landmark, 'Baguio') !== false) return $landmark;
     if ($purok !== '' && stripos(implode(', ', $parts), $purok) === false) $parts[] = $purok;
-    $parts[] = 'Barangay Irisan, Baguio City, Benguet, Philippines';
+    if (stripos(implode(', ', $parts), 'Baguio') === false) {
+        $parts[] = 'Barangay Irisan, Baguio City, Benguet, Philippines';
+    }
     $address = implode(', ', $parts);
-    if ($generated && $landmark === '' && isset($location['lat'], $location['lng'])) {
+    if (isset($location['lat'], $location['lng']) && is_numeric($location['lat']) && is_numeric($location['lng'])) {
         $address .= sprintf(' (%.5f, %.5f)', $location['lat'], $location['lng']);
     }
     return $address;
@@ -155,7 +159,7 @@ function ui_assessment_panel(?array $reading, array $location, array $assessment
     </div>
     <?php if ($reading): ?>
         <button type="button" class="btn btn-outline-primary btn-sm" data-weather-dialog
-                data-template-id="assessment-weather-details" data-details-title="Weather details for <?= e($location['name'] ?? 'selected location') ?>">More weather details</button>
+                data-template-id="assessment-weather-details" data-details-title="Weather details for <?= e(ui_location_label($location)) ?>">More weather details</button>
         <template id="assessment-weather-details">
             <p><strong>Location:</strong> <?= e(ui_location_label($location)) ?></p>
             <?= ui_weather_details($reading) ?>

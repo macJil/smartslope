@@ -273,8 +273,8 @@ function get_or_create_location(float $lat, float $lng, ?string $landmark = null
         if (!$loc['active']) {
             throw new InvalidArgumentException('This monitoring point was removed by an administrator.');
         }
-        if (empty($loc['landmark']) && trim((string)$landmark) !== '') {
-            $stmt = $pdo->prepare("UPDATE locations SET landmark = ? WHERE id = ? AND (landmark IS NULL OR landmark = '')");
+        if ((trim((string)($loc['landmark'] ?? '')) === '' || strcasecmp(trim((string)$loc['landmark']), 'Map point') === 0) && trim((string)$landmark) !== '') {
+            $stmt = $pdo->prepare("UPDATE locations SET landmark = ? WHERE id = ? AND (landmark IS NULL OR landmark = '' OR landmark = 'Map point')");
             $stmt->execute([trim((string)$landmark), $loc['id']]);
             return get_location((int)$loc['id']) ?? $loc;
         }
@@ -285,7 +285,7 @@ function get_or_create_location(float $lat, float $lng, ?string $landmark = null
     $name = sprintf('Irisan %.5f, %.5f', $lat, $lng);
     $stmt = $pdo->prepare(
         "INSERT INTO locations (name, purok, landmark, lat, lng, susceptibility, active)
-         VALUES (?, 'Map point', ?, ?, ?, 'unknown', 1)"
+         VALUES (?, NULL, ?, ?, ?, 'unknown', 1)"
     );
     $landmark = trim((string)$landmark);
     try {

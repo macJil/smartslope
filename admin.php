@@ -275,13 +275,11 @@ foreach ($reports as $report) {
                         <tbody>
                             <?php foreach ($reports as $r):
                                 $loc = get_location($r['location_id']);
-                                $locationAddress = trim((string)($loc['landmark'] ?? ''));
-                                if ($locationAddress === '') $locationAddress = trim((string)($r['house_landmark'] ?? ''));
-                                if ($locationAddress === '') $locationAddress = $loc['name'] ?? 'Unknown';
-                                $locationCoordinates = !empty($loc['lat']) && !empty($loc['lng'])
-                                    ? sprintf('Coordinates: %.5f, %.5f', $loc['lat'], $loc['lng'])
-                                    : 'Coordinates unavailable';
-                                $reportMapLocation = $locationAddress . ' | ' . $locationCoordinates;
+                                $reportLocation = $loc ?: $r;
+                                if (trim((string)($reportLocation['landmark'] ?? '')) === '' && trim((string)($r['house_landmark'] ?? '')) !== '') {
+                                    $reportLocation['landmark'] = $r['house_landmark'];
+                                }
+                                $reportMapLocation = ui_location_label($reportLocation);
                                 $reporterName = 'Anonymous';
                                 if ($r['user_id']) {
                                     $pdo = db();
@@ -295,8 +293,10 @@ foreach ($reports as $report) {
                             <tr>
                                 <td><input type="checkbox" form="bulkReportsForm" name="report_ids[]" value="<?= (int)$r['id'] ?>" data-bulk-item="reports" aria-label="Select report <?= (int)$r['id'] ?>"></td>
                                 <td>
-                                    <strong><?= e($locationAddress) ?></strong>
-                                    <br><small class="text-muted"><?= e($locationCoordinates) ?></small>
+                                    <strong><?= e($reportMapLocation) ?></strong>
+                                    <?php if (trim((string)($r['house_landmark'] ?? '')) !== ''): ?>
+                                        <br><small class="text-muted">Reported landmark: <?= e($r['house_landmark']) ?></small>
+                                    <?php endif; ?>
                                 </td>
                                 <td><strong><?= e(REPORT_TYPES[$r['report_type'] ?? 'other'] ?? 'Legacy observation') ?></strong><br><?= e(substr($r['message'], 0, 40)) ?>...<br><small>Occurred: <?= e(ui_time($r['occurred_at'] ?? null)) ?><br>Last review: <?= e(ui_time($r['reviewed_at'] ?? null)) ?></small></td>
                                 <td><?= e($reporterName) ?></td>
@@ -359,35 +359,20 @@ foreach ($reports as $report) {
                         <thead class="table-light">
                             <tr>
                                 <th><input type="checkbox" data-select-all="locations" aria-label="Select all locations"></th>
-                                <th>Location address</th>
-                                <th>Coordinates</th>
+                                <th>Location address and coordinates</th>
                                 <th>Active</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($locations as $loc):
-                                $locationAddress = trim((string)($loc['landmark'] ?? ''));
-                                if ($locationAddress === '') {
-                                    $locationAddress = $reportedAddressesByLocation[(int)$loc['id']] ?? '';
-                                }
-                                if ($locationAddress === '') {
-                                    $storedName = trim((string)($loc['name'] ?? ''));
-                                    $isGeneratedName = preg_match('/^Irisan\s+-?\d+(?:\.\d+)?,\s*-?\d+(?:\.\d+)?$/i', $storedName);
-                                    $locationAddress = $isGeneratedName
-                                        ? 'Barangay Irisan, Baguio City, Benguet, Philippines'
-                                        : ($storedName !== '' ? $storedName : 'Address unavailable');
+                                $displayLocation = $loc;
+                                if (trim((string)($displayLocation['landmark'] ?? '')) === '') {
+                                    $displayLocation['landmark'] = $reportedAddressesByLocation[(int)$loc['id']] ?? '';
                                 }
                             ?>
                             <tr class="<?= $loc['active'] ? '' : 'table-secondary' ?>">
                                 <td><input type="checkbox" form="bulkLocationsForm" name="location_ids[]" value="<?= (int)$loc['id'] ?>" data-bulk-item="locations" aria-label="Select location <?= (int)$loc['id'] ?>"></td>
-                                <td><?= e($locationAddress) ?></td>
-                                <td>
-                                    <?php if ($loc['lat'] && $loc['lng']): ?>
-                                        <?= sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) ?>
-                                    <?php else: ?>
-                                        N/A
-                                    <?php endif; ?>
-                                </td>
+                                <td><?= e(ui_location_label($displayLocation)) ?></td>
                                 <td>
                                     <span class="badge bg-<?= $loc['active'] ? 'success' : 'secondary' ?>">
                                         <?= $loc['active'] ? 'Active' : 'Inactive' ?>
@@ -396,7 +381,7 @@ foreach ($reports as $report) {
                             </tr>
                             <?php endforeach; ?>
                             <?php if (empty($locations)): ?>
-                                <tr><td colspan="4" class="text-center text-muted">No locations yet</td></tr>
+                                <tr><td colspan="3" class="text-center text-muted">No locations yet</td></tr>
                             <?php endif; ?>
                         </tbody>
                     </table>
