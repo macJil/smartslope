@@ -10,10 +10,7 @@ $uiLocations = array_column(get_locations(), null, 'id');
 // Export CSV
 if (get('action') === 'export') {
     require_admin();
-    header('Content-Type: text/csv');
-    header('Content-Disposition: attachment; filename="readings_'.date('Y-m-d').'.csv"');
-    echo export_readings_csv(get_all_readings(PHP_INT_MAX));
-    exit;
+    download_csv('smartslope_readings_'.gmdate('Y-m-d').'.csv', export_readings_csv(get_all_readings(PHP_INT_MAX)));
 }
 
 ?>

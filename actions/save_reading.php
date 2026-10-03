@@ -3,7 +3,9 @@ require_once __DIR__ . '/../app/bootstrap.php';
 start_session();
 require_admin();
 
-$readingId = (int)get('reading_id', 0);
+$readingId = (int)(($_SERVER['REQUEST_METHOD']??'GET')==='POST' ? post('reading_id',get('reading_id',0)) : get('reading_id',0));
+$error = '';
+$missingColumns = missing_awareness_columns();
 
 if (!$readingId) {
     flash('error', 'Reading not found');
@@ -11,7 +13,7 @@ if (!$readingId) {
 }
 
 $pdo = db();
-$stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND type = 'reading'");
+$stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND type = 'reading' AND archived = 0");
 $stmt->execute([$readingId]);
 $reading = $stmt->fetch();
 if ($reading) $reading = assess_reading($reading);
@@ -21,21 +23,18 @@ if (!$reading) {
     redirect('admin.php');
 }
 
-// Handle POST - update risk level
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['update_reading'])) {
+// CSRF is checked even when form fields are malformed.
+if (($_SERVER['REQUEST_METHOD']??'GET') === 'POST') {
     require_post_csrf();
-    $riskLevel = post('risk_level');
-    if (!in_array($riskLevel, ['low', 'normal', 'medium', 'high'], true)) {
-        http_response_code(422);
-        exit('Invalid risk level.');
+    try {
+        $riskLevel=(string)post('risk_level'); $reason=trim((string)post('adjustment_reason'));
+        update_reading_risk($readingId,$riskLevel,(int)$_SESSION['user_id'],$reason);
+        flash('success','Reading category updated. Rainfall values are unchanged.'); redirect('admin.php');
+    } catch (Throwable $exception) {
+        error_log('Reading edit failed: '.$exception->getMessage());
+        $error=$exception instanceof PDOException ? 'The update could not be saved. Complete database setup in Admin Panel if needed, then try again.' : $exception->getMessage();
+        http_response_code($exception instanceof InvalidArgumentException ? 422 : 503);
     }
-
-    $reason = trim((string)post('adjustment_reason'));
-    if ($reason === '' || strlen($reason)>500) { http_response_code(422); exit('An adjustment reason of up to 500 characters is required.'); }
-    update_reading_risk($readingId, $riskLevel, (int)$_SESSION['user_id'], $reason);
-
-    flash('success', 'Reading risk level updated successfully');
-    redirect('admin.php');
 }
 
 $loc = get_location($reading['location_id']);
@@ -59,11 +58,14 @@ $loc = get_location($reading['location_id']);
                     <div class="card-body">
                         <p>Calculated rainfall category: <?= e($reading['assessment']['calculated_category'] ?? 'unavailable') ?>.
                         An edited category is an administrator assessment. New edits retain the administrator, UTC time, previous category and reason. Older edits have no reconstructed history.</p>
-                        <form method="post">
+                        <?php if ($error !== ''): ?><div class="alert alert-danger" role="alert"><?= e($error) ?></div><?php endif; ?>
+                        <?php if ($missingColumns): ?><div class="alert alert-warning">Database setup is incomplete. <a href="<?= e(url('admin.php')) ?>">Open Admin Panel to complete setup.</a></div><?php endif; ?>
+                        <form method="post" action="<?= e(url('actions/save_reading.php?reading_id='.$readingId)) ?>">
+                            <input type="hidden" name="reading_id" value="<?= $readingId ?>">
                             <?= csrf_field() ?>
                             <input type="hidden" name="update_reading" value="1">
                             <label for="adjustment_reason" class="form-label mt-3">Adjustment reason *</label>
-                            <textarea name="adjustment_reason" id="adjustment_reason" class="form-control mb-3" maxlength="500" required></textarea>
+                            <textarea name="adjustment_reason" id="adjustment_reason" class="form-control mb-3" maxlength="500" required><?= e(post('adjustment_reason')) ?></textarea>
 
                             <div class="mb-3">
                                 <label class="form-label">Location</label>
@@ -113,7 +115,7 @@ $loc = get_location($reading['location_id']);
                                         ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning', 'high' => 'danger']
                                         [$reading['risk_level']] ?? 'secondary'
                                     ?>">
-                                        <?= ucfirst($reading['risk_level']) ?>
+                                        <?= e(ucfirst($reading['risk_level'] ?? 'Unavailable')) ?>
                                     </span>
                                 </p>
                             </div>
@@ -122,10 +124,10 @@ $loc = get_location($reading['location_id']);
                                 <label class="form-label">New Risk Level *</label>
                                 <select name="risk_level" class="form-select" required>
                                     <option value="">Select...</option>
-                                    <option value="low" <?= $reading['risk_level'] === 'low' ? 'selected' : '' ?>>Low</option>
-                                    <option value="normal" <?= $reading['risk_level'] === 'normal' ? 'selected' : '' ?>>Normal</option>
-                                    <option value="medium" <?= $reading['risk_level'] === 'medium' ? 'selected' : '' ?>>Medium</option>
-                                    <option value="high" <?= $reading['risk_level'] === 'high' ? 'selected' : '' ?>>High</option>
+                                    <option value="low" <?= post('risk_level', $reading['risk_level']) === 'low' ? 'selected' : '' ?>>Low</option>
+                                    <option value="normal" <?= post('risk_level', $reading['risk_level']) === 'normal' ? 'selected' : '' ?>>Normal</option>
+                                    <option value="medium" <?= post('risk_level', $reading['risk_level']) === 'medium' ? 'selected' : '' ?>>Medium</option>
+                                    <option value="high" <?= post('risk_level', $reading['risk_level']) === 'high' ? 'selected' : '' ?>>High</option>
                                 </select>
                             </div>
 

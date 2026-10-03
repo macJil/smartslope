@@ -3,26 +3,25 @@ require_once __DIR__ . '/app/bootstrap.php';
 start_session();
 require_admin();
 
-$locations = get_locations();
-$uiLocations = array_column($locations, null, 'id');
-$readings = get_all_readings(50);
-$reportFilter = (string)get('status');
+$reportFilter = (string)get('status', post('return_status'));
 $reportFilter = in_array($reportFilter, ['pending','reviewed','resolved'],true) ? $reportFilter : null;
-$reports = get_reports($reportFilter);
-$pendingCounts = get_pending_counts();
-$reportedAddressesByLocation = [];
-foreach ($reports as $report) {
-    $locationId = (int)$report['location_id'];
-    $address = trim((string)($report['house_landmark'] ?? ''));
-    if ($address !== '' && !isset($reportedAddressesByLocation[$locationId])) {
-        $reportedAddressesByLocation[$locationId] = $address;
-    }
-}
+$reportReturn = 'admin.php' . ($reportFilter ? '?status='.$reportFilter : '') . '#reports';
 
 // Mutating actions require an administrator, POST, and a session-bound token.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_post_csrf();
     $action = (string)post('action');
+    try {
+    if ($action === 'complete_setup') {
+        migrate_awareness_schema(); flash('success','Database setup completed. Review and reading edits are ready.'); redirect('admin.php');
+    }
+    if ($action === 'import_locations') {
+        $file=$_FILES['locations_csv']??[];
+        if (($file['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name']??'') || strtolower(pathinfo($file['name']??'',PATHINFO_EXTENSION))!=='csv' || ($file['size']??0)>5*1024*1024) throw new InvalidArgumentException('Invalid/not applicable file. Choose a downloaded Locations CSV (maximum 5 MB).');
+        $rows=parse_locations_csv((string)file_get_contents($file['tmp_name']));
+        $result=import_locations_csv($rows);
+        flash('success','Locations imported: '.$result['added'].' added, '.$result['updated'].' restored/updated, '.$result['unchanged'].' unchanged.'); redirect('admin.php#locations');
+    }
     $bulkActions = [
         'bulk_delete_reports' => ['field' => 'report_ids', 'operation' => 'delete_report', 'label' => 'reports deleted'],
         'bulk_archive_readings' => ['field' => 'reading_ids', 'operation' => 'archive_reading', 'label' => 'readings removed from active lists'],
@@ -71,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit('Invalid record.');
     }
     if ($action === 'review' || $action === 'resolve') {
-        update_report($id, $action === 'review' ? 'reviewed' : 'resolved', (int)$_SESSION['user_id']);
+        if (!update_report($id, $action === 'review' ? 'reviewed' : 'resolved', (int)$_SESSION['user_id'])) throw new InvalidArgumentException('No report changed. It may already have been updated. Reload and check its current status.');
     } elseif ($action === 'delete_report') {
         delete_report($id);
     } elseif ($action === 'remove_location') {
@@ -81,26 +80,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit('Invalid action.');
     }
     flash('success', 'Changes saved.');
-    redirect('admin.php');
+    redirect($reportReturn);
+    } catch (Throwable $error) {
+        error_log('Admin action failed: '.$error->getMessage());
+        flash('error', $error instanceof PDOException ? 'Changes could not be saved. Complete database setup if shown below, then try again.' : $error->getMessage());
+        redirect($action === 'import_locations' ? 'admin.php#locations' : $reportReturn);
+    }
 }
 
-if (get('action') === 'export' || get('action') === 'export_reports') {
-    $reportsCsv = get('action') === 'export_reports';
-    header('Content-Type: text/csv; charset=UTF-8');
-    header('Content-Disposition: attachment; filename="' . ($reportsCsv ? 'reports_' : 'readings_') . date('Y-m-d') . '.csv"');
-    if ($reportsCsv) {
-        $stream = fopen('php://output', 'w');
-        fputcsv($stream, ['ID','Location','Reporter','Phone','Email','Message','Status','Submitted UTC','Report type','Occurred UTC','Last reviewer ID','Last reviewed UTC']);
-        foreach (get_reports() as $r) {
-            fputcsv($stream, [$r['id'],csv_cell($r['location_name']),csv_cell($r['reporter_name']),
-                csv_cell($r['contact_phone']),csv_cell($r['contact_email']),csv_cell($r['message']),
-                $r['status'],$r['created_at'],csv_cell($r['report_type'] ?? ''),$r['occurred_at'] ?? '',$r['reviewed_by'] ?? '',$r['reviewed_at'] ?? '']);
-        }
-    } else {
-        echo export_readings_csv(get_all_readings(PHP_INT_MAX));
+$exportAction=(string)get('action');
+if (in_array($exportAction,['export','export_reports','export_locations'],true)) {
+    try {
+        $csv=match($exportAction) {
+            'export_reports'=>export_reports_csv(get_reports($reportFilter)),
+            'export_locations'=>export_locations_csv(get_locations()),
+            default=>export_readings_csv(get_all_readings(PHP_INT_MAX)),
+        };
+        $kind=match($exportAction) {'export_reports'=>'reports','export_locations'=>'locations',default=>'readings'};
+        download_csv('smartslope_'.$kind.'_'.gmdate('Y-m-d').'.csv',$csv);
+    } catch (Throwable $error) {
+        error_log('CSV export failed: '.$error->getMessage());
+        flash('error','CSV export failed: '.($error instanceof PDOException ? 'Database could not be read.' : $error->getMessage())); redirect('admin.php');
     }
-    exit;
 }
+$missingColumns=missing_awareness_columns();
+$locations = get_locations();
+$uiLocations = array_column($locations, null, 'id');
+$readings = get_all_readings(50);
+$reports = get_reports($reportFilter);
+$pendingCounts = get_pending_counts();
+$reportedAddressesByLocation = [];
+foreach ($reports as $report) {
+    $locationId = (int)$report['location_id'];
+    $address = trim((string)($report['house_landmark'] ?? ''));
+    if ($address !== '' && !isset($reportedAddressesByLocation[$locationId])) {
+        $reportedAddressesByLocation[$locationId] = $address;
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -166,6 +183,10 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
             <div class="alert alert-danger"><?= e($msg) ?></div>
         <?php endif; ?>
 
+        <?php if ($missingColumns): ?>
+        <div class="alert alert-warning" role="alert"><h3 class="h6">Database setup is incomplete</h3><p>The previous awareness upgrade needs additional fields for report review and reading edits. Back up your database, then complete setup. Existing records are retained.</p>
+        <form method="post" action="<?= e(url('admin.php')) ?>"><?= csrf_field() ?><input type="hidden" name="action" value="complete_setup"><button class="btn btn-warning" type="submit">Complete database setup</button></form></div>
+        <?php endif; ?>
         <p class="small text-muted">Reading counts cover the latest 50 saved readings across active locations. Current means observed within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours; these are reading counts, not location counts.</p>
         <!-- Stats Row -->
         <div class="row mb-4">
@@ -204,16 +225,19 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
         </div>
 
         <!-- All Reports Section -->
-        <div class="card mb-4">
+        <div class="card mb-4" id="reports">
             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <div><h5 class="mb-0">Community report review queue</h5><small>USER-SUBMITTED; workflow status does not establish scientific verification.</small>
-                <div class="mt-2"><a href="<?= e(url('admin.php')) ?>">All</a> · <a href="<?= e(url('admin.php?status=pending')) ?>">Pending</a> · <a href="<?= e(url('admin.php?status=reviewed')) ?>">Reviewed</a> · <a href="<?= e(url('admin.php?status=resolved')) ?>">Resolved</a></div></div>
+                <nav class="d-flex flex-wrap gap-2 mt-2" aria-label="Filter reports">
+                <?php foreach ([''=>'All','pending'=>'Pending','reviewed'=>'Reviewed','resolved'=>'Resolved'] as $value=>$label): ?>
+                <a class="btn btn-sm <?= ($reportFilter??'')===$value?'btn-primary':'btn-outline-primary' ?>" <?= ($reportFilter??'')===$value?'aria-current="page"':'' ?> href="<?= e(url('admin.php'.($value!==''?'?status='.$value:'').'#reports')) ?>"><?= e($label) ?></a>
+                <?php endforeach; ?></nav><p class="small mb-0 mt-2"><?= count($reports) ?> <?= e($reportFilter??'total') ?> report(s)</p></div>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     <form id="bulkReportsForm" method="post" data-bulk-confirm="Delete %d selected report(s)?" class="m-0">
                         <?= csrf_field() ?><input type="hidden" name="action" value="bulk_delete_reports"><input type="hidden" name="return_to" value="admin.php">
                         <button class="btn btn-sm btn-outline-danger">Delete selected</button>
                     </form>
-                    <a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export_reports')) ?>">Download reports CSV</a>
+                    <a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export_reports'.($reportFilter?'&status='.$reportFilter:''))) ?>">Download reports CSV</a>
                 </div>
             </div>
             <div class="card-body p-0">
@@ -269,7 +293,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                 </td>
                                 <td><?= local_date($r['created_at']) ?></td>
                                 <td>
-                                    <button class="btn btn-xs btn-info view-report-btn"
+                                    <button type="button" class="btn btn-sm btn-info view-report-btn"
                                             data-report-id="<?= $r['id'] ?>"
                                             data-location="<?= e($reportMapLocation) ?>"
                                             data-message="<?= e($r['message']) ?>"
@@ -283,17 +307,11 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                             data-assessment="<?= e(ucfirst($r['location_assessment']['data_status']) . ' — last saved category: ' . ($r['location_assessment']['category'] ?? 'unavailable')) ?>">
                                         View
                                     </button>
-                                    <?php if ($r['status'] === 'pending'): ?>
-                                        <form method="post" class="d-inline"><?= csrf_field() ?><input type="hidden" name="action" value="review"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-primary">Review</button></form>
-                                    <?php endif; ?>
-                                    <?php if ($r['status'] === 'reviewed'): ?>
-                                        <form method="post" class="d-inline"><?= csrf_field() ?><input type="hidden" name="action" value="resolve"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-success">Resolve</button></form>
-                                    <?php endif; ?>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
                             <?php if (empty($reports)): ?>
-                                <tr><td colspan="8" class="text-center text-muted">No reports yet</td></tr>
+                                <tr><td colspan="8" class="text-center text-muted">No <?= e($reportFilter??'') ?> reports found.</td></tr>
                             <?php endif; ?>
                         </tbody>
                     </table>
@@ -302,9 +320,17 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
         </div>
 
         <!-- Locations Section -->
-        <div class="card mb-4">
+        <div class="card mb-4" id="locations">
             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <h5 class="mb-0">All Locations</h5>
+                <a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export_locations')) ?>">Download locations CSV</a>
+                <form method="post" action="<?= e(url('admin.php')) ?>" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-center">
+                    <?= csrf_field() ?><input type="hidden" name="action" value="import_locations">
+                    <label for="locations_csv" class="visually-hidden">Locations CSV to import</label>
+                    <input type="file" class="form-control form-control-sm w-auto" id="locations_csv" name="locations_csv" accept=".csv,text/csv" required>
+                    <button class="btn btn-sm btn-primary" type="submit">Import locations CSV</button>
+                    <small class="w-100 text-muted">Use an unchanged Locations CSV downloaded here. Import restores its location details and active status; existing readings and reports stay linked.</small>
+                </form>
                 <form id="bulkLocationsForm" method="post" data-bulk-confirm="Remove %d selected location(s)? Their reading and report history will be kept." class="m-0">
                     <?= csrf_field() ?><input type="hidden" name="action" value="bulk_remove_locations"><input type="hidden" name="return_to" value="admin.php">
                     <button class="btn btn-sm btn-outline-danger">Remove selected</button>
@@ -364,7 +390,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
         <!-- All Readings Section -->
         <div class="card mb-4">
             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <h5 class="mb-0">All Weather Readings</h5>
+                <h5 class="mb-0">All Weather Readings</h5><a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export')) ?>">Download readings CSV</a>
                 <form id="bulkAdminReadingsForm" method="post" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="m-0">
                     <?= csrf_field() ?><input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="admin.php">
                     <button class="btn btn-sm btn-outline-danger">Remove selected</button>
@@ -437,6 +463,12 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                     </section>
                 </div>
                 <div class="modal-footer">
+                    <form method="post" action="<?= e(url('admin.php')) ?>" id="modalReportAction" hidden>
+                        <?= csrf_field() ?><input type="hidden" name="id" id="modalReportActionId">
+                        <input type="hidden" name="action" id="modalReportActionName">
+                        <input type="hidden" name="return_status" value="<?= e($reportFilter??'') ?>">
+                        <button type="submit" class="btn btn-primary" id="modalReportActionButton">Mark as reviewed</button>
+                    </form>
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
@@ -476,6 +508,11 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                 viewReportModal.querySelector('#modalReportLat').value = lat;
                 viewReportModal.querySelector('#modalReportLng').value = lng;
 
+                const actionForm = document.getElementById('modalReportAction');
+                actionForm.hidden = !['pending', 'reviewed'].includes(status);
+                document.getElementById('modalReportActionId').value = reportId;
+                document.getElementById('modalReportActionName').value = status === 'pending' ? 'review' : 'resolve';
+                document.getElementById('modalReportActionButton').textContent = status === 'pending' ? 'Mark as reviewed' : 'Mark as resolved';
                 const bootstrapModal = bootstrap.Modal.getOrCreateInstance(viewReportModal);
                 bootstrapModal.show();
             });

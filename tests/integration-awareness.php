@@ -28,9 +28,17 @@ integration_check((int)$r['user_id']===$user && (int)$r['reviewed_by']===1 && $r
 integration_check($r['report_type']==='ground_cracks' && $r['occurred_at']==='2026-01-01 00:00:00','Structured fields persisted UTC.');
 integration_check(location_report_summary((int)$location['id'])['reviewed']===1,'Location summary grouped by workflow state.');
 $csv=export_readings_csv(get_all_readings());
-integration_check(str_contains($csv,'Source') && str_contains($csv,'administrator review'),'CSV retains source and audit metadata.');
+integration_check(str_contains($csv,'Data source') && str_contains($csv,'administrator review'),'CSV retains source and audit metadata.');
 integration_check(archive_reading($id),'Archive original reading.');
 $bad=$base; $bad['rainfall_24h']=10; create_reading($bad);
 integration_check(get_latest_reading((int)$location['id'])['assessment']['current_category']===null,'Invalid saved windows unavailable.');
+integration_check(!update_report($report,'reviewed',1),'Repeated review reports no change.');
+$export=export_locations_csv(get_locations(),str_repeat('a',64));
+$import=parse_locations_csv($export,str_repeat('a',64));
+integration_check(import_locations_csv($import)['unchanged']===count($import),'Unchanged location import is idempotent.');
+deactivate_location((int)$location['id']);
+integration_check(import_locations_csv($import)['updated']===1,'Import restores inactive location.');
+integration_check((int)get_location((int)$location['id'])['active']===1,'Restored location retains original ID.');
+integration_check((int)$pdo->query('SELECT location_id FROM events WHERE id='.(int)$report)->fetchColumn()===(int)$location['id'],'Import preserves report history links.');
 $pdo->prepare('DELETE FROM events WHERE location_id=?')->execute([$location['id']]);
 echo "$checks database integration checks passed.\n";

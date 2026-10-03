@@ -191,10 +191,12 @@ function create_report(array $data): int {
 // Update report status
 
 function update_report(int $id, string $status, int $adminId): bool {
+    require_awareness_schema();
     $pdo = db();
     if (!in_array($status, ['reviewed','resolved'], true)) throw new InvalidArgumentException('Invalid review status.');
-    $stmt = $pdo->prepare("UPDATE events SET status = ?, reviewed_by = ?, reviewed_at = UTC_TIMESTAMP() WHERE id = ? AND type = 'report'");
-    return $stmt->execute([$status, $adminId, $id]);
+    $stmt = $pdo->prepare("UPDATE events SET status = ?, reviewed_by = ?, reviewed_at = UTC_TIMESTAMP() WHERE id = ? AND type = 'report' AND status = ?");
+    $stmt->execute([$status, $adminId, $id, $status === 'reviewed' ? 'pending' : 'reviewed']);
+    return $stmt->rowCount() === 1;
 }
 
 // Delete report
@@ -217,6 +219,7 @@ function archive_reading(int $id): bool {
 
 
 function update_reading_risk(int $readingId, string $risk, int $adminId, string $reason): void {
+    require_awareness_schema();
     if (!in_array($risk, ['low','normal','medium','high'], true) || trim($reason)==='' || strlen($reason)>500) throw new InvalidArgumentException('Valid category and adjustment reason are required.');
     $pdo=db(); $pdo->beginTransaction();
     try {
