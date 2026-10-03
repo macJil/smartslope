@@ -9,7 +9,7 @@ Use this guide for an 8 to 10 minute class presentation. Replace the founder pla
 3. **Who it serves and SDG fit**. Residents and local disaster-risk staff; proposed links to SDG 11 and 13.
 4. **What the prototype does**. Map point, weather refresh, rainfall screen, history, community report, admin review.
 5. **How data moves**. User selects a point; PHP requests Open-Meteo; validated values are saved; rules create a category; the dashboard displays it.
-6. **Database design**. Show the three tables and why readings/reports share `events` with a `type` field.
+6. **Database design**. Show the five tables: `users`, `locations`, shared `events`, and linked `readings`/`reports` detail tables. Explain the common event ID and `type` field.
 7. **Risk categories and limits**. Explain the rainfall windows and state that thresholds are uncalibrated and not official alerts.
 8. **Security and testing**. Summarize sessions/roles, CSRF, PDO, output escaping and automated/local checks.
 9. **Progress, business proposal and ask**. Working prototype; no traction or revenue claim. Ask for a pilot adviser, data access guidance and mentorship.
