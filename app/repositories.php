@@ -273,9 +273,13 @@ function get_or_create_location(float $lat, float $lng, ?string $landmark = null
         if (!$loc['active']) {
             throw new InvalidArgumentException('This monitoring point was removed by an administrator.');
         }
-        if ((trim((string)($loc['landmark'] ?? '')) === '' || strcasecmp(trim((string)$loc['landmark']), 'Map point') === 0) && trim((string)$landmark) !== '') {
-            $stmt = $pdo->prepare("UPDATE locations SET landmark = ? WHERE id = ? AND (landmark IS NULL OR landmark = '' OR landmark = 'Map point')");
-            $stmt->execute([trim((string)$landmark), $loc['id']]);
+        $savedAddress = trim((string)($loc['landmark'] ?? ''));
+        $placeholder = $savedAddress === '' || strcasecmp($savedAddress, 'Map point') === 0 ||
+            (bool)preg_match('/^(?:Map point,\s*)?Barangay Irisan,\s*Baguio City,\s*Benguet,\s*Philippines$/i', $savedAddress);
+        if ($placeholder && trim((string)$landmark) !== '') {
+            // Preserve an existing specific address, including one entered by a resident or administrator.
+            $stmt = $pdo->prepare('UPDATE locations SET landmark = ? WHERE id = ? AND landmark <=> ?');
+            $stmt->execute([trim((string)$landmark), $loc['id'], $loc['landmark']]);
             return get_location((int)$loc['id']) ?? $loc;
         }
         return $loc;

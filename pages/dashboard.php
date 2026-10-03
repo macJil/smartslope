@@ -533,23 +533,8 @@ if ($selectedLocId) {
 
             map.setView([lat, lng], 16);
 
-            let nearestLocation = null;
-            let nearestDistance = Infinity;
-            locations.forEach(loc => {
-                if (loc.lat && loc.lng) {
-                    const dist = Math.sqrt(
-                        Math.pow(loc.lat - lat, 2) + Math.pow(loc.lng - lng, 2)
-                    );
-                    if (dist < nearestDistance) {
-                        nearestLocation = loc;
-                        nearestDistance = dist;
-                    }
-                }
-            });
-
-            const locationId = nearestLocation && nearestDistance < 0.0005 ? nearestLocation.id : '';
-            const target = locationId ? nearestLocation : { lat, lng };
-            submitLocationSelection(locationId, target.lat, target.lng);
+            // A background click selects its own coordinates. Marker clicks select saved points.
+            submitLocationSelection('', lat, lng);
         });
 
         <?php if ($selectedLocId && $selectedLoc && $selectedLoc['lat'] && $selectedLoc['lng']): ?>

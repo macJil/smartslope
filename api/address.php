@@ -5,7 +5,7 @@ start_session(); header('Content-Type: application/json; charset=UTF-8'); header
 function address_json(int $status, array $body): void { http_response_code($status); echo json_encode($body,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE); exit; }
 if (!is_logged_in()) address_json(401,['error'=>'Sign in required.']);
 if (($_SERVER['REQUEST_METHOD']??'GET')!=='GET') { header('Allow: GET'); address_json(405,['error'=>'Method not allowed.']); }
-if (env_value('NOMINATIM_ENABLED','0')!=='1') address_json(200,['address'=>'']);
+if (env_value('NOMINATIM_ENABLED','1')!=='1') address_json(200,['address'=>'']);
 $lat=finite_number(get('lat'),-90,90); $lng=finite_number(get('lng'),-180,180);
 if ($lat===null || $lng===null || !is_in_irisan($lat,$lng)) address_json(422,['error'=>'Select an Irisan point.']);
 session_write_close();

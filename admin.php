@@ -73,6 +73,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!update_report($id, $action === 'review' ? 'reviewed' : 'resolved', (int)$_SESSION['user_id'])) throw new InvalidArgumentException('No report changed. It may already have been updated. Reload and check its current status.');
     } elseif ($action === 'delete_report') {
         delete_report($id);
+    } elseif ($action === 'save_location_address') {
+        $location = get_location((int)$id);
+        if (!$location || !$location['active']) throw new InvalidArgumentException('Unknown active location.');
+        $address = trim((string)post('address'));
+        if ($address === '' || strlen($address) > 255) throw new InvalidArgumentException('Enter an address of at most 255 bytes.');
+        $stmt = db()->prepare('UPDATE locations SET landmark = ? WHERE id = ?');
+        $stmt->execute([$address, $id]);
+        flash('success', 'Location address saved.');
+        redirect('admin.php#locations');
     } elseif ($action === 'remove_location') {
         deactivate_location($id);
     } else {
@@ -84,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Throwable $error) {
         error_log('Admin action failed: '.$error->getMessage());
         flash('error', $error instanceof PDOException ? 'Changes could not be saved. Complete database setup if shown below, then try again.' : $error->getMessage());
-        redirect($action === 'import_locations' ? 'admin.php#locations' : $reportReturn);
+        redirect(in_array($action, ['import_locations', 'save_location_address'], true) ? 'admin.php#locations' : $reportReturn);
     }
 }
 
@@ -354,12 +363,14 @@ foreach ($reports as $report) {
                 </form>
             </div>
             <div class="card-body p-0">
+                <p class="small text-muted px-3 pt-3 mb-1">Map addresses depend on available OpenStreetMap data. Add a verified house number, street, subdivision or purok here when known; it will appear with the coordinates throughout the site.</p>
                 <div class="table-responsive" tabindex="0" role="region" aria-label="Scrollable records table">
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
                                 <th><input type="checkbox" data-select-all="locations" aria-label="Select all locations"></th>
                                 <th>Location address and coordinates</th>
+                                <th>Set full address</th>
                                 <th>Active</th>
                             </tr>
                         </thead>
@@ -374,6 +385,16 @@ foreach ($reports as $report) {
                                 <td><input type="checkbox" form="bulkLocationsForm" name="location_ids[]" value="<?= (int)$loc['id'] ?>" data-bulk-item="locations" aria-label="Select location <?= (int)$loc['id'] ?>"></td>
                                 <td><?= e(ui_location_label($displayLocation)) ?></td>
                                 <td>
+                                    <form method="post" action="<?= e(url('admin.php')) ?>" class="d-flex flex-wrap gap-2 align-items-center">
+                                        <?= csrf_field() ?>
+                                        <input type="hidden" name="action" value="save_location_address">
+                                        <input type="hidden" name="id" value="<?= (int)$loc['id'] ?>">
+                                        <label class="visually-hidden" for="location-address-<?= (int)$loc['id'] ?>">Full address for location <?= (int)$loc['id'] ?></label>
+                                        <input class="form-control form-control-sm" id="location-address-<?= (int)$loc['id'] ?>" name="address" type="text" maxlength="255" placeholder="House #, street, subdivision or purok" value="<?= e($loc['landmark'] ?? '') ?>" required>
+                                        <button class="btn btn-sm btn-outline-primary" type="submit">Save address</button>
+                                    </form>
+                                </td>
+                                <td>
                                     <span class="badge bg-<?= $loc['active'] ? 'success' : 'secondary' ?>">
                                         <?= $loc['active'] ? 'Active' : 'Inactive' ?>
                                     </span>
@@ -381,7 +402,7 @@ foreach ($reports as $report) {
                             </tr>
                             <?php endforeach; ?>
                             <?php if (empty($locations)): ?>
-                                <tr><td colspan="3" class="text-center text-muted">No locations yet</td></tr>
+                                <tr><td colspan="4" class="text-center text-muted">No locations yet</td></tr>
                             <?php endif; ?>
                         </tbody>
                     </table>
