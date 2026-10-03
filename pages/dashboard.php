@@ -145,25 +145,12 @@ if ($selectedLocId) {
     <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="<?= url() ?>">SmartSlope</a>
-            <div class="navbar-nav ms-auto">
-                <?php if ($isAdmin): ?>
-                    <a class="nav-link" href="<?= url('admin.php') ?>">Admin</a>
-                <?php else: ?>
-                    <a class="nav-link" href="<?= url('report.php') ?>">Submit Report</a>
-                <?php endif; ?>
-                <a class="nav-link" href="<?= url('readings.php') ?>">All Readings</a>
-                <a class="nav-link" href="<?= e(url('methodology.php')) ?>">Sources &amp; methodology</a>
-                <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
-            </div>
-        </div>
-    </nav>
+    <?= ui_navigation('dashboard') ?>
 
     <div class="container-fluid px-3 px-lg-4 my-4">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>Welcome, <?= e($_SESSION['full_name']) ?> (<?= e($_SESSION['role']) ?>)</h2>
+        <div class="page-heading mb-4">
+            <h1 class="h2 mb-1">Irisan dashboard</h1>
+            <p class="page-subtitle mb-0">Welcome, <?= e($_SESSION['full_name']) ?>. Select a point on the map to view its saved information.</p>
         </div>
 
         <?php if ($msg = flash('success')): ?>
@@ -234,7 +221,7 @@ if ($selectedLocId) {
                         <h2 class="h5 mb-0">Landslide awareness analyzer</h2>
                         <?php if ($selectedLocId && $selectedLoc): ?>
                             <button type="button" id="refresh-weather" class="btn btn-sm btn-outline-primary">
-                                <i class="bi bi-arrow-clockwise"></i> Refresh Weather
+                                Refresh weather
                             </button>
                         <?php endif; ?>
                     </div>
@@ -596,6 +583,6 @@ if ($selectedLocId) {
             map.setView([selectedLoc.lat, selectedLoc.lng], 16);
         <?php endif; ?>
     </script>
-<footer class="container py-3 small text-muted">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
+<footer class="container py-3 small site-footer">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
 </body>
 </html>

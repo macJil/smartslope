@@ -72,73 +72,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SmartSlope - Login</title>
     <link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>">
+    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
 </head>
 <body>
-    <div class="container my-5">
-        <div class="row justify-content-center">
-            <div class="col-md-6 col-lg-4">
-                <div class="card shadow">
-                    <div class="card-body">
-                        <h2 class="text-center mb-4">SmartSlope</h2>
-                        <p class="text-center text-muted mb-4">Barangay Irisan, Baguio City</p>
-
-                        <?php if ($msg = flash('error')): ?>
-                            <div class="alert alert-danger"><?= e($msg) ?></div>
-                        <?php endif; ?>
-
-                        <?php if ($msg = flash('success')): ?>
-                            <div class="alert alert-success"><?= e($msg) ?></div>
-                        <?php endif; ?>
-
-                        <h3 class="h5 mb-3">Login</h3>
-                        <form method="post" class="mb-4">
-                            <?= csrf_field() ?>
-                            <input type="hidden" name="login" value="1">
-                            <div class="mb-3">
-                                <label class="form-label">Username</label>
-                                <input type="text" name="username" class="form-control" required autofocus>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Password</label>
-                                <input type="password" name="password" class="form-control" required>
-                            </div>
-                            <button type="submit" class="btn btn-primary w-100">Login</button>
-                        </form>
-
-                        <hr>
-
-                        <h3 class="h5 mb-3">Register</h3>
-                        <form method="post">
-                            <?= csrf_field() ?>
-                            <input type="hidden" name="register" value="1">
-                            <div class="mb-3">
-                                <label class="form-label">Full Name</label>
-                                <input type="text" name="full_name" class="form-control" required>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Username</label>
-                                <input type="text" name="username" class="form-control" required>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Email</label>
-                                <input type="email" name="email" class="form-control" required>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Phone</label>
-                                <input type="tel" name="phone" class="form-control" required>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Password</label>
-                                <input type="password" name="password" class="form-control" minlength="8" required>
-                            </div>
-                            <button type="submit" class="btn btn-outline-secondary w-100">Register</button>
-                        </form>
-                    </div>
-                </div>
+    <main class="container auth-shell py-5">
+        <div class="text-center mb-4">
+            <h1 class="h2 mb-1">SmartSlope</h1>
+            <p class="page-subtitle">Landslide awareness for Barangay Irisan, Baguio City</p>
+        </div>
+        <?php if ($msg = flash('error')): ?>
+            <div class="alert alert-danger" role="alert"><?= e($msg) ?></div>
+        <?php endif; ?>
+        <?php if ($msg = flash('success')): ?>
+            <div class="alert alert-success" role="status"><?= e($msg) ?></div>
+        <?php endif; ?>
+        <div class="card auth-card">
+            <div class="row g-0">
+                <section class="col-lg-5 auth-section" aria-labelledby="login-title">
+                    <h2 id="login-title" class="h4 mb-1">Log in</h2>
+                    <p class="page-subtitle mb-4">Continue to the Irisan dashboard.</p>
+                    <form method="post">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="login" value="1">
+                        <div class="form-floating mb-3">
+                            <input type="text" name="username" id="login_username" class="form-control" placeholder="Username" autocomplete="username" required autofocus>
+                            <label for="login_username">Username</label>
+                        </div>
+                        <div class="form-floating mb-3">
+                            <input type="password" name="password" id="login_password" class="form-control" placeholder="Password" autocomplete="current-password" required>
+                            <label for="login_password">Password</label>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Log in</button>
+                    </form>
+                </section>
+                <section class="col-lg-7 auth-section auth-register" aria-labelledby="register-title">
+                    <h2 id="register-title" class="h4 mb-1">Create an account</h2>
+                    <p class="page-subtitle mb-4">Register as a resident to submit observations.</p>
+                    <form method="post">
+                        <?= csrf_field() ?>
+                        <input type="hidden" name="register" value="1">
+                        <div class="row g-3">
+                            <div class="col-sm-6"><div class="form-floating">
+                                <input type="text" name="full_name" id="register_name" class="form-control" placeholder="Full name" maxlength="100" autocomplete="name" required>
+                                <label for="register_name">Full name</label>
+                            </div></div>
+                            <div class="col-sm-6"><div class="form-floating">
+                                <input type="text" name="username" id="register_username" class="form-control" placeholder="Username" minlength="3" maxlength="50" pattern="[A-Za-z0-9_]{3,50}" autocomplete="username" required>
+                                <label for="register_username">Username</label>
+                            </div></div>
+                            <div class="col-sm-6"><div class="form-floating">
+                                <input type="email" name="email" id="register_email" class="form-control" placeholder="Email" maxlength="254" autocomplete="email" required>
+                                <label for="register_email">Email</label>
+                            </div></div>
+                            <div class="col-sm-6"><div class="form-floating">
+                                <input type="tel" name="phone" id="register_phone" class="form-control" placeholder="Phone" maxlength="16" pattern="\+?[0-9]{10,15}" autocomplete="tel" required>
+                                <label for="register_phone">Phone</label>
+                            </div></div>
+                            <div class="col-12"><div class="form-floating">
+                                <input type="password" name="password" id="register_password" class="form-control" placeholder="Password" minlength="8" maxlength="72" autocomplete="new-password" required>
+                                <label for="register_password">Password</label>
+                            </div><div class="form-text">Use 8–72 characters. Phone numbers use 10–15 digits, optionally starting with +.</div></div>
+                            <div class="col-12"><button type="submit" class="btn btn-primary w-100">Create account</button></div>
+                        </div>
+                    </form>
+                </section>
             </div>
         </div>
-    </div>
-
+        <p class="text-center small page-subtitle mt-4">SmartSlope is an academic prototype; see the sources and methodology after signing in.</p>
+    </main>
     <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
 </body>
 </html>

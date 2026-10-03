@@ -46,9 +46,11 @@ $loc = get_location($reading['location_id']);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Reading</title>
     <link rel="stylesheet" href="<?= url('assets/css/bootstrap.min.css') ?>">
+    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
 </head>
 <body>
-    <div class="container my-5">
+    <?= ui_navigation('admin') ?>
+    <main class="container my-5">
         <div class="row justify-content-center">
             <div class="col-md-6">
                 <div class="card">
@@ -64,8 +66,10 @@ $loc = get_location($reading['location_id']);
                             <input type="hidden" name="reading_id" value="<?= $readingId ?>">
                             <?= csrf_field() ?>
                             <input type="hidden" name="update_reading" value="1">
-                            <label for="adjustment_reason" class="form-label mt-3">Adjustment reason *</label>
-                            <textarea name="adjustment_reason" id="adjustment_reason" class="form-control mb-3" maxlength="500" required><?= e(post('adjustment_reason')) ?></textarea>
+                            <div class="form-floating mb-3">
+                                <textarea name="adjustment_reason" id="adjustment_reason" class="form-control" placeholder="Adjustment reason" style="height: 7rem" maxlength="500" required><?= e(post('adjustment_reason')) ?></textarea>
+                                <label for="adjustment_reason">Adjustment reason *</label>
+                            </div>
 
                             <div class="mb-3">
                                 <label class="form-label">Location</label>
@@ -120,15 +124,15 @@ $loc = get_location($reading['location_id']);
                                 </p>
                             </div>
 
-                            <div class="mb-3">
-                                <label class="form-label">New Risk Level *</label>
-                                <select name="risk_level" class="form-select" required>
+                            <div class="form-floating mb-3">
+                                <select name="risk_level" id="risk_level" class="form-select" required>
                                     <option value="">Select...</option>
                                     <option value="low" <?= post('risk_level', $reading['risk_level']) === 'low' ? 'selected' : '' ?>>Low</option>
                                     <option value="normal" <?= post('risk_level', $reading['risk_level']) === 'normal' ? 'selected' : '' ?>>Normal</option>
                                     <option value="medium" <?= post('risk_level', $reading['risk_level']) === 'medium' ? 'selected' : '' ?>>Medium</option>
                                     <option value="high" <?= post('risk_level', $reading['risk_level']) === 'high' ? 'selected' : '' ?>>High</option>
                                 </select>
+                                <label for="risk_level">New risk level *</label>
                             </div>
 
                             <div class="d-flex gap-2">
@@ -140,6 +144,7 @@ $loc = get_location($reading['location_id']);
                 </div>
             </div>
         </div>
-    </div>
+    </main>
+    <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
 </body>
 </html>

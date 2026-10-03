@@ -27,21 +27,11 @@ if (get('action') === 'export') {
     <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="<?= url() ?>">SmartSlope</a>
-            <div class="navbar-nav">
-                <a class="nav-link" href="<?= url('dashboard.php') ?>">Dashboard</a>
-                <a class="nav-link" href="<?= url('readings.php') ?>">All Readings</a>
-                <a class="nav-link" href="<?= e(url('methodology.php')) ?>">Sources &amp; methodology</a>
-                <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
-            </div>
-        </div>
-    </nav>
+    <?= ui_navigation('readings') ?>
 
     <div class="container my-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>Weather Readings</h2>
+            <div class="page-heading"><h1 class="h2 mb-1">Weather readings</h1><p class="page-subtitle mb-0">Saved observations for Barangay Irisan.</p></div>
             <div>
                 <?php if ($isAdmin): ?>
                     <form id="bulkReadingsPageForm" method="post" action="<?= e(url('admin.php')) ?>" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="d-inline">
@@ -53,7 +43,7 @@ if (get('action') === 'export') {
             </div>
         </div>
 
-        <p class="small text-muted">Latest 100 saved readings across active locations. Current means observed within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours. SmartSlope is an academic prototype, not an official warning service. Scroll the table or expand details for more weather information.</p>
+        <p class="small text-muted">Latest 100 saved readings across active locations. Current means observed within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours. SmartSlope is an academic prototype, not an official warning service. Scroll the table or open a details dialog for more weather information.</p>
         <div class="card">
             <div class="card-body p-0">
                 <div class="table-responsive" tabindex="0" role="region" aria-label="Scrollable records table">
@@ -72,6 +62,6 @@ if (get('action') === 'export') {
     <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
     <script src="<?= e(url('assets/js/reading-modal.js')) ?>"></script>
     <?php if ($isAdmin): ?><script src="<?= e(url('assets/js/bulk-select.js')) ?>"></script><?php endif; ?>
-<footer class="container py-3 small text-muted">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
+<footer class="container py-3 small site-footer">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
 </body>
 </html>

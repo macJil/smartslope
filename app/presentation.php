@@ -2,6 +2,42 @@
 declare(strict_types=1);
 
 // Shared, escaped presentation for page loads and the weather AJAX response.
+function ui_navigation(string $active): string {
+    $links = [
+        'dashboard' => ['dashboard.php', 'Dashboard'],
+        'readings' => ['readings.php', 'Readings'],
+        'methodology' => ['methodology.php', 'Sources & methodology'],
+    ];
+    if (is_admin()) {
+        $links = ['dashboard' => $links['dashboard'], 'admin' => ['admin.php', 'Admin'],
+            'readings' => $links['readings'], 'methodology' => $links['methodology']];
+    } else {
+        $links = ['dashboard' => $links['dashboard'], 'report' => ['report.php', 'Submit report'],
+            'readings' => $links['readings'], 'methodology' => $links['methodology']];
+    }
+    ob_start(); ?>
+    <nav class="navbar navbar-expand-lg site-nav" aria-label="Main navigation">
+        <div class="container-fluid px-3 px-lg-4">
+            <a class="navbar-brand fw-semibold" href="<?= e(url('dashboard.php')) ?>">SmartSlope <span class="brand-place">Irisan</span></a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#siteNavigation"
+                    aria-controls="siteNavigation" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="siteNavigation">
+                <div class="navbar-nav ms-auto align-items-lg-center gap-lg-1">
+                    <?php foreach ($links as $key => [$path, $label]): ?>
+                        <a class="nav-link<?= $active === $key ? ' active' : '' ?>" href="<?= e(url($path)) ?>"<?= $active === $key ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
+                    <?php endforeach; ?>
+                    <form method="post" action="<?= e(url('logout.php')) ?>" class="nav-logout">
+                        <?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Log out</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </nav>
+    <?php return (string)ob_get_clean();
+}
+
 function ui_current_category(array $assessment): ?string {
     $category = $assessment['current_category'] ?? null;
     return ($assessment['data_status'] ?? '') === 'current' &&

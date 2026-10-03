@@ -1,0 +1,662 @@
+diff --git a/actions/save_reading.php b/actions/save_reading.php
+index 88df8fe..903aa56 100644
+--- a/actions/save_reading.php
++++ b/actions/save_reading.php
+@@ -46,9 +46,11 @@ $loc = get_location($reading['location_id']);
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <title>Edit Reading</title>
+     <link rel="stylesheet" href="<?= url('assets/css/bootstrap.min.css') ?>">
++    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
+ </head>
+ <body>
+-    <div class="container my-5">
++    <?= ui_navigation('admin') ?>
++    <main class="container my-5">
+         <div class="row justify-content-center">
+             <div class="col-md-6">
+                 <div class="card">
+@@ -64,8 +66,10 @@ $loc = get_location($reading['location_id']);
+                             <input type="hidden" name="reading_id" value="<?= $readingId ?>">
+                             <?= csrf_field() ?>
+                             <input type="hidden" name="update_reading" value="1">
+-                            <label for="adjustment_reason" class="form-label mt-3">Adjustment reason *</label>
+-                            <textarea name="adjustment_reason" id="adjustment_reason" class="form-control mb-3" maxlength="500" required><?= e(post('adjustment_reason')) ?></textarea>
++                            <div class="form-floating mb-3">
++                                <textarea name="adjustment_reason" id="adjustment_reason" class="form-control" placeholder="Adjustment reason" style="height: 7rem" maxlength="500" required><?= e(post('adjustment_reason')) ?></textarea>
++                                <label for="adjustment_reason">Adjustment reason *</label>
++                            </div>
+ 
+                             <div class="mb-3">
+                                 <label class="form-label">Location</label>
+@@ -120,15 +124,15 @@ $loc = get_location($reading['location_id']);
+                                 </p>
+                             </div>
+ 
+-                            <div class="mb-3">
+-                                <label class="form-label">New Risk Level *</label>
+-                                <select name="risk_level" class="form-select" required>
++                            <div class="form-floating mb-3">
++                                <select name="risk_level" id="risk_level" class="form-select" required>
+                                     <option value="">Select...</option>
+                                     <option value="low" <?= post('risk_level', $reading['risk_level']) === 'low' ? 'selected' : '' ?>>Low</option>
+                                     <option value="normal" <?= post('risk_level', $reading['risk_level']) === 'normal' ? 'selected' : '' ?>>Normal</option>
+                                     <option value="medium" <?= post('risk_level', $reading['risk_level']) === 'medium' ? 'selected' : '' ?>>Medium</option>
+                                     <option value="high" <?= post('risk_level', $reading['risk_level']) === 'high' ? 'selected' : '' ?>>High</option>
+                                 </select>
++                                <label for="risk_level">New risk level *</label>
+                             </div>
+ 
+                             <div class="d-flex gap-2">
+@@ -140,6 +144,7 @@ $loc = get_location($reading['location_id']);
+                 </div>
+             </div>
+         </div>
+-    </div>
++    </main>
++    <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
+ </body>
+ </html>
+diff --git a/admin.php b/admin.php
+index 80dba07..735b06a 100644
+--- a/admin.php
++++ b/admin.php
+@@ -152,25 +152,14 @@ foreach ($reports as $report) {
+     <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
+ </head>
+ <body>
+-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+-        <div class="container-fluid">
+-            <a class="navbar-brand" href="<?= url() ?>">SmartSlope Admin</a>
+-            <div class="navbar-nav">
+-                <a class="nav-link" href="<?= url('dashboard.php') ?>">Dashboard</a>
+-                <a class="nav-link" href="<?= url('admin.php') ?>">Admin Panel</a>
+-                <a class="nav-link" href="<?= url('readings.php') ?>">All Readings</a>
+-                <a class="nav-link" href="<?= e(url('methodology.php')) ?>">Sources &amp; methodology</a>
+-                <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
+-            </div>
+-        </div>
+-    </nav>
++    <?= ui_navigation('admin') ?>
+ 
+     <div class="container my-4">
+         <div class="d-flex justify-content-between align-items-center mb-4">
+-            <h2>Admin Panel</h2>
++            <div class="page-heading"><h1 class="h2 mb-1">Admin panel</h1><p class="page-subtitle mb-0">Review community reports, locations, and saved readings.</p></div>
+             <div>
+                 <a href="<?= url('admin.php?action=export') ?>" class="btn btn-outline-success">
+-                    <i class="bi bi-download"></i> Export Readings CSV
++                    Export readings CSV
+                 </a>
+             </div>
+         </div>
+@@ -575,6 +564,6 @@ foreach ($reports as $report) {
+         });
+ 
+     </script>
+-<footer class="container py-3 small text-muted">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
++<footer class="container py-3 small site-footer">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
+ </body>
+ </html>
+diff --git a/app/presentation.php b/app/presentation.php
+index 55a5dad..06fc1dd 100644
+--- a/app/presentation.php
++++ b/app/presentation.php
+@@ -2,6 +2,42 @@
+ declare(strict_types=1);
+ 
+ // Shared, escaped presentation for page loads and the weather AJAX response.
++function ui_navigation(string $active): string {
++    $links = [
++        'dashboard' => ['dashboard.php', 'Dashboard'],
++        'readings' => ['readings.php', 'Readings'],
++        'methodology' => ['methodology.php', 'Sources & methodology'],
++    ];
++    if (is_admin()) {
++        $links = ['dashboard' => $links['dashboard'], 'admin' => ['admin.php', 'Admin'],
++            'readings' => $links['readings'], 'methodology' => $links['methodology']];
++    } else {
++        $links = ['dashboard' => $links['dashboard'], 'report' => ['report.php', 'Submit report'],
++            'readings' => $links['readings'], 'methodology' => $links['methodology']];
++    }
++    ob_start(); ?>
++    <nav class="navbar navbar-expand-lg site-nav" aria-label="Main navigation">
++        <div class="container-fluid px-3 px-lg-4">
++            <a class="navbar-brand fw-semibold" href="<?= e(url('dashboard.php')) ?>">SmartSlope <span class="brand-place">Irisan</span></a>
++            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#siteNavigation"
++                    aria-controls="siteNavigation" aria-expanded="false" aria-label="Toggle navigation">
++                <span class="navbar-toggler-icon"></span>
++            </button>
++            <div class="collapse navbar-collapse" id="siteNavigation">
++                <div class="navbar-nav ms-auto align-items-lg-center gap-lg-1">
++                    <?php foreach ($links as $key => [$path, $label]): ?>
++                        <a class="nav-link<?= $active === $key ? ' active' : '' ?>" href="<?= e(url($path)) ?>"<?= $active === $key ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
++                    <?php endforeach; ?>
++                    <form method="post" action="<?= e(url('logout.php')) ?>" class="nav-logout">
++                        <?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Log out</button>
++                    </form>
++                </div>
++            </div>
++        </div>
++    </nav>
++    <?php return (string)ob_get_clean();
++}
++
+ function ui_current_category(array $assessment): ?string {
+     $category = $assessment['current_category'] ?? null;
+     return ($assessment['data_status'] ?? '') === 'current' &&
+diff --git a/assets/css/frontend.css b/assets/css/frontend.css
+index ec332ce..c5dc619 100644
+--- a/assets/css/frontend.css
++++ b/assets/css/frontend.css
+@@ -1,22 +1,74 @@
+-/* Small shared additions to the existing local Bootstrap styles. */
+-body { background: #f5f7f8; color: #24343d; }
+-.card { border-color: #dce3e7; }
+-.card-header { background: #f8fafb; }
++/* SmartSlope's small shared layer over the bundled Bootstrap stylesheet. */
++:root {
++    --slope-green: #205b43;
++    --slope-green-hover: #184733;
++    --slope-brown: #725238;
++    --slope-border: #d9e1d8;
++    --slope-bg: #f6f7f2;
++    --slope-focus: rgba(32, 91, 67, .22);
++}
++body { background: var(--slope-bg); color: #24362d; }
++a { color: var(--slope-green); }
++a:hover { color: var(--slope-green-hover); }
++h1, h2, h3, h4, h5, h6 { color: #263d30; }
++.site-nav { background: #fff; border-bottom: 3px solid var(--slope-green); box-shadow: 0 2px 14px rgba(29, 58, 40, .06); }
++.site-nav .navbar-brand { color: var(--slope-green); }
++.brand-place { color: var(--slope-brown); font-size: .75em; font-weight: 500; }
++.site-nav .nav-link { color: #385445; border-radius: .5rem; padding: .5rem .75rem; text-decoration: none; }
++.site-nav .nav-link:hover, .site-nav .nav-link:focus-visible { color: var(--slope-green); background: #ecf3ec; }
++.site-nav .nav-link.active { color: var(--slope-green); background: #e4eee5; font-weight: 700; }
++.site-nav .nav-logout { margin: 0; }
++.page-heading { border-left: 4px solid var(--slope-brown); padding-left: 1rem; }
++.page-subtitle { color: #52645a; }
++.card { border: 1px solid var(--slope-border); border-radius: .75rem; box-shadow: 0 2px 10px rgba(35, 61, 43, .04); transition: border-color .18s ease, box-shadow .18s ease; }
++.card:hover { border-color: #90aa92; box-shadow: 0 4px 14px rgba(35, 61, 43, .08); }
++.card-header { background: #fafbf8; border-bottom-color: var(--slope-border); border-radius: .75rem .75rem 0 0 !important; }
++.card-header h2, .card-header h3, .card-header h5 { margin-bottom: 0; }
++.btn { border-radius: .5rem; transition: background-color .18s ease, border-color .18s ease, color .18s ease, transform .18s ease; }
++.btn:not(:disabled):hover { transform: translateY(-1px); }
++.btn:not(:disabled):active { transform: translateY(0); }
++.btn-primary { --bs-btn-bg: var(--slope-green); --bs-btn-border-color: var(--slope-green); --bs-btn-hover-bg: var(--slope-green-hover); --bs-btn-hover-border-color: var(--slope-green-hover); --bs-btn-active-bg: var(--slope-green-hover); --bs-btn-active-border-color: var(--slope-green-hover); --bs-btn-disabled-bg: var(--slope-green); --bs-btn-disabled-border-color: var(--slope-green); }
++.btn-outline-primary { --bs-btn-color: var(--slope-green); --bs-btn-border-color: var(--slope-green); --bs-btn-hover-bg: var(--slope-green); --bs-btn-hover-border-color: var(--slope-green); --bs-btn-active-bg: var(--slope-green-hover); --bs-btn-active-border-color: var(--slope-green-hover); }
++.btn-outline-success { --bs-btn-color: var(--slope-green); --bs-btn-border-color: #658877; --bs-btn-hover-bg: var(--slope-green); --bs-btn-hover-border-color: var(--slope-green); }
++.btn-outline-secondary { --bs-btn-color: var(--slope-brown); --bs-btn-border-color: #a38b72; --bs-btn-hover-bg: var(--slope-brown); --bs-btn-hover-border-color: var(--slope-brown); }
++.form-control, .form-select { border-color: #aebdb0; }
++.form-control:hover:not(:disabled), .form-select:hover:not(:disabled) { border-color: var(--slope-green); }
++.form-control:focus, .form-select:focus { border-color: var(--slope-green); box-shadow: 0 0 0 .25rem var(--slope-focus); }
++.form-floating > label { color: #52645a; }
++.form-text { color: #52645a; }
+ .table > :not(caption) > * > * { padding: .8rem; vertical-align: top; }
++.table thead th { color: #304b3b; white-space: nowrap; }
++.table-hover tbody tr:hover > * { --bs-table-accent-bg: #f0f5ef; }
+ .reading-location { min-width: 9rem; max-width: 18rem; overflow-wrap: anywhere; }
+-.reading-details[open] { min-width: 14rem; max-width: 22rem; }
+-.weather-details dt { font-size: .85rem; color: #52616b; }
++.weather-details dt { font-size: .85rem; color: #52645a; }
+ .weather-details dd { margin-bottom: .65rem; overflow-wrap: anywhere; }
+ .assessment-category .badge { font-size: 1.4rem; white-space: normal; }
+ .assessment-reasons { padding-left: 1.2rem; }
+-summary { cursor: pointer; color: #0756a3; }
+-summary:focus-visible, a:focus-visible, button:focus-visible { outline: 3px solid #0d6efd; outline-offset: 3px; }
+-.table-responsive:focus-visible { outline: 3px solid #0d6efd; }
++.map-legend .badge { display: inline-block; min-width: .75rem; min-height: .75rem; padding: 0; }
++.map-heading { border-left: 3px solid var(--slope-brown); border-radius: .3rem; }
++.modal-content { border: 1px solid var(--slope-border); border-radius: .75rem; }
++.modal-header { border-bottom-color: var(--slope-border); }
++.modal-footer { border-top-color: var(--slope-border); }
++.site-footer { border-top: 1px solid var(--slope-border); color: #52645a; }
++.auth-shell { max-width: 960px; }
++.auth-card { overflow: hidden; }
++.auth-section { padding: clamp(1.5rem, 4vw, 2.5rem); }
++.auth-register { border-left: 1px solid var(--slope-border); background: #fcfdf9; }
++.methodology-page { max-width: 960px; }
++.methodology-page > h2 { margin-top: 2rem; border-bottom: 1px solid var(--slope-border); padding-bottom: .5rem; }
++.methodology-page .table-responsive { border: 1px solid var(--slope-border); border-radius: .5rem; }
++.report-location-status { border-left: 3px solid var(--slope-green); background: #edf4ec; border-radius: .4rem; }
++:is(a, button, input, select, textarea, summary, .table-responsive):focus-visible { outline: 3px solid var(--slope-green); outline-offset: 2px; }
+ @media (max-width: 575.98px) {
+     .container > .d-flex, .container-fluid > .d-flex, .card-header.d-flex { flex-wrap: wrap; gap: .75rem; }
+-    .navbar-nav { gap: .25rem; }
+     .assessment-category .badge { font-size: 1.2rem; }
++    .map-heading { max-width: calc(100% - 4.5rem); }
++}
++@media (max-width: 991.98px) {
++    .auth-register { border-left: 0; border-top: 1px solid var(--slope-border); }
++    .site-nav .navbar-collapse { padding-top: .5rem; }
++}
++@media (prefers-reduced-motion: reduce) {
++    .card, .btn { transition: none; }
++    .btn:not(:disabled):hover { transform: none; }
+ }
+-
+-.table th { white-space: nowrap; }
+-.map-legend .badge { display: inline-block; min-width: .75rem; min-height: .75rem; padding: 0; }
+diff --git a/docs/frontend-design.md b/docs/frontend-design.md
+new file mode 100644
+index 0000000..e5c6187
+--- /dev/null
++++ b/docs/frontend-design.md
+@@ -0,0 +1,30 @@
++# SmartSlope frontend design
++
++The `su3` frontend uses the bundled Bootstrap 5, Leaflet, and existing jQuery refresh. `assets/css/frontend.css` holds the shared green and brown visual layer. No UI framework, icon pack, or new JavaScript dependency is added.
++
++## Page structure
++
++- A single PHP navigation renderer in `app/presentation.php` provides the desktop and Bootstrap-collapse mobile menu. Links vary by role; the current page is marked with `aria-current`.
++- The dashboard keeps the Irisan map first, followed in one column by the reading summary, awareness analyzer, location reports/history, and recent readings.
++- The report page keeps the map next to the form on wide screens and above it on phones. The selected-location message updates with the existing map/address logic.
++- Login and registration have separate forms in one responsive card. The readings and admin pages keep their existing data tables and modal workflows. The methodology page shares the navigation and content styles.
++
++## Controls and colors
++
++- Deep green (`#205b43`) is for primary actions and links; brown (`#725238`) is a quiet heading/map accent. The background is light and cards stay white.
++- Buttons gain a subtle hover shift. Cards gain a greener border and soft shadow without implying they are clickable. Focus remains visible; reduced-motion users get no hover translation.
++- The existing semantic rainfall category colors, destructive red actions, and neutral outdated/unavailable states retain their meaning. Green on a low reading is a category color, never a safety guarantee.
++- Text, phone, email, password, and textarea inputs use Bootstrap `.form-floating > .form-control`; selections use `.form-floating > .form-select`. Native datetime, file upload, checkboxes, and read-only values retain visible standard labels. Required and server-side checks remain authoritative.
++
++## Applying this design patch
++
++The patch for this design targets a clean `su3` checkout at commit `9425ea6`:
++
++```sh
++git switch su3
++git status --short
++git apply --check ~/Downloads/smartslope-su3-simple-design.patch
++git apply ~/Downloads/smartslope-su3-simple-design.patch
++```
++
++If `git apply --check` reports conflicts, compare the local checkout to the patch base before proceeding. Existing PHP routes, database schema, weather refresh, map selection, and admin POST actions are unchanged. Verify login/registration, map selection, report submission, reading details, admin review, and the mobile menu in Herd or XAMPP after applying.
+diff --git a/methodology.php b/methodology.php
+index 89917f2..53d0628 100644
+--- a/methodology.php
++++ b/methodology.php
+@@ -3,9 +3,9 @@ declare(strict_types=1);
+ require_once __DIR__ . '/app/bootstrap.php';
+ start_session(); require_login();
+ ?>
+-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmartSlope sources and methodology</title><link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>"></head>
+-<body><nav class="navbar navbar-light bg-light"><div class="container"><a class="navbar-brand" href="<?= e(url('dashboard.php')) ?>">SmartSlope</a><a href="<?= e(url('dashboard.php')) ?>">Back to dashboard</a></div></nav>
+-<main class="container py-4" style="max-width:960px"><h1>Sources and methodology</h1>
++<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmartSlope sources and methodology</title><link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>"><link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>"></head>
++<body><?= ui_navigation('methodology') ?>
++<main class="container py-4 methodology-page"><header class="page-heading mb-4"><h1 class="h2 mb-1">Sources and methodology</h1><p class="page-subtitle mb-0">How the SmartSlope prototype uses and explains data.</p></header>
+ <p>An API-based landslide awareness and alert prototype for Barangay Irisan. No physical sensors or AI are used. Categories are uncalibrated rainfall screening, not official warnings, landslide probabilities, or assurances of safety.</p>
+ <div class="alert alert-info">Refresh weather manually to fetch data and save a snapshot. No background monitoring runs while the website is unattended. Cached provider responses may be reused for 60 seconds; their original valid time stays unchanged.</div>
+ <h2 class="h4">Inputs → processing → output</h2>
+@@ -32,4 +32,4 @@ start_session(); require_login();
+ <ul><li><a href="https://www.pagasa.dost.gov.ph/">DOST-PAGASA weather information</a></li><li><a href="https://mgb.gov.ph/">Mines and Geosciences Bureau</a></li></ul>
+ <h2 class="h4">Validation still required</h2><p>Compare screening against documented local landslide events and non-event periods using comparable rainfall records. Record missed events and false alarms, and evaluate revised thresholds on separate periods. Software tests do not establish prediction accuracy. TEST/DEMO fixtures must never be presented as real environmental evidence.</p>
+ <p class="small">References: <a href="https://www.usgs.gov/publications/developing-hydro-meteorological-thresholds-shallow-landslide-initiation-and-early">USGS threshold development</a>; <a href="https://open-meteo.com/en/terms">Open-Meteo terms</a>.</p>
+-</main><footer class="container pb-4 small">Weather: Open-Meteo, CC BY 4.0. Map/address data where used: © OpenStreetMap contributors, ODbL.</footer></body></html>
++</main><footer class="container pb-4 small site-footer">Weather: Open-Meteo, CC BY 4.0. Map/address data where used: © OpenStreetMap contributors, ODbL.</footer><script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script></body></html>
+diff --git a/pages/dashboard.php b/pages/dashboard.php
+index cc26e47..2fea904 100644
+--- a/pages/dashboard.php
++++ b/pages/dashboard.php
+@@ -145,25 +145,12 @@ if ($selectedLocId) {
+     <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
+ </head>
+ <body>
+-    <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
+-        <div class="container-fluid">
+-            <a class="navbar-brand" href="<?= url() ?>">SmartSlope</a>
+-            <div class="navbar-nav ms-auto">
+-                <?php if ($isAdmin): ?>
+-                    <a class="nav-link" href="<?= url('admin.php') ?>">Admin</a>
+-                <?php else: ?>
+-                    <a class="nav-link" href="<?= url('report.php') ?>">Submit Report</a>
+-                <?php endif; ?>
+-                <a class="nav-link" href="<?= url('readings.php') ?>">All Readings</a>
+-                <a class="nav-link" href="<?= e(url('methodology.php')) ?>">Sources &amp; methodology</a>
+-                <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
+-            </div>
+-        </div>
+-    </nav>
++    <?= ui_navigation('dashboard') ?>
+ 
+     <div class="container-fluid px-3 px-lg-4 my-4">
+-        <div class="d-flex justify-content-between align-items-center mb-4">
+-            <h2>Welcome, <?= e($_SESSION['full_name']) ?> (<?= e($_SESSION['role']) ?>)</h2>
++        <div class="page-heading mb-4">
++            <h1 class="h2 mb-1">Irisan dashboard</h1>
++            <p class="page-subtitle mb-0">Welcome, <?= e($_SESSION['full_name']) ?>. Select a point on the map to view its saved information.</p>
+         </div>
+ 
+         <?php if ($msg = flash('success')): ?>
+@@ -234,7 +221,7 @@ if ($selectedLocId) {
+                         <h2 class="h5 mb-0">Landslide awareness analyzer</h2>
+                         <?php if ($selectedLocId && $selectedLoc): ?>
+                             <button type="button" id="refresh-weather" class="btn btn-sm btn-outline-primary">
+-                                <i class="bi bi-arrow-clockwise"></i> Refresh Weather
++                                Refresh weather
+                             </button>
+                         <?php endif; ?>
+                     </div>
+@@ -596,6 +583,6 @@ if ($selectedLocId) {
+             map.setView([selectedLoc.lat, selectedLoc.lng], 16);
+         <?php endif; ?>
+     </script>
+-<footer class="container py-3 small text-muted">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
++<footer class="container py-3 small site-footer">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
+ </body>
+ </html>
+diff --git a/pages/login.php b/pages/login.php
+index 41ed56d..0d02a6a 100644
+--- a/pages/login.php
++++ b/pages/login.php
+@@ -72,73 +72,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
+     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+     <title>SmartSlope - Login</title>
+     <link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>">
++    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
+ </head>
+ <body>
+-    <div class="container my-5">
+-        <div class="row justify-content-center">
+-            <div class="col-md-6 col-lg-4">
+-                <div class="card shadow">
+-                    <div class="card-body">
+-                        <h2 class="text-center mb-4">SmartSlope</h2>
+-                        <p class="text-center text-muted mb-4">Barangay Irisan, Baguio City</p>
+-
+-                        <?php if ($msg = flash('error')): ?>
+-                            <div class="alert alert-danger"><?= e($msg) ?></div>
+-                        <?php endif; ?>
+-
+-                        <?php if ($msg = flash('success')): ?>
+-                            <div class="alert alert-success"><?= e($msg) ?></div>
+-                        <?php endif; ?>
+-
+-                        <h3 class="h5 mb-3">Login</h3>
+-                        <form method="post" class="mb-4">
+-                            <?= csrf_field() ?>
+-                            <input type="hidden" name="login" value="1">
+-                            <div class="mb-3">
+-                                <label class="form-label">Username</label>
+-                                <input type="text" name="username" class="form-control" required autofocus>
+-                            </div>
+-                            <div class="mb-3">
+-                                <label class="form-label">Password</label>
+-                                <input type="password" name="password" class="form-control" required>
+-                            </div>
+-                            <button type="submit" class="btn btn-primary w-100">Login</button>
+-                        </form>
+-
+-                        <hr>
+-
+-                        <h3 class="h5 mb-3">Register</h3>
+-                        <form method="post">
+-                            <?= csrf_field() ?>
+-                            <input type="hidden" name="register" value="1">
+-                            <div class="mb-3">
+-                                <label class="form-label">Full Name</label>
+-                                <input type="text" name="full_name" class="form-control" required>
+-                            </div>
+-                            <div class="mb-3">
+-                                <label class="form-label">Username</label>
+-                                <input type="text" name="username" class="form-control" required>
+-                            </div>
+-                            <div class="mb-3">
+-                                <label class="form-label">Email</label>
+-                                <input type="email" name="email" class="form-control" required>
+-                            </div>
+-                            <div class="mb-3">
+-                                <label class="form-label">Phone</label>
+-                                <input type="tel" name="phone" class="form-control" required>
+-                            </div>
+-                            <div class="mb-3">
+-                                <label class="form-label">Password</label>
+-                                <input type="password" name="password" class="form-control" minlength="8" required>
+-                            </div>
+-                            <button type="submit" class="btn btn-outline-secondary w-100">Register</button>
+-                        </form>
+-                    </div>
+-                </div>
++    <main class="container auth-shell py-5">
++        <div class="text-center mb-4">
++            <h1 class="h2 mb-1">SmartSlope</h1>
++            <p class="page-subtitle">Landslide awareness for Barangay Irisan, Baguio City</p>
++        </div>
++        <?php if ($msg = flash('error')): ?>
++            <div class="alert alert-danger" role="alert"><?= e($msg) ?></div>
++        <?php endif; ?>
++        <?php if ($msg = flash('success')): ?>
++            <div class="alert alert-success" role="status"><?= e($msg) ?></div>
++        <?php endif; ?>
++        <div class="card auth-card">
++            <div class="row g-0">
++                <section class="col-lg-5 auth-section" aria-labelledby="login-title">
++                    <h2 id="login-title" class="h4 mb-1">Log in</h2>
++                    <p class="page-subtitle mb-4">Continue to the Irisan dashboard.</p>
++                    <form method="post">
++                        <?= csrf_field() ?>
++                        <input type="hidden" name="login" value="1">
++                        <div class="form-floating mb-3">
++                            <input type="text" name="username" id="login_username" class="form-control" placeholder="Username" autocomplete="username" required autofocus>
++                            <label for="login_username">Username</label>
++                        </div>
++                        <div class="form-floating mb-3">
++                            <input type="password" name="password" id="login_password" class="form-control" placeholder="Password" autocomplete="current-password" required>
++                            <label for="login_password">Password</label>
++                        </div>
++                        <button type="submit" class="btn btn-primary w-100">Log in</button>
++                    </form>
++                </section>
++                <section class="col-lg-7 auth-section auth-register" aria-labelledby="register-title">
++                    <h2 id="register-title" class="h4 mb-1">Create an account</h2>
++                    <p class="page-subtitle mb-4">Register as a resident to submit observations.</p>
++                    <form method="post">
++                        <?= csrf_field() ?>
++                        <input type="hidden" name="register" value="1">
++                        <div class="row g-3">
++                            <div class="col-sm-6"><div class="form-floating">
++                                <input type="text" name="full_name" id="register_name" class="form-control" placeholder="Full name" maxlength="100" autocomplete="name" required>
++                                <label for="register_name">Full name</label>
++                            </div></div>
++                            <div class="col-sm-6"><div class="form-floating">
++                                <input type="text" name="username" id="register_username" class="form-control" placeholder="Username" minlength="3" maxlength="50" pattern="[A-Za-z0-9_]{3,50}" autocomplete="username" required>
++                                <label for="register_username">Username</label>
++                            </div></div>
++                            <div class="col-sm-6"><div class="form-floating">
++                                <input type="email" name="email" id="register_email" class="form-control" placeholder="Email" maxlength="254" autocomplete="email" required>
++                                <label for="register_email">Email</label>
++                            </div></div>
++                            <div class="col-sm-6"><div class="form-floating">
++                                <input type="tel" name="phone" id="register_phone" class="form-control" placeholder="Phone" maxlength="16" pattern="\+?[0-9]{10,15}" autocomplete="tel" required>
++                                <label for="register_phone">Phone</label>
++                            </div></div>
++                            <div class="col-12"><div class="form-floating">
++                                <input type="password" name="password" id="register_password" class="form-control" placeholder="Password" minlength="8" maxlength="72" autocomplete="new-password" required>
++                                <label for="register_password">Password</label>
++                            </div><div class="form-text">Use 8–72 characters. Phone numbers use 10–15 digits, optionally starting with +.</div></div>
++                            <div class="col-12"><button type="submit" class="btn btn-primary w-100">Create account</button></div>
++                        </div>
++                    </form>
++                </section>
+             </div>
+         </div>
+-    </div>
+-
++        <p class="text-center small page-subtitle mt-4">SmartSlope is an academic prototype; see the sources and methodology after signing in.</p>
++    </main>
+     <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
+ </body>
+ </html>
+diff --git a/pages/report.php b/pages/report.php
+index 1144af4..d5339c7 100644
+--- a/pages/report.php
++++ b/pages/report.php
+@@ -172,21 +172,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+     <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
+ </head>
+ <body>
+-    <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
+-        <div class="container-fluid">
+-            <a class="navbar-brand" href="<?= url() ?>">SmartSlope</a>
+-            <div class="navbar-nav ms-auto">
+-                <a class="nav-link" href="<?= url('dashboard.php') ?>">Dashboard</a>
+-                <a class="nav-link" href="<?= url('report.php') ?>">Submit Report</a>
+-                <a class="nav-link" href="<?= e(url('methodology.php')) ?>">Sources &amp; methodology</a>
+-                <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
+-            </div>
+-        </div>
+-    </nav>
++    <?= ui_navigation('report') ?>
+ 
+     <div class="container-fluid px-3 px-lg-4 my-4">
+         <div class="d-flex justify-content-between align-items-center mb-4">
+-            <h2>Submit Ground Report</h2>
++            <div class="page-heading"><h1 class="h2 mb-1">Submit ground report</h1><p class="page-subtitle mb-0">Share an observation within Barangay Irisan.</p></div>
+             <a href="<?= url('dashboard.php') ?>" class="btn btn-outline-secondary">Back to Dashboard</a>
+         </div>
+ 
+@@ -215,16 +205,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                     <div class="card-body">
+                         <p class="small text-muted">USER-SUBMITTED observations. Submission does not confirm a landslide or change the rainfall category.</p>
+                         <form method="post" id="reportForm">
+-                            <div class="mb-3"><label for="report_type" class="form-label">Observed condition *</label>
+-                            <select id="report_type" name="report_type" class="form-select" required>
+-                            <?php foreach (REPORT_TYPES as $key=>$label): ?><option value="<?= e($key) ?>"><?= e($label) ?></option><?php endforeach; ?>
+-                            </select></div>
++                            <div class="form-floating mb-3">
++                                <select id="report_type" name="report_type" class="form-select" required>
++                                    <option value="" selected disabled>Choose a condition</option>
++                                    <?php foreach (REPORT_TYPES as $key=>$label): ?><option value="<?= e($key) ?>"><?= e($label) ?></option><?php endforeach; ?>
++                                </select>
++                                <label for="report_type">Observed condition *</label>
++                            </div>
+                             <div class="mb-3"><label for="occurred_at" class="form-label">When did you observe it? (Philippine time)</label>
+                             <input type="datetime-local" id="occurred_at" name="occurred_at" class="form-control"><small class="text-muted">Leave blank if unknown.</small></div>
+                             <?= csrf_field() ?>
+                             <div class="mb-3">
+-                                <label class="form-label" for="locationSelect">Location *</label>
+-                                <select name="location_id" id="locationSelect" class="form-select" required aria-describedby="locationHelp selectedAddress">
++                                <div class="form-floating">
++                                    <select name="location_id" id="locationSelect" class="form-select" required aria-describedby="locationHelp selectedAddress">
+                                     <option value="">Select a location...</option>
+                                     <option id="mapPointOption" value="map-point" hidden>Selected map point</option>
+                                     <?php foreach ($locations as $loc): ?>
+@@ -236,37 +229,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                                             <?= $loc['lat'] ? ' - ' . sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) : '' ?>
+                                         </option>
+                                     <?php endforeach; ?>
+-                                </select>
++                                    </select>
++                                    <label for="locationSelect">Location *</label>
++                                </div>
+                                 <input type="hidden" name="report_lat" id="reportLat" value="">
+                                 <input type="hidden" name="report_lng" id="reportLng" value="">
+                                 <input type="hidden" name="report_address" id="reportAddress" value="">
+                                 <small id="locationHelp" class="form-text d-block">Choose an existing location or click inside the Irisan map to select a new point.</small>
+-                                <small id="selectedAddress" class="form-text text-muted" aria-live="polite"></small>
++                                <div class="report-location-status p-2 mt-2 small"><strong>Selected location:</strong> <span id="selectedAddress" aria-live="polite">Choose a point on the map or an existing location.</span></div>
+                             </div>
+ 
+-                            <div class="mb-3">
+-                                <label class="form-label" for="house_landmark">House/Landmark *</label>
++                            <div class="form-floating mb-3">
+                                 <input type="text" name="house_landmark" id="house_landmark" class="form-control"
+-                                        placeholder="Your street, house number, or nearby landmark" maxlength="255" required>
++                                        placeholder="House or landmark" maxlength="255" required>
++                                <label for="house_landmark">House or nearby landmark *</label>
+                             </div>
+ 
+                             <div class="mb-3">
+-                                <label class="form-label" for="message">Message *</label>
+-                                <textarea name="message" id="message" class="form-control" rows="4"
+-                                          placeholder="Describe the landslide risk or condition..." required></textarea>
++                                <div class="form-floating">
++                                    <textarea name="message" id="message" class="form-control" style="height: 8rem"
++                                              placeholder="Describe what you observed" required></textarea>
++                                    <label for="message">Describe what you observed *</label>
++                                </div>
+                                 <small class="text-muted">Be as specific as possible about what you observed.</small>
+                             </div>
+ 
+                             <div class="row">
+                                 <div class="col-sm-6 mb-3">
+-                                    <label class="form-label" for="contact_phone">Contact Phone *</label>
+-                                    <input type="tel" name="contact_phone" id="contact_phone" class="form-control" maxlength="16" pattern="\+?[0-9]{10,15}" autocomplete="tel" title="Use 10 to 15 digits, optionally starting with +."
+-                                           value="<?= e($_SESSION['phone'] ?? '') ?>" required>
++                                    <div class="form-floating">
++                                        <input type="tel" name="contact_phone" id="contact_phone" class="form-control" maxlength="16" pattern="\+?[0-9]{10,15}" autocomplete="tel" title="Use 10 to 15 digits, optionally starting with +."
++                                               placeholder="Contact phone" value="<?= e($_SESSION['phone'] ?? '') ?>" required>
++                                        <label for="contact_phone">Contact phone *</label>
++                                    </div>
+                                 </div>
+                                 <div class="col-sm-6 mb-3">
+-                                    <label class="form-label" for="contact_email">Contact Email</label>
+-                                    <input type="email" name="contact_email" id="contact_email" class="form-control" maxlength="254" autocomplete="email"
+-                                           value="<?= e($_SESSION['email'] ?? '') ?>">
++                                    <div class="form-floating">
++                                        <input type="email" name="contact_email" id="contact_email" class="form-control" maxlength="254" autocomplete="email"
++                                               placeholder="Contact email" value="<?= e($_SESSION['email'] ?? '') ?>">
++                                        <label for="contact_email">Contact email</label>
++                                    </div>
+                                 </div>
+                             </div>
+ 
+@@ -443,10 +444,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                 document.getElementById('reportLat').value = '';
+                 document.getElementById('reportLng').value = '';
+                 document.getElementById('reportAddress').value = '';
+-                document.getElementById('selectedAddress').textContent = '';
++                document.getElementById('selectedAddress').textContent = 'Choose a point on the map or an existing location.';
+             }
+         });
+     </script>
+-<footer class="container py-3 small text-muted">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
++<footer class="container py-3 small site-footer">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
+ </body>
+ </html>
+diff --git a/readings.php b/readings.php
+index 741fd91..f06dc52 100644
+--- a/readings.php
++++ b/readings.php
+@@ -27,21 +27,11 @@ if (get('action') === 'export') {
+     <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
+ </head>
+ <body>
+-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+-        <div class="container-fluid">
+-            <a class="navbar-brand" href="<?= url() ?>">SmartSlope</a>
+-            <div class="navbar-nav">
+-                <a class="nav-link" href="<?= url('dashboard.php') ?>">Dashboard</a>
+-                <a class="nav-link" href="<?= url('readings.php') ?>">All Readings</a>
+-                <a class="nav-link" href="<?= e(url('methodology.php')) ?>">Sources &amp; methodology</a>
+-                <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
+-            </div>
+-        </div>
+-    </nav>
++    <?= ui_navigation('readings') ?>
+ 
+     <div class="container my-4">
+         <div class="d-flex justify-content-between align-items-center mb-4">
+-            <h2>Weather Readings</h2>
++            <div class="page-heading"><h1 class="h2 mb-1">Weather readings</h1><p class="page-subtitle mb-0">Saved observations for Barangay Irisan.</p></div>
+             <div>
+                 <?php if ($isAdmin): ?>
+                     <form id="bulkReadingsPageForm" method="post" action="<?= e(url('admin.php')) ?>" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="d-inline">
+@@ -53,7 +43,7 @@ if (get('action') === 'export') {
+             </div>
+         </div>
+ 
+-        <p class="small text-muted">Latest 100 saved readings across active locations. Current means observed within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours. SmartSlope is an academic prototype, not an official warning service. Scroll the table or expand details for more weather information.</p>
++        <p class="small text-muted">Latest 100 saved readings across active locations. Current means observed within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours. SmartSlope is an academic prototype, not an official warning service. Scroll the table or open a details dialog for more weather information.</p>
+         <div class="card">
+             <div class="card-body p-0">
+                 <div class="table-responsive" tabindex="0" role="region" aria-label="Scrollable records table">
+@@ -72,6 +62,6 @@ if (get('action') === 'export') {
+     <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
+     <script src="<?= e(url('assets/js/reading-modal.js')) ?>"></script>
+     <?php if ($isAdmin): ?><script src="<?= e(url('assets/js/bulk-select.js')) ?>"></script><?php endif; ?>
+-<footer class="container py-3 small text-muted">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
++<footer class="container py-3 small site-footer">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
+ </body>
+ </html>

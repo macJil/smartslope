@@ -172,21 +172,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="<?= url() ?>">SmartSlope</a>
-            <div class="navbar-nav ms-auto">
-                <a class="nav-link" href="<?= url('dashboard.php') ?>">Dashboard</a>
-                <a class="nav-link" href="<?= url('report.php') ?>">Submit Report</a>
-                <a class="nav-link" href="<?= e(url('methodology.php')) ?>">Sources &amp; methodology</a>
-                <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
-            </div>
-        </div>
-    </nav>
+    <?= ui_navigation('report') ?>
 
     <div class="container-fluid px-3 px-lg-4 my-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>Submit Ground Report</h2>
+            <div class="page-heading"><h1 class="h2 mb-1">Submit ground report</h1><p class="page-subtitle mb-0">Share an observation within Barangay Irisan.</p></div>
             <a href="<?= url('dashboard.php') ?>" class="btn btn-outline-secondary">Back to Dashboard</a>
         </div>
 
@@ -215,16 +205,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="card-body">
                         <p class="small text-muted">USER-SUBMITTED observations. Submission does not confirm a landslide or change the rainfall category.</p>
                         <form method="post" id="reportForm">
-                            <div class="mb-3"><label for="report_type" class="form-label">Observed condition *</label>
-                            <select id="report_type" name="report_type" class="form-select" required>
-                            <?php foreach (REPORT_TYPES as $key=>$label): ?><option value="<?= e($key) ?>"><?= e($label) ?></option><?php endforeach; ?>
-                            </select></div>
+                            <div class="form-floating mb-3">
+                                <select id="report_type" name="report_type" class="form-select" required>
+                                    <option value="" selected disabled>Choose a condition</option>
+                                    <?php foreach (REPORT_TYPES as $key=>$label): ?><option value="<?= e($key) ?>"><?= e($label) ?></option><?php endforeach; ?>
+                                </select>
+                                <label for="report_type">Observed condition *</label>
+                            </div>
                             <div class="mb-3"><label for="occurred_at" class="form-label">When did you observe it? (Philippine time)</label>
                             <input type="datetime-local" id="occurred_at" name="occurred_at" class="form-control"><small class="text-muted">Leave blank if unknown.</small></div>
                             <?= csrf_field() ?>
                             <div class="mb-3">
-                                <label class="form-label" for="locationSelect">Location *</label>
-                                <select name="location_id" id="locationSelect" class="form-select" required aria-describedby="locationHelp selectedAddress">
+                                <div class="form-floating">
+                                    <select name="location_id" id="locationSelect" class="form-select" required aria-describedby="locationHelp selectedAddress">
                                     <option value="">Select a location...</option>
                                     <option id="mapPointOption" value="map-point" hidden>Selected map point</option>
                                     <?php foreach ($locations as $loc): ?>
@@ -236,37 +229,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             <?= $loc['lat'] ? ' - ' . sprintf('%.5f, %.5f', $loc['lat'], $loc['lng']) : '' ?>
                                         </option>
                                     <?php endforeach; ?>
-                                </select>
+                                    </select>
+                                    <label for="locationSelect">Location *</label>
+                                </div>
                                 <input type="hidden" name="report_lat" id="reportLat" value="">
                                 <input type="hidden" name="report_lng" id="reportLng" value="">
                                 <input type="hidden" name="report_address" id="reportAddress" value="">
                                 <small id="locationHelp" class="form-text d-block">Choose an existing location or click inside the Irisan map to select a new point.</small>
-                                <small id="selectedAddress" class="form-text text-muted" aria-live="polite"></small>
+                                <div class="report-location-status p-2 mt-2 small"><strong>Selected location:</strong> <span id="selectedAddress" aria-live="polite">Choose a point on the map or an existing location.</span></div>
                             </div>
 
-                            <div class="mb-3">
-                                <label class="form-label" for="house_landmark">House/Landmark *</label>
+                            <div class="form-floating mb-3">
                                 <input type="text" name="house_landmark" id="house_landmark" class="form-control"
-                                        placeholder="Your street, house number, or nearby landmark" maxlength="255" required>
+                                        placeholder="House or landmark" maxlength="255" required>
+                                <label for="house_landmark">House or nearby landmark *</label>
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label" for="message">Message *</label>
-                                <textarea name="message" id="message" class="form-control" rows="4"
-                                          placeholder="Describe the landslide risk or condition..." required></textarea>
+                                <div class="form-floating">
+                                    <textarea name="message" id="message" class="form-control" style="height: 8rem"
+                                              placeholder="Describe what you observed" required></textarea>
+                                    <label for="message">Describe what you observed *</label>
+                                </div>
                                 <small class="text-muted">Be as specific as possible about what you observed.</small>
                             </div>
 
                             <div class="row">
                                 <div class="col-sm-6 mb-3">
-                                    <label class="form-label" for="contact_phone">Contact Phone *</label>
-                                    <input type="tel" name="contact_phone" id="contact_phone" class="form-control" maxlength="16" pattern="\+?[0-9]{10,15}" autocomplete="tel" title="Use 10 to 15 digits, optionally starting with +."
-                                           value="<?= e($_SESSION['phone'] ?? '') ?>" required>
+                                    <div class="form-floating">
+                                        <input type="tel" name="contact_phone" id="contact_phone" class="form-control" maxlength="16" pattern="\+?[0-9]{10,15}" autocomplete="tel" title="Use 10 to 15 digits, optionally starting with +."
+                                               placeholder="Contact phone" value="<?= e($_SESSION['phone'] ?? '') ?>" required>
+                                        <label for="contact_phone">Contact phone *</label>
+                                    </div>
                                 </div>
                                 <div class="col-sm-6 mb-3">
-                                    <label class="form-label" for="contact_email">Contact Email</label>
-                                    <input type="email" name="contact_email" id="contact_email" class="form-control" maxlength="254" autocomplete="email"
-                                           value="<?= e($_SESSION['email'] ?? '') ?>">
+                                    <div class="form-floating">
+                                        <input type="email" name="contact_email" id="contact_email" class="form-control" maxlength="254" autocomplete="email"
+                                               placeholder="Contact email" value="<?= e($_SESSION['email'] ?? '') ?>">
+                                        <label for="contact_email">Contact email</label>
+                                    </div>
                                 </div>
                             </div>
 
@@ -443,10 +444,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 document.getElementById('reportLat').value = '';
                 document.getElementById('reportLng').value = '';
                 document.getElementById('reportAddress').value = '';
-                document.getElementById('selectedAddress').textContent = '';
+                document.getElementById('selectedAddress').textContent = 'Choose a point on the map or an existing location.';
             }
         });
     </script>
-<footer class="container py-3 small text-muted">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
+<footer class="container py-3 small site-footer">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
 </body>
 </html>

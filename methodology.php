@@ -3,9 +3,9 @@ declare(strict_types=1);
 require_once __DIR__ . '/app/bootstrap.php';
 start_session(); require_login();
 ?>
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmartSlope sources and methodology</title><link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>"></head>
-<body><nav class="navbar navbar-light bg-light"><div class="container"><a class="navbar-brand" href="<?= e(url('dashboard.php')) ?>">SmartSlope</a><a href="<?= e(url('dashboard.php')) ?>">Back to dashboard</a></div></nav>
-<main class="container py-4" style="max-width:960px"><h1>Sources and methodology</h1>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmartSlope sources and methodology</title><link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>"><link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>"></head>
+<body><?= ui_navigation('methodology') ?>
+<main class="container py-4 methodology-page"><header class="page-heading mb-4"><h1 class="h2 mb-1">Sources and methodology</h1><p class="page-subtitle mb-0">How the SmartSlope prototype uses and explains data.</p></header>
 <p>An API-based landslide awareness and alert prototype for Barangay Irisan. No physical sensors or AI are used. Categories are uncalibrated rainfall screening, not official warnings, landslide probabilities, or assurances of safety.</p>
 <div class="alert alert-info">Refresh weather manually to fetch data and save a snapshot. No background monitoring runs while the website is unattended. Cached provider responses may be reused for 60 seconds; their original valid time stays unchanged.</div>
 <h2 class="h4">Inputs → processing → output</h2>
@@ -32,4 +32,4 @@ start_session(); require_login();
 <ul><li><a href="https://www.pagasa.dost.gov.ph/">DOST-PAGASA weather information</a></li><li><a href="https://mgb.gov.ph/">Mines and Geosciences Bureau</a></li></ul>
 <h2 class="h4">Validation still required</h2><p>Compare screening against documented local landslide events and non-event periods using comparable rainfall records. Record missed events and false alarms, and evaluate revised thresholds on separate periods. Software tests do not establish prediction accuracy. TEST/DEMO fixtures must never be presented as real environmental evidence.</p>
 <p class="small">References: <a href="https://www.usgs.gov/publications/developing-hydro-meteorological-thresholds-shallow-landslide-initiation-and-early">USGS threshold development</a>; <a href="https://open-meteo.com/en/terms">Open-Meteo terms</a>.</p>
-</main><footer class="container pb-4 small">Weather: Open-Meteo, CC BY 4.0. Map/address data where used: © OpenStreetMap contributors, ODbL.</footer></body></html>
+</main><footer class="container pb-4 small site-footer">Weather: Open-Meteo, CC BY 4.0. Map/address data where used: © OpenStreetMap contributors, ODbL.</footer><script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script></body></html>

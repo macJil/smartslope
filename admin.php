@@ -152,25 +152,14 @@ foreach ($reports as $report) {
     <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="<?= url() ?>">SmartSlope Admin</a>
-            <div class="navbar-nav">
-                <a class="nav-link" href="<?= url('dashboard.php') ?>">Dashboard</a>
-                <a class="nav-link" href="<?= url('admin.php') ?>">Admin Panel</a>
-                <a class="nav-link" href="<?= url('readings.php') ?>">All Readings</a>
-                <a class="nav-link" href="<?= e(url('methodology.php')) ?>">Sources &amp; methodology</a>
-                <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
-            </div>
-        </div>
-    </nav>
+    <?= ui_navigation('admin') ?>
 
     <div class="container my-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h2>Admin Panel</h2>
+            <div class="page-heading"><h1 class="h2 mb-1">Admin panel</h1><p class="page-subtitle mb-0">Review community reports, locations, and saved readings.</p></div>
             <div>
                 <a href="<?= url('admin.php?action=export') ?>" class="btn btn-outline-success">
-                    <i class="bi bi-download"></i> Export Readings CSV
+                    Export readings CSV
                 </a>
             </div>
         </div>
@@ -575,6 +564,6 @@ foreach ($reports as $report) {
         });
 
     </script>
-<footer class="container py-3 small text-muted">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
+<footer class="container py-3 small site-footer">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
 </body>
 </html>
