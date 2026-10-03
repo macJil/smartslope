@@ -6,7 +6,7 @@ The current schema is defined in `database/schema.sql`. It uses three InnoDB tab
 
 ```mermaid
 erDiagram
-    USERS ||--o{ EVENTS : submits_or_reviews
+    USERS ||--o{ EVENTS : submits
     LOCATIONS ||--o{ EVENTS : has
     USERS {
         int id PK
@@ -40,10 +40,12 @@ erDiagram
         string source
         string message
         enum status
+        int reviewed_by
+        datetime reviewed_at
     }
 ```
 
-`events.user_id` points to the submitting user for reports and may be null for provider readings. `events.location_id` is required. The schema sets location deletion to cascade and user deletion to set the event's user reference to null; the UI normally deactivates a location to preserve useful history.
+`events.user_id` points to the submitting user for reports and may be null for provider readings. `events.location_id` is required. The schema sets location deletion to cascade and user deletion to set the event's user reference to null; the UI normally deactivates a location to preserve useful history. `events.reviewed_by` stores the administrator ID as review metadata, but the schema does not declare it as a foreign key.
 
 ## Main fields
 
