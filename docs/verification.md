@@ -2,7 +2,7 @@
 
 ## Reviewed revision
 
-This documentation review inspected branch `f1` at application commit `ec7003130d1fd483dce3c167adbd07f662510407` (2026-10-03). That commit added normalized `readings` and `reports` detail tables, changed repository queries and migration, and accidentally introduced Git conflict markers into `README.md`. The README and documentation were corrected in subsequent documentation commits. The review inspected source and test definitions through GitHub; it did not provision a PHP/MySQL site or run the student's local browser session.
+This documentation review inspected branch `f1` at application commit `ec7003130d1fd483dce3c167adbd07f662510407` (2026-10-03). That commit added normalized `readings` and `reports` detail tables, changed repository queries and migration, and accidentally introduced Git conflict markers into `README.md`. The README and documentation were corrected in subsequent documentation commits. The review fetched the current PHP, browser JavaScript, test code and GeoJSON from GitHub. In this workspace, all top-level `assets/js/*.js` passed `node --check` and `node tests/map-boundary.test.cjs` passed 2/2. PHP is not installed here, and no PHP/MySQL or browser/server integration test was run during this review.
 
 ## Earlier team report
 
