@@ -24,7 +24,7 @@ if (get('action') === 'export') {
     <style>
         .badge-risk { font-size: 0.85em; }
     </style>
-    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
+    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>">
 </head>
 <body>
     <?= ui_navigation('readings') ?>

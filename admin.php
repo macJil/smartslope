@@ -142,14 +142,14 @@ foreach ($reports as $report) {
             text-align: center;
             box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
         }
-        .report-risk-low { background: #198754; }
+        .report-risk-low { background: var(--slope-green); }
         .report-risk-normal { background: #0d6efd; }
         .report-risk-medium { background: #ffc107; color: #212529; }
         .report-risk-high { background: #dc3545; }
         .report-risk-unavailable { background: #6c757d; }
         .report-message { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 6rem; }
     </style>
-    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
+    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>">
 </head>
 <body>
     <?= ui_navigation('admin') ?>
@@ -534,7 +534,7 @@ foreach ($reports as $report) {
                 .then(response => { if (!response.ok) throw new Error('Boundary unavailable'); return response.json(); })
                 .then(data => {
                     if (reportMapInstance !== currentMap) return;
-                    L.geoJSON(data, {interactive: false, style: {color: '#13589e', weight: 3, fillOpacity: 0.08}}).addTo(currentMap);
+                    L.geoJSON(data, {interactive: false, style: {color: '#705139', weight: 3, fillOpacity: 0.08}}).addTo(currentMap);
                 }).catch(() => { /* Marker and local tiles remain usable. */ });
             reportMapInstance.eachLayer(layer => {
                 if (layer instanceof L.Marker) reportMapInstance.removeLayer(layer);

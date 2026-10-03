@@ -46,7 +46,7 @@ $loc = get_location($reading['location_id']);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Reading</title>
     <link rel="stylesheet" href="<?= url('assets/css/bootstrap.min.css') ?>">
-    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
+    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>?v=<?= (int) filemtime(__DIR__ . '/../assets/css/frontend.css') ?>">
 </head>
 <body>
     <?= ui_navigation('admin') ?>

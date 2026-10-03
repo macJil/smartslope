@@ -77,9 +77,9 @@ if ($selectedLocId) {
             color: white;
             font-size: 10px;
         }
-        .marker-color-low { background: #28a745; }
-        .marker-color-normal { background: #007bff; }
-        .marker-color-medium { background: #ffc107; color: #000; }
+        .marker-color-low { background: var(--slope-green); }
+        .marker-color-normal { background: #0d6efd; }
+        .marker-color-medium { background: #ffc107; color: #212529; }
         .marker-color-high { background: #dc3545; }
         .marker-color-unknown { background: #6c757d; }
         .stale { opacity: 0.7; }
@@ -87,7 +87,7 @@ if ($selectedLocId) {
             width: 40px;
             height: 40px;
             border-radius: 50%;
-            background: #007bff;
+            background: #0d6efd;
             border: 3px solid white;
             box-shadow: 0 0 10px rgba(0,0,0,0.8);
             display: flex;
@@ -101,7 +101,7 @@ if ($selectedLocId) {
             height: 0;
             border-left: 10px solid transparent;
             border-right: 10px solid transparent;
-            border-top: 15px solid #007bff;
+            border-top: 15px solid #0d6efd;
             bottom: -15px;
             left: 50%;
             transform: translateX(-50%);
@@ -142,7 +142,7 @@ if ($selectedLocId) {
             }
         }
     </style>
-    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>">
+    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>?v=<?= (int) filemtime(__DIR__ . '/../assets/css/frontend.css') ?>">
 </head>
 <body>
     <?= ui_navigation('dashboard') ?>
@@ -173,7 +173,7 @@ if ($selectedLocId) {
                     <span><span class="badge bg-primary risk-badge me-1"></span>Normal</span>
                     <span><span class="badge bg-warning risk-badge me-1"></span>Medium</span>
                     <span><span class="badge bg-danger risk-badge me-1"></span>High</span>
-                    <span><span class="badge bg-secondary risk-badge me-1"></span>Unknown</span>
+                    <span><span class="badge bg-secondary risk-badge me-1"></span>Unavailable</span>
                     <span><span class="badge bg-info risk-badge me-1"></span>Selected</span>
                 </div>
             </div>
@@ -387,12 +387,12 @@ if ($selectedLocId) {
                 IrisanBoundary.load(data);
                 const boundaryLayer = L.geoJSON(data, {
                     interactive: false,
-                    style: { color: '#13589e', weight: 3, fillOpacity: 0.08 }
+                    style: { color: '#705139', weight: 3, fillOpacity: 0.08 }
                 }).addTo(map);
                 map.fitBounds(boundaryLayer.getBounds(), { padding: [32, 32], maxZoom: 14 });
             })
             .catch(() => {
-                L.rectangle(irisanBounds, {color: '#13589e', weight: 3, fillOpacity: 0.08, interactive: false}).addTo(map);
+                L.rectangle(irisanBounds, {color: '#705139', weight: 3, fillOpacity: 0.08, interactive: false}).addTo(map);
                 map.fitBounds(irisanBounds, { padding: [32, 32], maxZoom: 14 });
             });
 
