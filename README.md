@@ -1,46 +1,64 @@
-# SmartSlope | Irisan prototype
+# SmartSlope
 
-SmartSlope is a student prototype for rainfall screening and community ground-condition reporting in Barangay Irisan, Baguio City. It uses PHP 8.1+, PDO/MySQL, locally bundled Bootstrap, Leaflet and jQuery, an offline Irisan map, and Open-Meteo model weather data.
+SmartSlope is a PHP/MySQL academic prototype for rainfall screening and resident ground-condition reports in Barangay Irisan, Baguio City. It shows saved weather context on a local map and lets an administrator review reports. Its categories are demonstration rules, **not official landslide alerts or validated predictions**. A `low` category does not establish safety.
 
-Residents can register, select an Irisan point, refresh and inspect saved weather readings, and submit ground reports. Administrators can manage locations, review reports, correct a reading category with a reason, archive readings, and use CSV workflows. Rainfall categories are uncalibrated prototype rules, not official landslide warnings or validated predictions. `low` does not mean safe. There are no physical sensors, AI/ML model, verified Irisan hazard subset, or continuous background monitoring.
+## Technology and design
 
-## Documentation
+| Part | Used in this repository |
+| --- | --- |
+| Server | PHP 8.1+, PDO with MySQL, cURL, sessions and server-rendered pages |
+| Browser | HTML, CSS, Bootstrap 5, local Leaflet and map tiles, GeoJSON, jQuery AJAX and JavaScript |
+| Data | Five InnoDB tables: `users`, `locations`, `events`, `readings`, `reports` |
+| Interface | Responsive Bootstrap layout with a green and brown theme in `assets/css/frontend.css` |
 
-- [Project overview](PROJECT.md)
-- [Installation and migration](docs/installation.md)
-- [Resident and administrator manual](docs/user-manual.md)
-- [Database, data dictionary and ERD](docs/database.md)
-- [Architecture](docs/architecture.md)
-- [JSON API](docs/api.md)
-- [Data sources and provenance](docs/data-sources.md)
-- [Risk analysis](docs/analysis.md)
-- [Security](docs/security.md)
-- [Testing and verification](docs/testing.md)
-- [Startup concept](docs/startup.md)
-- [Presentation and demo](docs/presentation-and-demo.md)
-- [Defense questions](docs/defense-questions.md)
+No JavaScript framework or build process is required. PHP routes live in the project root and `pages/`; `actions/` handles forms, `api/` handles JSON, and `app/` holds authentication, database access, weather processing and analysis.
 
-Implementation history: [risk rules](docs/risk-rules.md), [event-detail migration](docs/awareness-upgrade.md), [acceptance checklist](docs/backend-test-checklist.md), and [verification record](docs/verification.md).
+## Main features
 
-## Current database
+- Resident registration/login, an Irisan map, saved reading history and a manually triggered weather refresh.
+- Resident reports with a location, ground-condition type, description and contact details.
+- Administrator location management, report review, reading category correction with a reason, archival and CSV workflows.
+- Authenticated `GET api/readings.php?location_id=ID` for saved readings and assessment; CSRF-protected `POST api/readings.php` to fetch Open-Meteo and save a new snapshot. GET does not contact the provider.
+- Local Bootstrap, Leaflet, GeoJSON and 110 map tiles. Saved dashboard data and reports can work without internet while the local PHP server and MySQL are available. Weather refresh needs internet. Optional Nominatim address lookup is off by default.
 
-`database/schema.sql` defines five tables: `users`, `locations`, `events`, `readings`, and `reports`. An `events` row holds the shared ID, location, submitter, type, and creation time. A reading or report has one detail row in its corresponding table, linked by `event_id`. The weather provider is recorded in `readings.source`; there is no `sensors` table. Confirm any separate teacher requirement for a sensor table with the instructor.
+## Install and run
 
-## Run locally
+1. Install PHP 8.1+ with `pdo_mysql` and cURL, MySQL and a local web server. Use Herd with DBngin on macOS or XAMPP with Apache/MySQL.
+2. Copy `.env.example` to `.env`; set the database host, port, name, username and password. Keep `.env` private. `APP_BASE_PATH` can remain empty for automatic detection.
+3. For a **new** database, import `database/schema.sql`. For an **existing legacy three-table database**, back it up, rehearse on a disposable copy, and run `php database/migrate-awareness.php` before serving this version. The migration creates `readings` and `reports`, copies legacy subtype values, checks matching rows and removes old subtype columns. It does not convert unrelated older schemas. Do not import the new schema over an existing database.
+4. Rotate the administrator password seeded by the SQL file before use with real data. Since this submission omits setup scripts, generate a local PHP hash without putting the password in the command text:
 
-1. Install PHP 8.1+ with PDO MySQL and cURL, MySQL, and a web server. Node.js is needed for the map test.
-2. Copy `.env.example` to `.env` and configure the actual MySQL host, port, credentials, and database name.
-3. For a new database, import `database/schema.sql`. For an existing legacy three-table database, back it up and run `php database/migrate-awareness.php` **before serving the updated application**. This migration creates reading/report detail tables, copies legacy fields, verifies parent/detail rows, then drops the old subtype columns. MySQL DDL is not fully transactional. Do not reimport the schema over existing data.
-4. Rotate the seeded administrator password with `php scripts/create_admin.php admin your-email@example.com +639123456780`; enter a unique email/phone and a password of at least 12 characters at the prompt.
-5. Open the Herd site root or `http://localhost/smartslope/` on XAMPP. Refresh needs internet access; bundled map assets work locally.
-6. Run the [tests](docs/testing.md) and perform HTTP checks on the actual host. Herd/Nginx ignores `.htaccess`, so configure equivalent access restrictions for internal paths.
+   ```bash
+   php -r 'fwrite(STDERR, "New admin password: "); $p=rtrim(fgets(STDIN), "\r\n"); if (strlen($p)<12 || strlen($p)>72) exit(1); echo password_hash($p, PASSWORD_DEFAULT), PHP_EOL;'
+   ```
 
-The admin screen also exposes a CSRF-protected **Migrate database** action when the detail schema is missing. Use a backup and prefer the CLI command for a larger existing database. The migration targets the earlier wide `events` schema, not an unrelated legacy schema.
+   Enter a private password of 12–72 bytes at the prompt. In your local MySQL tool, update the seeded administrator's `users.password` to the generated hash and set unique real `email` and `phone` values. Never store the plaintext password in SQL or Git. The input may be visible in the terminal, so use a private console. Public registration always creates a resident account.
+5. Open the Herd site root or `http://localhost/smartslope/` on XAMPP. Register a resident, sign in, select a point inside Irisan, refresh, submit a test report, and review it as admin.
 
-## Weather and interpretation
+`READING_MAX_AGE_SECONDS` defaults to 10800 (three hours). `NOMINATIM_ENABLED=0` keeps address lookup off. Location CSV export may generate `CSV_SIGNING_KEY` in `.env`; keep and back up that file. The admin page can offer a protected database migration button when required detail tables are missing, but use the CLI for a larger database.
 
-Open-Meteo hourly precipitation feeds complete 1h, 24h and 72h totals. `RiskAnalyzer` selects the strongest reached prototype threshold. Forecast and modeled soil moisture are context, not physical sensor readings. Missing, inconsistent, stale or invalid data cannot claim a current rainfall category. GET on `api/readings.php` reads saved data; authenticated CSRF-protected POST fetches and saves one new snapshot. A failed refresh retains history.
+## Database relationship
 
-The app uses PHP forms and sessions, PDO CRUD, an object-oriented risk class, jQuery AJAX, JSON, validation and security controls relevant to WEBSYS1 and IMDBSE2. The proposed Startup model has no measured demand, revenue or field validation. See the linked guides for precise behavior and limitations.
+`users` holds accounts and server-assigned roles. `locations` holds saved Irisan points. `events` holds the shared ID, location, submitter, event type and creation time. Each reading event has one `readings` detail row; each report event has one `reports` detail row, both linked through `event_id`. The report reviewer ID links to `users`. The SQL schema is the authoritative field and foreign-key definition. No `sensors` or `alerts` table exists; confirm any separate teacher sensor-table requirement with the instructor.
 
-Documentation reviewed against branch `f1` application commit `ec7003130d1fd483dce3c167adbd07f662510407` (2026-10-03); re-run tests on the final checkout used for defense.
+## Rainfall assessment and data sources
+
+PHP requests Open-Meteo model weather for the selected coordinates. Complete hourly precipitation supplies preceding 1-hour, 24-hour and 72-hour totals; a 24-hour forecast is shown separately. `app/RiskAnalyzer.php` selects the strongest reached threshold:
+
+| Category | 1 hour | 24 hours | 72 hours |
+| --- | ---: | ---: | ---: |
+| Normal | 10 mm | 25 mm | 50 mm |
+| Medium | 25 mm | 50 mm | 100 mm |
+| High | 50 mm | 100 mm | 150 mm |
+
+Values below all thresholds are `low` only when all three historical windows are complete and valid. Missing, inconsistent, future or old observations cannot support a current category. The freshness policy defaults to three hours. A failed refresh leaves saved history intact. Provider values are model estimates, not physical sensor readings at a home. Soil moisture and forecast are context; susceptibility and resident reports are separate from the rainfall score.
+
+The repository includes the Irisan GeoJSON boundary and local tiles. Their original provenance and redistribution rights still require review before public deployment. No verified Irisan hazard polygon subset or historical landslide validation catalog is bundled. Open-Meteo terms: https://open-meteo.com/en/terms. Optional Nominatim policy: https://operations.osmfoundation.org/policies/nominatim/. Keep attribution visible and review current provider terms before commercial use. Bundled Leaflet and jQuery license files remain with the assets.
+
+## Security, checks and limits
+
+Passwords use PHP hashing, login regenerates the session ID, roles are checked on the server, changing requests require POST and CSRF tokens, PDO uses prepared statements, and user content is escaped for HTML. `.htaccess` restricts internal paths on Apache when overrides are enabled. Herd/Nginx ignores `.htaccess`; configure equivalent denials for `.env`, `app/`, `data/`, `database/` and other internal files before exposing the site. Use HTTPS for network access and protect report contact data and CSV exports.
+
+The student team reported local component testing before the five-table migration. JavaScript syntax and the Irisan boundary test passed on the reviewed `f1` revision. **The revised PHP/MySQL migration and complete site flow still need a fresh local run** on the final checkout. Before submission or defense, lint PHP, rehearse migration with a backup, compare event/detail counts and representative values, and test login, report submission/review, refresh failure, reading correction, CSV and server access rules under the actual Herd/XAMPP setup. The development tests are omitted from this submission patch; retain the backup for rerunning them.
+
+SmartSlope has no physical sensors, continuous monitoring, AI/ML prediction, official warning integration, calibrated accuracy, field adoption or revenue claim. Follow official advisories and local authorities for real safety decisions.
