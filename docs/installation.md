@@ -19,11 +19,13 @@ This guide matches branch `f1`. Use PHP 8.1+, MySQL with the PDO MySQL driver, c
 ## Existing database
 
 1. Back up the database and project files.
-2. Confirm that the existing database is the current three-table `users`, `locations`, `events` design. Do not import `database/schema.sql` over data you want to keep.
-3. Set `.env` to the existing database, then run `php database/migrate-awareness.php` from the repository root. The CLI migration adds the awareness fields and history index to `events` if they are missing, and can be rerun. MySQL DDL may commit one change at a time, so keep the backup.
+2. Confirm that the existing database is the legacy three-table `users`, `locations`, wide `events` design. Do not import `database/schema.sql` over data you want to keep.
+3. Set `.env` to the existing database, then run `php database/migrate-awareness.php` from the repository root **before serving the updated application**. The repeatable migration creates `readings` and `reports`, copies subtype fields while preserving event IDs, verifies matching detail rows, then removes the old subtype columns. MySQL DDL may commit one change at a time; rehearse on a disposable copy and keep the backup.
 4. Open the app and test sign-in, a read-only dashboard load, a refresh, report submission and admin review before using real records.
 
 The migration does not convert a different legacy schema such as the older nine-table design. Compare it and plan a data migration separately before pointing this branch at that database.
+
+The admin page also offers a CSRF-protected **Migrate database** button if required detail tables/columns are missing. Prefer the CLI command for a larger database. A completed database has five tables.
 
 ## Local settings
 
