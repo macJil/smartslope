@@ -8,7 +8,7 @@
 - Administrators can review reports, manage locations and saved readings, adjust a reading's risk category with a reason, archive readings, and export data as CSV.
 - The weather refresh calls Open-Meteo from PHP, validates the response and timestamps, derives rainfall windows, applies the current prototype rules, and saves a snapshot.
 - A session-protected JSON endpoint returns readings, their assessment and notices. The dashboard refresh uses jQuery AJAX.
-- Three MySQL tables support the current application: `users`, `locations`, and `events`. `events.type` distinguishes weather readings from reports.
+- Five MySQL tables support the current application: `users`, `locations`, `events`, `readings`, and `reports`. `events.type` distinguishes shared records; one-to-one detail tables hold readings and reports.
 
 The branch does not contain physical sensors, an official alert feed, AI/ML, an independently validated landslide prediction model, or verified Irisan susceptibility polygons. “Low” is not a safety statement. See [analysis](docs/analysis.md) and [data sources](docs/data-sources.md).
 
@@ -42,4 +42,4 @@ The current feature set gives the team concrete examples for PHP forms and sessi
 
 ## Current snapshot
 
-Documentation is written against branch `f1`, commit `2bc89e742301721c9815b8df59c22b908a0f6db3` (“working”), checked 2026-10-03. The `f1` checkout may move after this snapshot; record a new commit SHA when the team updates its defense build.
+Documentation is written against branch `f1`, application commit `ec7003130d1fd483dce3c167adbd07f662510407` (“done”), checked 2026-10-03. Record a new commit SHA and rerun checks for the final defense build.
