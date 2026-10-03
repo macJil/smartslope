@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../app/bootstrap.php';
-if (!str_ends_with($config['db_name'],'_test')) throw new RuntimeException('Use a disposable *_test database.');
+if (!str_ends_with(env_value('DB_DATABASE', 'smartslope_mvp'),'_test')) throw new RuntimeException('Use a disposable *_test database.');
 $pdo=db();
 $checks=0;
 function integration_check(bool $ok, string $message): void { global $checks; if (!$ok) throw new RuntimeException($message); $checks++; }
@@ -10,6 +10,9 @@ $user=create_user('Test Resident','testresident','resident@test.invalid','+63900
 $base=['location_id'=>$location['id'],'rainfall_1h'=>12,'rainfall_24h'=>60,'rainfall_72h'=>90,'risk_level'=>'medium',
 'observed_at'=>gmdate('Y-m-d H:i:s'),'rainfall_window_end'=>gmdate('Y-m-d H:00:00'),'source'=>'manual','rule_version'=>RiskAnalyzer::VERSION,'provider_payload'=>json_encode(['classification'=>'TEST/DEMO','hourly'=>[12,48,30]])];
 $id=create_reading($base); $repeat=create_reading($base);
+$detailCount=$pdo->prepare('SELECT COUNT(*) FROM readings WHERE event_id IN (?, ?)');
+$detailCount->execute([$id,$repeat]);
+integration_check((int)$detailCount->fetchColumn()===2,'Each reading event has one normalized reading detail row.');
 $row=get_latest_reading((int)$location['id']);
 integration_check((int)$row['id']===$repeat,'Latest snapshot ordered by id when provider time repeats.');
 integration_check(json_decode($row['provider_payload'],true)['classification']==='TEST/DEMO','Input JSON persisted.');
@@ -22,6 +25,8 @@ $log=json_decode($row['adjustment_log'],true);
 integration_check(count($log)===2 && $log[0]['from']==='medium' && $log[1]['to']==='medium','Both risk edits retained.');
 integration_check($row['assessment']['adjusted'],'Edit matching calculated category still identified.');
 $report=create_report(['location_id'=>$location['id'],'user_id'=>$user,'message'=>'TEST/DEMO report','contact_phone'=>'+639000000001','house_landmark'=>'TEST/DEMO','report_type'=>'ground_cracks','occurred_at'=>report_occurrence('2026-01-01T08:00')]);
+$reportDetail=$pdo->prepare('SELECT COUNT(*) FROM reports WHERE event_id=?'); $reportDetail->execute([$report]);
+integration_check((int)$reportDetail->fetchColumn()===1,'Each report event has one normalized report detail row.');
 update_report($report,'reviewed',1);
 $r=get_reports('reviewed')[0];
 integration_check((int)$r['user_id']===$user && (int)$r['reviewed_by']===1 && $r['reviewed_at']!==null,'Report review preserves submitter and records reviewer/time.');
@@ -41,4 +46,6 @@ integration_check(import_locations_csv($import)['updated']===1,'Import restores 
 integration_check((int)get_location((int)$location['id'])['active']===1,'Restored location retains original ID.');
 integration_check((int)$pdo->query('SELECT location_id FROM events WHERE id='.(int)$report)->fetchColumn()===(int)$location['id'],'Import preserves report history links.');
 $pdo->prepare('DELETE FROM events WHERE location_id=?')->execute([$location['id']]);
+$remainingDetails=(int)$pdo->query('SELECT (SELECT COUNT(*) FROM readings)+(SELECT COUNT(*) FROM reports)')->fetchColumn();
+integration_check($remainingDetails===0,'Deleting parent events cascades to both detail tables.');
 echo "$checks database integration checks passed.\n";

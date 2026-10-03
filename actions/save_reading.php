@@ -6,6 +6,7 @@ require_admin();
 $readingId = (int)(($_SERVER['REQUEST_METHOD']??'GET')==='POST' ? post('reading_id',get('reading_id',0)) : get('reading_id',0));
 $error = '';
 $missingColumns = missing_awareness_columns();
+if ($missingColumns) redirect('admin.php');
 
 if (!$readingId) {
     flash('error', 'Reading not found');
@@ -13,7 +14,9 @@ if (!$readingId) {
 }
 
 $pdo = db();
-$stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND type = 'reading' AND archived = 0");
+$stmt = $pdo->prepare("SELECT e.id, e.location_id, e.user_id, e.type, e.created_at, r.*
+    FROM events e JOIN readings r ON r.event_id = e.id
+    WHERE e.id = ? AND e.type = 'reading' AND r.archived = 0");
 $stmt->execute([$readingId]);
 $reading = $stmt->fetch();
 if ($reading) $reading = assess_reading($reading);
@@ -61,7 +64,6 @@ $loc = get_location($reading['location_id']);
                         <p>Calculated rainfall category: <?= e($reading['assessment']['calculated_category'] ?? 'unavailable') ?>.
                         An edited category is an administrator assessment. New edits retain the administrator, UTC time, previous category and reason. Older edits have no reconstructed history.</p>
                         <?php if ($error !== ''): ?><div class="alert alert-danger" role="alert"><?= e($error) ?></div><?php endif; ?>
-                        <?php if ($missingColumns): ?><div class="alert alert-warning">Database setup is incomplete. <a href="<?= e(url('admin.php')) ?>">Open Admin Panel to complete setup.</a></div><?php endif; ?>
                         <form method="post" action="<?= e(url('actions/save_reading.php?reading_id='.$readingId)) ?>">
                             <input type="hidden" name="reading_id" value="<?= $readingId ?>">
                             <?= csrf_field() ?>

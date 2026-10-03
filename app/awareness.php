@@ -29,7 +29,9 @@ function awareness_notices(array $assessment, array $baseline): array {
 }
 
 function location_report_summary(int $id): array {
-    $stmt=db()->prepare("SELECT status, COUNT(*) AS total FROM events WHERE type='report' AND location_id=? GROUP BY status");
+    $stmt=db()->prepare("SELECT r.status, COUNT(*) AS total
+        FROM events e JOIN reports r ON r.event_id=e.id
+        WHERE e.type='report' AND e.location_id=? GROUP BY r.status");
     $stmt->execute([$id]);
     return array_map('intval', array_column($stmt->fetchAll(),'total','status'));
 }

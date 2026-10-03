@@ -67,8 +67,10 @@ References:
 
 New readings retain normalized provider input JSON, provider retrieval time,
 returned grid metadata, window endpoint and rule version. New edits retain an
-append-only adjustment history; previous edits cannot be reconstructed. The
-existing three tables remain but events has additive metadata columns.
+append-only adjustment history; previous edits cannot be reconstructed. Shared
+event identity/location/submitter/time is stored in `events`, measurements and
+reading audit metadata in `readings`, and report/review fields in `reports`.
+Existing wide-event databases are backfilled by `php database/migrate-awareness.php`.
 Saved-window consistency is enforced during assessment. Prototype notices use
 calculated rainfall; administrator category and community reports stay separate.
 Only provenance-reviewed local MGB polygons provide the VERIFIED baseline;

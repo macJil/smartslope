@@ -1,6 +1,4 @@
--- Ultra-Simplified SmartSlope Database
--- For academic MVP - single barangay (Barangay Irisan, Baguio City)
--- Just 3 tables: users, locations, events (combines readings + reports)
+-- SmartSlope database for Barangay Irisan, Baguio City.
 
 CREATE DATABASE IF NOT EXISTS smartslope_mvp
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -38,14 +36,24 @@ CREATE TABLE IF NOT EXISTS locations (
     UNIQUE KEY (lat, lng)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Events table (combines readings + reports + alerts)
+-- Shared event identity, ownership, location, and creation time.
 CREATE TABLE IF NOT EXISTS events (
     id INT UNSIGNED NOT NULL AUTO_INCREMENT,
     location_id INT UNSIGNED NOT NULL,
     user_id INT UNSIGNED,
     type ENUM('reading','report') NOT NULL,
-    
-    -- For readings
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY event_location_type (location_id, type),
+    KEY event_user (user_id),
+    KEY event_type_created (type, created_at),
+    FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- One-to-one reading details; event_id is the reading's public ID.
+CREATE TABLE IF NOT EXISTS readings (
+    event_id INT UNSIGNED NOT NULL,
     rainfall_1h DECIMAL(7,2),
     rainfall_24h DECIMAL(7,2),
     rainfall_72h DECIMAL(7,2),
@@ -53,45 +61,40 @@ CREATE TABLE IF NOT EXISTS events (
     precipitation_probability_24h TINYINT UNSIGNED,
     soil_moisture_9_27cm DECIMAL(6,4),
     soil_moisture_27_81cm DECIMAL(6,4),
-    risk_level ENUM('low','normal','medium','high') DEFAULT 'low',
+    risk_level ENUM('low','normal','medium','high') NULL,
     temperature DECIMAL(5,2),
     humidity DECIMAL(5,2),
     wind_speed DECIMAL(6,2),
     weather_code INT,
     observed_at DATETIME,
     source ENUM('openmeteo','manual') DEFAULT 'openmeteo',
-    
-    -- For reports
+    rule_version VARCHAR(40) NULL,
+    rainfall_window_end DATETIME NULL,
+    provider_payload LONGTEXT NULL,
+    adjustment_log LONGTEXT NULL,
+    archived TINYINT(1) NOT NULL DEFAULT 0,
+    stale TINYINT(1) NOT NULL DEFAULT 0,
+    PRIMARY KEY (event_id),
+    KEY reading_history (archived, observed_at, event_id),
+    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- One-to-one community report details.
+CREATE TABLE IF NOT EXISTS reports (
+    event_id INT UNSIGNED NOT NULL,
     message TEXT,
     contact_phone VARCHAR(20),
     contact_email VARCHAR(254),
     house_landmark VARCHAR(255),
     status ENUM('pending','reviewed','resolved') DEFAULT 'pending',
-    
-    -- Awareness metadata (nullable for legacy records)
-    rule_version VARCHAR(40) NULL,
-    rainfall_window_end DATETIME NULL,
-    provider_payload LONGTEXT NULL,
-    adjustment_log LONGTEXT NULL,
     report_type VARCHAR(30) NULL,
     occurred_at DATETIME NULL,
     reviewed_by INT UNSIGNED NULL,
     reviewed_at DATETIME NULL,
-
-    -- Metadata
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    archived TINYINT(1) DEFAULT 0,
-    stale TINYINT(1) DEFAULT 0,
-    
-    PRIMARY KEY (id),
-    KEY (location_id),
-    KEY (user_id),
-    KEY (type),
-    KEY (risk_level),
-    KEY (status),
-    KEY (archived),
-    FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    PRIMARY KEY (event_id),
+    KEY report_status (status, event_id),
+    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+    FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Seed: Initial admin user (password: admin123)

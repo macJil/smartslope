@@ -1,24 +1,23 @@
 # SmartSlope awareness upgrade
 
-Baseline: su1 a8ae411204c785e18c0159c94b395c8a437e4f38.
-Sensors and AI are excluded. Manual weather refresh remains. Three tables remain:
-users, locations, events. No alert/sensor table or background task is introduced.
+Sensors and AI are excluded. Manual weather refresh remains. The schema uses
+users, locations, shared events, and one-to-one readings/reports detail tables.
+No alert/sensor table or background task is introduced.
 
 ## Install on Herd / XAMPP
 
-1. Back up your database and working tree. Switch to su1 and check git status.
-2. Download the patch outside the repository, then run `git apply --check` and
-   `git apply` as described in the delivered setup guide.
-3. Before serving updated pages, run `php database/migrate-awareness.php` from
-   the repository root, using the PHP version whose PDO MySQL/cURL modules are
-   enabled and the project's existing .env configuration. The CLI-only migration
-   checks each column/index before adding it and can be rerun after interruption.
-   MySQL DDL is not transactional; take a backup first. Do not reimport schema.sql
-   into an existing database. New installations may import the updated schema.
-4. Restart PHP if needed. Load dashboard, select Irisan point, refresh, open
+1. Back up your database and working tree. Configure the existing `.env`.
+2. Before serving the updated application, run `php database/migrate-awareness.php`
+  from the repository root with PDO MySQL enabled. The CLI-only migration
+  creates detail tables, copies reading/report fields while preserving event IDs,
+  verifies parent/detail rows, then removes legacy subtype columns. It can be
+  rerun after interruption. MySQL DDL is not transactional; take a backup first.
+  Do not reimport `database/schema.sql` into an existing database. New installs
+  may import the normalized schema directly.
+3. Restart PHP if needed. Load dashboard, select Irisan point, refresh, open
    Sources & methodology, submit a typed report with Philippine occurrence time,
    review pending reports, make an administrator edit with reason, export CSV.
-5. Weather failure must keep previous readings. Outdated data must not show a
+4. Weather failure must keep previous readings. Outdated data must not show a
    current high/medium notice. A low category must never say the slope is safe.
 
 ## Changes

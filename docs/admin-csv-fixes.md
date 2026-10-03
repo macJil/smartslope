@@ -6,10 +6,11 @@ Baseline: `cebdad7590bb8ad9ce0915b8221f1c7dfa0d656b`.
 
 Apply the patch to your `su2` checkout after checking your working tree and backing
 up the database. Run `git apply --check <patch-path>`, then `git apply <patch-path>`.
-Run `php database/migrate-awareness.php`, or log in as administrator and use
-**Complete database setup** if the warning appears. The repeat-safe migration adds
-missing awareness columns/index; it retains the same three tables and existing
-records. MySQL DDL is not transactional. Do not reimport schema.sql over your data.
+Back up the database, then run `php database/migrate-awareness.php` from the
+repository root before serving the updated application. The repeat-safe CLI
+migration backfills normalized reading/report detail tables while retaining event
+IDs and shared data. MySQL DDL is not transactional. Do not reimport schema.sql
+over your data.
 
 ## Report and reading actions
 

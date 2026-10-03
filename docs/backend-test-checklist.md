@@ -1,6 +1,6 @@
 # Backend acceptance checklist
 
-Use a disposable copy of your existing three-table database first. Run `php database/migrate-awareness.php` on the disposable copy and then your backed-up real database before updated pages are served. Back up code and data. Do not replace your real `.env` with the example.
+Use a disposable copy of your existing legacy wide-`events` database first. Run `php database/migrate-awareness.php` on the disposable copy and then your backed-up real database before updated pages are served. Back up code and data. Do not replace your real `.env` with the example.
 
 ## Automated checks (PHP 8.1+ and Node)
 
@@ -57,4 +57,4 @@ The script prompts for a password; it does not promote a resident username. No p
 
 ## Academic scope
 
-PDO/CRUD, OOP risk class, jQuery/AJAX, JSON/API, validation and security remain. Three tables are retained. This does not satisfy a separate mandatory teacher requirement for a sensors table unless its deferral is approved. The backend is ready for frontend handoff after the local acceptance checks pass; passing code tests does not validate landslide predictive accuracy.
+PDO/CRUD, OOP risk class, jQuery/AJAX, JSON/API, validation and security remain. Shared event data is separated from reading and report details. This does not satisfy a separate mandatory teacher requirement for a sensors table unless its deferral is approved. Passing code tests does not validate landslide predictive accuracy.

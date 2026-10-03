@@ -104,6 +104,38 @@ if (in_array($exportAction,['export','export_reports','export_locations'],true))
     }
 }
 $missingColumns=missing_awareness_columns();
+if ($missingColumns) {
+    http_response_code(503);
+    ?>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Database migration required - SmartSlope</title>
+        <link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>">
+        <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>?v=<?= (int)filemtime(__DIR__ . '/assets/css/frontend.css') ?>">
+    </head>
+    <body>
+        <?= ui_navigation('admin') ?>
+        <main class="container my-4">
+            <div class="page-heading mb-4"><h1 class="h2 mb-1">Database migration required</h1></div>
+            <div class="alert alert-warning" role="alert">
+                <p>Back up the database before migrating. This operation moves reading and report details out of the legacy events table and removes the old columns after verifying the copied records.</p>
+                <p>For larger databases, run <code>php database/migrate-awareness.php</code> from the repository root using the configured PHP environment.</p>
+                <form method="post" action="<?= e(url('admin.php')) ?>">
+                    <?= csrf_field() ?>
+                    <input type="hidden" name="action" value="complete_setup">
+                    <button class="btn btn-warning" type="submit">Migrate database</button>
+                </form>
+            </div>
+        </main>
+        <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
+    </body>
+    </html>
+    <?php
+    exit;
+}
 $locations = get_locations();
 $uiLocations = array_column($locations, null, 'id');
 $readings = get_all_readings(50);
@@ -172,11 +204,7 @@ foreach ($reports as $report) {
             <div class="alert alert-danger"><?= e($msg) ?></div>
         <?php endif; ?>
 
-        <?php if ($missingColumns): ?>
-        <div class="alert alert-warning" role="alert"><h3 class="h6">Database setup is incomplete</h3><p>The previous awareness upgrade needs additional fields for report review and reading edits. Back up your database, then complete setup. Existing records are retained.</p>
-        <form method="post" action="<?= e(url('admin.php')) ?>"><?= csrf_field() ?><input type="hidden" name="action" value="complete_setup"><button class="btn btn-warning" type="submit">Complete database setup</button></form></div>
-        <?php endif; ?>
-        <p class="small text-muted">Reading counts cover the latest 50 saved readings across active locations. Current means observed within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours; these are reading counts, not location counts.</p>
+        <p class="small text-muted">Reading counts cover the latest 50 saved readings across active locations. Current means observed within <?= e(round(max(60, (int)env_value('READING_MAX_AGE_SECONDS', '10800')) / 3600, 2)) ?> hours; these are reading counts, not location counts.</p>
         <!-- Stats Row -->
         <div class="row mb-4">
             <div class="col-md-3 col-6 mb-3">
