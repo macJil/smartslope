@@ -1,36 +1,32 @@
 # Verification record
 
-Base: s4 f8e7c5002814afe8d8b416f8a55aafe8e2c9733d, checked against GitHub during implementation.
+## Branch reviewed
+Documentation review used branch `f1` at application commit `2bc89e742301721c9815b8df59c22b908a0f6db3` on 2026-10-03. The repository contains focused PHP and Node tests; this document distinguishes the student's reported local run from checks independently repeated during documentation work.
 
-Completed during implementation:
-- PHP 8.3 lint: all 25 PHP files passed after the main backend changes.
-- 25 risk checks: thresholds, invalid/missing values, highest-category selection, explanations.
-- 11 assessment checks: current/outdated/future timestamps, missing data, overrides.
-- Weather tests: complete intervals, missing/duplicate hours, invalid values, complete forecasts, units, provider freshness.
-- Disposable MySQL 8.0.46 integration: original schema import, resident account creation/authentication, readings, freshness, risk override, report linkage/review, CSV and archival/deletion. Integration changes were rolled back.
-- One live Open-Meteo request passed validation and saved a reading in the disposable database. This confirms one successful provider response, not future provider availability or landslide accuracy.
-- Node syntax and polygon boundary tests.
+## Student-reported final test run
+On 2026-10-03 the student reported that the website components and features had been tested and were working. The shared command transcript lists:
 
-Not completed:
-- End-to-end HTTP forms/API test: the first attempt lacked an HTTP client dependency; the standard-library rerun was blocked when automatic approval review reached its usage limit. That was a review-service failure, not a finding that the operation was unsafe.
-- Visual browser testing, actual Herd/Nginx access rules, and XAMPP/Apache configuration.
+- PHP syntax checks for repository PHP files
+- `php tests/risk.php`
+- `php tests/weather.php`
+- `php tests/assessment.php`
+- `php tests/presentation.php`
+- `php tests/awareness.php`
+- `node --check assets/js/dashboard.js`
+- `node --check assets/js/location-address.js`
+- `node tests/map-boundary.test.cjs`
 
-The temporary PHP runtime was no longer available when packaging resumed. The original lint/unit/integration results above describe completed checks; they are not claims of a fresh final runtime test. Run the included PHP tests and local checklist on the final files before marking the frontend handoff accepted.
+This is the team's local verification report. The documentation pass reviewed the branch files and test definitions; it did not provision the team's local database or re-run their browser/server session.
 
-No live user database or GitHub files were modified. See backend-test-checklist.md for the remaining acceptance steps. The rule set remains an uncalibrated prototype.
+## Earlier recorded validation
+The previous verification notes in this repository record syntax/unit checks, disposable MySQL/MariaDB integration, provider and headless-browser checks from earlier branch work. Those records are historical evidence for those tested revisions; they should not be interpreted as fresh Herd/Nginx or XAMPP checks on the current `f1` commit.
 
+## Remaining environment-specific checks
+Before deployment or a graded demonstration, run the included checks on the final checkout and verify actual HTTP behavior on the chosen host. In particular:
 
-## su1 awareness upgrade validation
+- Herd/Nginx access rules must block `.env` and internal directories; `.htaccess` does not apply there.
+- XAMPP/Apache must have overrides enabled for its `.htaccess` protections to work.
+- Confirm PDO MySQL/cURL, existing-database migration, resident/admin workflows, provider failure handling and CSV output on the actual local setup.
+- Keep all test accounts and reports synthetic.
 
-Baseline a8ae411. PHP lint and existing risk/weather/assessment/presentation/map
-checks passed, plus 22 awareness checks. A disposable MariaDB 10.11 database
-imported the original schema, ran the additive migration twice, and passed 11
-integration checks for input retention, repeated timestamps, adjustments, report
-review/UTC occurrence, export, archival and invalid-window behavior.
-A headless browser passed authenticated dashboard/AJAX, JSON 401/403, typed report
-submission, pending queue and methodology flows with no page errors. Desktop
-1280px and mobile 390px screenshots were inspected; no whole-page horizontal
-overflow was detected. Weather used explicitly synthetic TEST/DEMO provider
-fixtures in disposable state: this is not a live-provider or accuracy test.
-Herd/MySQL 8 and XAMPP acceptance still need local verification. MGB coverage,
-source edition and reuse terms remain unresolved; no hazard subset is bundled.
+Software tests verify code paths and rendering rules, not landslide prediction accuracy. No local event catalogue or validated susceptibility subset is included. `docs/local-validation.csv` contains column headings only.
