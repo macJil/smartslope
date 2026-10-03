@@ -1,6 +1,6 @@
 # Backend acceptance checklist
 
-Use a disposable copy of your existing three-table database first. No migration/import is required for this release. Back up code and data. Do not replace your real `.env` with the example.
+Use a disposable copy of your existing three-table database first. Run `php database/migrate-awareness.php` on the disposable copy and then your backed-up real database before updated pages are served. Back up code and data. Do not replace your real `.env` with the example.
 
 ## Automated checks (PHP 8.1+ and Node)
 
@@ -9,6 +9,8 @@ find . -name '*.php' -not -path './.git/*' -exec php -l {} \;
 php tests/risk.php
 php tests/weather.php
 php tests/assessment.php
+php tests/presentation.php
+php tests/awareness.php
 node --check assets/js/dashboard.js
 node --check assets/js/location-address.js
 node tests/map-boundary.test.cjs
@@ -36,7 +38,7 @@ Test both `/` on Herd and `/smartslope/` on XAMPP. Verify PHP PDO MySQL and cURL
 Apache reads the supplied `.htaccess` when overrides/mod_rewrite are enabled. Herd uses Nginx and does NOT read `.htaccess`. Before exposing the site beyond local testing, add equivalent rules to the site's Nginx server configuration, validate it, and reload through your server management workflow:
 
 ```nginx
-location ~ ^/(?:app|database|scripts|tests|docs)(?:/|$) { deny all; }
+location ~ ^/(?:app|data|database|scripts|tests|docs)(?:/|$) { deny all; }
 location ~ /\.(?!well-known(?:/|$)) { deny all; }
 location ~* \.(?:sql|patch|log|md)$ { deny all; }
 ```

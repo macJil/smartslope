@@ -86,8 +86,13 @@ function ui_weather_details(array $reading): string {
 
 function ui_assessment_panel(?array $reading, array $location, array $assessment): string {
     $status = $assessment['data_status'] ?? 'unavailable';
+    $baseline = susceptibility_lookup($location);
     ob_start(); ?>
-    <h3 class="h6 text-muted">Current risk category</h3>
+    <?php foreach (awareness_notices($assessment,$baseline) as $notice): ?>
+        <div class="alert alert-<?= e($notice['tone']) ?>" role="status"><strong><?= e($notice['title']) ?></strong><p class="mb-0"><?= e($notice['text']) ?></p></div>
+    <?php endforeach; ?>
+    <p class="small text-muted">Academic prototype, not an official warning. Updates follow manual weather refresh. No automatic evacuation instructions.</p>
+    <h3 class="h6 text-muted">Prototype rainfall-screening category</h3>
     <div class="assessment-category mb-2"><?= ui_category_badge($assessment) ?></div>
     <p class="mb-2"><strong>Data status:</strong> <?= e(ucfirst($status)) ?></p>
     <?php if ($status !== 'current'): ?>
@@ -99,9 +104,19 @@ function ui_assessment_panel(?array $reading, array $location, array $assessment
         <div class="col-4"><div class="border rounded p-2 h-100"><small class="d-block text-muted"><?= e($period) ?> rainfall</small><strong><?= e(ui_number($reading[$field] ?? null, ' mm')) ?></strong></div></div>
         <?php endforeach; ?>
     </div>
-    <p class="small mb-2"><strong>Observed:</strong> <?= e(ui_time($reading['observed_at'] ?? null)) ?><br>
+    <p class="small mb-2"><strong>Provider valid time:</strong> <?= e(ui_time($reading['observed_at'] ?? null)) ?><br>
+        <strong>Rainfall window end:</strong> <?= e(ui_time($assessment['rainfall_window_end'] ?? null)) ?><br>
         <strong>Retrieved:</strong> <?= e(ui_time($reading['created_at'] ?? null)) ?><br>
         <strong>Source:</strong> <?= e(ui_source($reading['source'] ?? null)) ?></p>
+    <div class="border rounded p-3 mb-3">
+        <h4 class="h6">Why this category? <span class="badge bg-secondary">CALCULATED</span></h4>
+        <ul><?php foreach ($assessment['reasons'] as $reason): ?><li><?= e($reason) ?></li><?php endforeach; ?></ul>
+        <p class="small mb-0">Rule: <?= e($reading['rule_version'] ?? 'prototype-1 (legacy version not recorded)') ?>. Historical inputs: <?= ($assessment['provenance_status'] ?? '') !== 'saved_provider_inputs' ? 'not retained for this legacy record' : 'retained with provider grid metadata' ?>.</p>
+    </div>
+    <div class="border rounded p-3 mb-3"><h4 class="h6">Baseline susceptibility: <?= e(ucwords(str_replace('_',' ',$baseline['category']))) ?></h4>
+        <p class="small mb-1"><?= e($baseline['reason']) ?></p>
+        <?php if ($baseline['source']): ?><p class="small mb-0"><span class="badge bg-secondary">VERIFIED</span> Source: <a href="<?= e($baseline['source']['source_url']) ?>" target="_blank" rel="noopener noreferrer">MGB</a>; edition <?= e($baseline['source']['edition']) ?>; scale <?= e($baseline['source']['scale']) ?>.</p><?php endif; ?>
+    </div>
     <?php if ($reading): ?>
         <button type="button" class="btn btn-outline-primary btn-sm" data-weather-dialog
                 data-template-id="assessment-weather-details" data-details-title="Weather details for <?= e($location['name'] ?? 'selected location') ?>">More weather details</button>
@@ -119,7 +134,7 @@ function ui_readings_head(bool $admin, string $group): string {
         <?php if ($admin): ?><th scope="col"><input type="checkbox" data-select-all="<?= e($group) ?>" aria-label="Select all displayed readings"></th><?php endif; ?>
         <th scope="col">Location</th><th scope="col">Current assessment</th>
         <th scope="col">Rainfall mm<br><small>1h / 24h / 72h</small></th>
-        <th scope="col">Observed (PHT)</th><th scope="col">Data status</th><th scope="col">Details</th>
+        <th scope="col">Provider time (PHT)</th><th scope="col">Data status</th><th scope="col">Details</th>
         <?php if ($admin): ?><th scope="col">Actions</th><?php endif; ?>
     </tr></thead>
     <?php return (string)ob_get_clean();
@@ -145,7 +160,7 @@ function ui_readings_rows(array $readings, bool $admin, string $group, string $f
                         data-template-id="<?= e($templateId) ?>" data-details-title="Weather details for reading <?= (int)$reading['id'] ?>">View details</button>
                 <template id="<?= e($templateId) ?>">
                     <p><strong>Location:</strong> <?= e($name) ?></p>
-                    <p><strong>Observed:</strong> <?= e(ui_time($reading['observed_at'] ?? null)) ?></p>
+                    <p><strong>Provider valid time:</strong> <?= e(ui_time($reading['observed_at'] ?? null)) ?></p>
                     <?= ui_weather_details($reading) ?>
                 </template>
             </td>
@@ -166,4 +181,26 @@ function ui_weather_modal(): string {
         . '<div class="modal-body" id="readingWeatherBody"></div>'
         . '<div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>'
         . '</div></div></div>';
+}
+
+/** Snapshot history: repeated timestamps are collapsed only for this display. */
+function ui_history(array $readings): string {
+    $seen=[]; $rows=[];
+    foreach ($readings as $r) {
+        $key=$r['observed_at'] ?? '';
+        if ($key==='' || isset($seen[$key])) continue;
+        $seen[$key]=true; $rows[]=$r;
+    }
+    ob_start(); ?>
+    <p class="small text-muted">Recent saved snapshots, newest first; repeated provider times are shown once. These are accumulated totals, not individual hourly rainfall. Never add these rows together.</p>
+    <div class="table-responsive" tabindex="0" role="region" aria-label="Scrollable rainfall history"><table class="table table-sm"><thead><tr><th>Provider time (PHT)</th><th>24h total (mm)</th><th>Change from previous saved snapshot (mm)</th><th>Calculated category</th></tr></thead><tbody>
+    <?php foreach ($rows as $i=>$r):
+        $previous=$rows[$i+1]??null;
+        $now=finite_number($r['rainfall_24h']??null,0); $then=finite_number($previous['rainfall_24h']??null,0);
+        $change=$now!==null && $then!==null ? round($now-$then,2) : null;
+        $a=$r['assessment']??reading_assessment($r); ?>
+        <tr><td><?= e(ui_time($r['observed_at'])) ?></td><td><?= e(ui_number($now)) ?></td><td><?= e(ui_number($change)) ?></td><td><?= e($a['calculated_category'] ?? 'Unavailable') ?></td></tr>
+    <?php endforeach; if (!$rows): ?><tr><td colspan="4">No saved history for this location.</td></tr><?php endif; ?>
+    </tbody></table></div>
+    <?php return (string)ob_get_clean();
 }

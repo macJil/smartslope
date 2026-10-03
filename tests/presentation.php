@@ -27,9 +27,8 @@ $location = ['id'=>1, 'name'=>'<img src=x onerror=alert(1)>', 'susceptibility'=>
 $hostile = $current; $hostile['reasons'] = ['<script>alert(1)</script>'];
 $html = ui_assessment_panel($reading, $location, $hostile);
 check_ui(!str_contains($html, '<script>') && !str_contains($html, '<img '), 'Assessment data must be escaped.');
-check_ui(!str_contains($html, 'Why this category?') && !str_contains($html, 'Baseline susceptibility:') &&
-    !str_contains($html, '24-hour forecast outlook'), 'Documentation content should not appear in the compact analyzer.');
-foreach (['Data status:', 'Current risk category', 'Observed:', 'Retrieved:', 'Source:', 'More weather details'] as $label) {
+check_ui(str_contains($html, 'Why this category?') && str_contains($html, 'Baseline susceptibility:'), 'Analyzer needs explanation and separate baseline.');
+foreach (['Data status:', 'Prototype rainfall-screening category', 'Provider valid time:', 'Retrieved:', 'Source:', 'More weather details'] as $label) {
     check_ui(str_contains($html, $label), 'Missing assessment context: ' . $label);
 }
 check_ui(str_contains($html, '<template id="assessment-weather-details">'), 'Analyzer details need a dialog template.');

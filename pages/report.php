@@ -7,6 +7,13 @@ $locations = get_locations();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_post_csrf();
+    $reportType = (string)post('report_type', 'other');
+    try {
+        if (!isset(REPORT_TYPES[$reportType])) throw new InvalidArgumentException('Choose a valid report type.');
+        $occurredAt = report_occurrence((string)post('occurred_at'));
+    } catch (InvalidArgumentException $error) {
+        flash('error', $error->getMessage()); redirect('report.php');
+    }
     $locationId = filter_var(post('location_id'), FILTER_VALIDATE_INT);
     $reportLat = post('report_lat');
     $reportLng = post('report_lng');
@@ -52,7 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'message' => $message,
         'contact_phone' => $contactPhone,
         'contact_email' => $contactEmail,
-        'house_landmark' => $houseLandmark
+        'house_landmark' => $houseLandmark,
+        'report_type' => $reportType, 'occurred_at' => $occurredAt
     ]);
 
     } catch (PDOException $error) {
@@ -170,6 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="navbar-nav ms-auto">
                 <a class="nav-link" href="<?= url('dashboard.php') ?>">Dashboard</a>
                 <a class="nav-link" href="<?= url('report.php') ?>">Submit Report</a>
+                <a class="nav-link" href="<?= e(url('methodology.php')) ?>">Sources &amp; methodology</a>
                 <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
             </div>
         </div>
@@ -204,7 +213,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <h5>Report Details</h5>
                     </div>
                     <div class="card-body">
+                        <p class="small text-muted">USER-SUBMITTED observations. Submission does not confirm a landslide or change the rainfall category.</p>
                         <form method="post" id="reportForm">
+                            <div class="mb-3"><label for="report_type" class="form-label">Observed condition *</label>
+                            <select id="report_type" name="report_type" class="form-select" required>
+                            <?php foreach (REPORT_TYPES as $key=>$label): ?><option value="<?= e($key) ?>"><?= e($label) ?></option><?php endforeach; ?>
+                            </select></div>
+                            <div class="mb-3"><label for="occurred_at" class="form-label">When did you observe it? (Philippine time)</label>
+                            <input type="datetime-local" id="occurred_at" name="occurred_at" class="form-control"><small class="text-muted">Leave blank if unknown.</small></div>
                             <?= csrf_field() ?>
                             <div class="mb-3">
                                 <label class="form-label" for="locationSelect">Location *</label>
@@ -431,5 +447,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         });
     </script>
+<footer class="container py-3 small text-muted">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
 </body>
 </html>

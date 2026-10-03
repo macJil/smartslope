@@ -36,6 +36,7 @@ if (get('action') === 'export') {
             <div class="navbar-nav">
                 <a class="nav-link" href="<?= url('dashboard.php') ?>">Dashboard</a>
                 <a class="nav-link" href="<?= url('readings.php') ?>">All Readings</a>
+                <a class="nav-link" href="<?= e(url('methodology.php')) ?>">Sources &amp; methodology</a>
                 <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
             </div>
         </div>
@@ -74,5 +75,6 @@ if (get('action') === 'export') {
     <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
     <script src="<?= e(url('assets/js/reading-modal.js')) ?>"></script>
     <?php if ($isAdmin): ?><script src="<?= e(url('assets/js/bulk-select.js')) ?>"></script><?php endif; ?>
+<footer class="container py-3 small text-muted">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
 </body>
 </html>

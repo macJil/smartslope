@@ -6,8 +6,11 @@ require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/RiskAnalyzer.php';
 require_once __DIR__ . '/assessment.php';
+require_once __DIR__ . '/susceptibility.php';
+require_once __DIR__ . '/awareness.php';
 require_once __DIR__ . '/presentation.php';
 require_once __DIR__ . '/repositories.php';
+require_once __DIR__ . '/provider.php';
 require_once __DIR__ . '/weather.php';
 
 // User-facing failures stay generic; details go only to the PHP error log.

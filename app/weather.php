@@ -2,6 +2,13 @@
 declare(strict_types=1);
 
 function fetch_weather(float $lat, float $lng): array {
+    $weather=provider_cached('weather', sprintf('%.5f,%.5f',$lat,$lng),
+        static fn()=>request_weather($lat,$lng), 2.0, 60, [60=>100,3600=>1000,86400=>5000]);
+    validate_weather_payload($weather);
+    return $weather;
+}
+
+function request_weather(float $lat, float $lng): array {
     $url = "https://api.open-meteo.com/v1/forecast?";
     $params = [
         'latitude' => $lat,
@@ -31,6 +38,11 @@ function fetch_weather(float $lat, float $lng): array {
     $decoded = json_decode($response, true);
     if (!is_array($decoded) || empty($decoded['current']['time'])) {
         throw new RuntimeException('Weather provider returned incomplete data.');
+    }
+    $decoded['provider_retrieved_at_utc'] = gmdate('Y-m-d H:i:s');
+    $decoded['request_parameters'] = $params;
+    foreach (['precipitation_probability'=>'%', 'soil_moisture_9_to_27cm'=>'m³/m³', 'soil_moisture_27_to_81cm'=>'m³/m³'] as $field=>$unit) {
+        if (($decoded['hourly_units'][$field] ?? null)!==$unit) unset($decoded['hourly'][$field]);
     }
     validate_weather_payload($decoded);
     return $decoded;
@@ -99,8 +111,7 @@ function validate_weather_payload(array $weather, ?int $now = null): void {
     if ($observed > $now + ($config['future_tolerance_seconds'] ?? 300)) throw new RuntimeException('Provider observation is in the future.');
     if ($now - $observed > ($config['freshness_seconds'] ?? 10800)) throw new RuntimeException('Provider observation is outdated.');
     if (($weather['utc_offset_seconds'] ?? null) !== 0) throw new RuntimeException('Expected UTC provider timestamps.');
-    foreach (['precipitation' => 'mm', 'precipitation_probability' => '%',
-              'soil_moisture_9_to_27cm' => 'm³/m³', 'soil_moisture_27_to_81cm' => 'm³/m³'] as $field => $unit) {
+    foreach (['precipitation' => 'mm'] as $field => $unit) {
         if (($weather['hourly_units'][$field] ?? null) !== $unit) throw new RuntimeException('Unexpected hourly units.');
     }
     foreach (['temperature_2m' => '°C', 'relative_humidity_2m' => '%', 'wind_speed_10m' => 'km/h', 'precipitation' => 'mm', 'weather_code' => 'wmo code'] as $field => $unit) {
@@ -137,7 +148,12 @@ function refresh_location(int $locationId): array {
             'humidity' => $current['relative_humidity_2m'] ?? null,
             'wind_speed' => $current['wind_speed_10m'] ?? null,
             'weather_code' => $current['weather_code'] ?? null,
-            'observed_at' => gmdate('Y-m-d H:i:s', $observed),
+             'observed_at' => gmdate('Y-m-d H:i:s', $observed),
+            'rule_version' => RiskAnalyzer::VERSION,
+            'rainfall_window_end' => gmdate('Y-m-d H:i:s', intdiv($observed,3600)*3600),
+            'provider_payload' => json_encode(['classification'=>'API','request_coordinates'=>[$location['lat'],$location['lng']],
+                'request_policy'=>'73 past hours, 25 forecast hours, UTC; optional arrays discarded if units differ',
+                'response'=>$weather], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
         ]));
         $saved = get_latest_reading($locationId);
         $pdo->commit();

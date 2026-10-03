@@ -30,7 +30,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['update_reading'])) {
         exit('Invalid risk level.');
     }
 
-    update_reading_risk($readingId, $riskLevel);
+    $reason = trim((string)post('adjustment_reason'));
+    if ($reason === '' || strlen($reason)>500) { http_response_code(422); exit('An adjustment reason of up to 500 characters is required.'); }
+    update_reading_risk($readingId, $riskLevel, (int)$_SESSION['user_id'], $reason);
 
     flash('success', 'Reading risk level updated successfully');
     redirect('admin.php');
@@ -56,10 +58,12 @@ $loc = get_location($reading['location_id']);
                     </div>
                     <div class="card-body">
                         <p>Calculated rainfall category: <?= e($reading['assessment']['calculated_category'] ?? 'unavailable') ?>.
-                        An edited category is an administrator assessment. This prototype does not keep an edit audit trail.</p>
+                        An edited category is an administrator assessment. New edits retain the administrator, UTC time, previous category and reason. Older edits have no reconstructed history.</p>
                         <form method="post">
                             <?= csrf_field() ?>
                             <input type="hidden" name="update_reading" value="1">
+                            <label for="adjustment_reason" class="form-label mt-3">Adjustment reason *</label>
+                            <textarea name="adjustment_reason" id="adjustment_reason" class="form-control mb-3" maxlength="500" required></textarea>
 
                             <div class="mb-3">
                                 <label class="form-label">Location</label>

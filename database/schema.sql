@@ -68,6 +68,16 @@ CREATE TABLE IF NOT EXISTS events (
     house_landmark VARCHAR(255),
     status ENUM('pending','reviewed','resolved') DEFAULT 'pending',
     
+    -- Awareness metadata (nullable for legacy records)
+    rule_version VARCHAR(40) NULL,
+    rainfall_window_end DATETIME NULL,
+    provider_payload LONGTEXT NULL,
+    adjustment_log LONGTEXT NULL,
+    report_type VARCHAR(30) NULL,
+    occurred_at DATETIME NULL,
+    reviewed_by INT UNSIGNED NULL,
+    reviewed_at DATETIME NULL,
+
     -- Metadata
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     archived TINYINT(1) DEFAULT 0,

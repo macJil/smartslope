@@ -35,6 +35,7 @@ function reading_assessment(?array $reading, array $location = [], ?int $now = n
         'susceptibility' => $location['susceptibility'] ?? 'unknown',
         'observed_at' => $reading['observed_at'] ?? null,
         'retrieved_at' => $reading['created_at'] ?? null,
+        'rainfall_window_end' => null, 'provenance_status' => 'unavailable', 'classification' => 'CALCULATED',
     ];
     if (!$reading) return $result;
     $analysis = (new RiskAnalyzer())->explain(
@@ -42,6 +43,17 @@ function reading_assessment(?array $reading, array $location = [], ?int $now = n
         finite_number($reading['rainfall_24h'] ?? null, 0),
         finite_number($reading['rainfall_72h'] ?? null, 0)
     );
+    $values = array_map(static fn($key) => finite_number($reading[$key] ?? null, 0), ['rainfall_1h','rainfall_24h','rainfall_72h']);
+    if (!in_array(null, $values, true) && ($values[0] > $values[1] || $values[1] > $values[2])) {
+        $analysis = ['category'=>null, 'reasons'=>['Rainfall totals are inconsistent: 1h must not exceed 24h, and 24h must not exceed 72h.']];
+    }
+    if (!empty($reading['rule_version']) && $reading['rule_version'] !== RiskAnalyzer::VERSION) {
+        $analysis = ['category'=>null, 'reasons'=>['This record uses a different rule version; a current assessment is unavailable.']];
+    }
+    $observedTimestamp = utc_timestamp($reading['observed_at'] ?? null);
+    $result['rainfall_window_end'] = $reading['rainfall_window_end'] ?? ($observedTimestamp === null ? null : gmdate('Y-m-d H:i:s', intdiv($observedTimestamp,3600)*3600));
+    $result['provenance_status'] = empty($reading['provider_payload']) ? 'legacy_without_hourly_inputs' : 'saved_provider_inputs';
+    $result['classification'] = 'CALCULATED';
     $result['calculated_category'] = $analysis['category'];
     $result['reasons'] = $analysis['reasons'];
     $stored = $reading['risk_level'] ?? null;
@@ -54,7 +66,7 @@ function reading_assessment(?array $reading, array $location = [], ?int $now = n
         return $result;
     }
     $result['category'] = $stored;
-    $result['adjusted'] = $stored !== $analysis['category'];
+    $result['adjusted'] = $stored !== $analysis['category'] || !empty($reading['adjustment_log']);
     if ($result['adjusted']) $result['reasons'][] = 'Administrator-adjusted category; calculated rainfall category: ' . $analysis['category'] . '.';
     $result['data_status'] = $now - $observed > ($config['freshness_seconds'] ?? 10800) ? 'outdated' : 'current';
     if ($result['data_status'] === 'current') $result['current_category'] = $stored;

@@ -93,7 +93,7 @@ function export_readings_csv(array $readings): string {
     fputcsv($stream, [
         'ID', 'Location', 'Risk', '1h Rainfall', '24h Rainfall', '72h Rainfall',
         '24h Forecast Rainfall', '24h Precipitation Probability',
-        'Soil Moisture 9-27cm', 'Soil Moisture 27-81cm', 'Observed At UTC', 'Retrieved At UTC', 'Data Status', 'Calculated Category', 'Administrator Adjusted'
+        'Soil Moisture 9-27cm', 'Soil Moisture 27-81cm', 'Observed At UTC', 'Retrieved At UTC', 'Data Status', 'Calculated Category', 'Administrator Adjusted', 'Source', 'Rule version', 'Rainfall window end UTC', 'Saved hourly inputs', 'Adjustment log JSON'
     ]);
 
     foreach ($readings as $r) {
@@ -112,7 +112,10 @@ function export_readings_csv(array $readings): string {
             $r['created_at'] ?? '',
             $r['assessment']['data_status'] ?? 'unavailable',
             $r['assessment']['calculated_category'] ?? '',
-            !empty($r['assessment']['adjusted']) ? 'yes' : 'no'
+            !empty($r['assessment']['adjusted']) ? 'yes' : 'no',
+            csv_cell($r['source'] ?? ''), csv_cell($r['rule_version'] ?? 'legacy-unrecorded'),
+            $r['assessment']['rainfall_window_end'] ?? '', empty($r['provider_payload']) ? 'no' : 'yes',
+            csv_cell($r['adjustment_log'] ?? '')
         ]);
     }
 

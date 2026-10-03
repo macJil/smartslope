@@ -1,0 +1,1 @@
+event_id,classification,source_url,source_date,location_lat,location_lng,occurrence_utc,time_uncertainty,rainfall_source,rainfall_1h_mm,rainfall_24h_mm,rainfall_72h_mm,rule_version,screening_category,outcome,event_or_non_event,coverage_notes

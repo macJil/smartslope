@@ -44,7 +44,12 @@ Each successful click/refresh appends a snapshot. Repeated provider observation 
 
 Default maximum age is 10800 seconds; configure `READING_MAX_AGE_SECONDS`. Future timestamps beyond 300 seconds are invalid. These are application data policies, not scientific warning thresholds. Status is recalculated on every page/API request; a page left open must be reloaded/refreshed to update its display.
 
-Admin edits remain risk-only. A mismatch is labelled administrator-adjusted. The unchanged database cannot show who edited the reading, when, or detect an edit that equals the calculated category. Do not change threshold versions silently: stored records have no rule-version column. Future rule changes require a migration/versioning plan.
+Admin edits remain risk-only and require a reason. New edits append actor, UTC time,
+previous/new category and reason to adjustment_log; legacy edits have no reconstructed
+audit history. New snapshots retain rule_version, hourly input JSON and window end.
+Do not change threshold versions silently: evaluate revised rules separately and
+plan any reassessment of existing records. Unknown stored rule versions cannot
+produce a current assessment.
 
 Susceptibility remains separate and unknown without verified local evidence. Forecasts, modeled soil moisture and ground reports do not secretly change the numerical category. Pending/reviewed/resolved report statuses do not establish scientific verification. Preserve resident identity when reviewing reports.
 
@@ -56,3 +61,18 @@ References:
 - https://open-meteo.com/en/docs
 - https://www.usgs.gov/publications/developing-hydro-meteorological-thresholds-shallow-landslide-initiation-and-early
 - https://controlmap.mgb.gov.ph/arcgis/rest/services/GeospatialDataInventory/GDI_Detailed_Rain_induced_Landslide_Susceptibility/FeatureServer
+
+
+## Awareness upgrade contract
+
+New readings retain normalized provider input JSON, provider retrieval time,
+returned grid metadata, window endpoint and rule version. New edits retain an
+append-only adjustment history; previous edits cannot be reconstructed. The
+existing three tables remain but events has additive metadata columns.
+Saved-window consistency is enforced during assessment. Prototype notices use
+calculated rainfall; administrator category and community reports stay separate.
+Only provenance-reviewed local MGB polygons provide the VERIFIED baseline;
+legacy locations.susceptibility alone is not evidence. No subset is bundled.
+Optional context with absent/unexpected unit metadata becomes unavailable.
+Nominatim is opt-in and server-throttled; weather caching reuses valid timestamps.
+See docs/awareness-upgrade.md for installation and acceptance checks.

@@ -23,6 +23,8 @@
                 }
                 $('#risk-content').html(data.view.assessment);
                 $('#recent-readings-body').html(data.view.readings);
+                if (typeof data.view.history === 'string') $('#rainfall-history').html(data.view.history);
+                if (typeof data.view.reports === 'string') $('#location-reports').html(data.view.reports);
                 $('#current-high-count').text(data.view.high);
                 $('#current-medium-count').text(data.view.medium);
                 const selectAll = document.querySelector('[data-select-all="dashboard-readings"]');

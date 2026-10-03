@@ -6,7 +6,9 @@ require_admin();
 $locations = get_locations();
 $uiLocations = array_column($locations, null, 'id');
 $readings = get_all_readings(50);
-$reports = get_reports();
+$reportFilter = (string)get('status');
+$reportFilter = in_array($reportFilter, ['pending','reviewed','resolved'],true) ? $reportFilter : null;
+$reports = get_reports($reportFilter);
 $pendingCounts = get_pending_counts();
 $reportedAddressesByLocation = [];
 foreach ($reports as $report) {
@@ -88,11 +90,11 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
     header('Content-Disposition: attachment; filename="' . ($reportsCsv ? 'reports_' : 'readings_') . date('Y-m-d') . '.csv"');
     if ($reportsCsv) {
         $stream = fopen('php://output', 'w');
-        fputcsv($stream, ['ID','Location','Reporter','Phone','Email','Message','Status','Submitted UTC']);
+        fputcsv($stream, ['ID','Location','Reporter','Phone','Email','Message','Status','Submitted UTC','Report type','Occurred UTC','Last reviewer ID','Last reviewed UTC']);
         foreach (get_reports() as $r) {
             fputcsv($stream, [$r['id'],csv_cell($r['location_name']),csv_cell($r['reporter_name']),
                 csv_cell($r['contact_phone']),csv_cell($r['contact_email']),csv_cell($r['message']),
-                $r['status'],$r['created_at']]);
+                $r['status'],$r['created_at'],csv_cell($r['report_type'] ?? ''),$r['occurred_at'] ?? '',$r['reviewed_by'] ?? '',$r['reviewed_at'] ?? '']);
         }
     } else {
         echo export_readings_csv(get_all_readings(PHP_INT_MAX));
@@ -140,6 +142,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                 <a class="nav-link" href="<?= url('dashboard.php') ?>">Dashboard</a>
                 <a class="nav-link" href="<?= url('admin.php') ?>">Admin Panel</a>
                 <a class="nav-link" href="<?= url('readings.php') ?>">All Readings</a>
+                <a class="nav-link" href="<?= e(url('methodology.php')) ?>">Sources &amp; methodology</a>
                 <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
             </div>
         </div>
@@ -185,7 +188,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
             <div class="col-md-3 col-6 mb-3">
                 <div class="card">
                     <div class="card-body text-center">
-                        <h3 class="mb-0"><?= count(array_filter($reports, fn($r) => $r['status'] === 'pending')) ?></h3>
+                        <h3 class="mb-0"><?= array_sum($pendingCounts) ?></h3>
                         <p class="text-muted mb-0 small">Pending Reports</p>
                     </div>
                 </div>
@@ -203,7 +206,8 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
         <!-- All Reports Section -->
         <div class="card mb-4">
             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <h5 class="mb-0">All Reports</h5>
+                <div><h5 class="mb-0">Community report review queue</h5><small>USER-SUBMITTED; workflow status does not establish scientific verification.</small>
+                <div class="mt-2"><a href="<?= e(url('admin.php')) ?>">All</a> · <a href="<?= e(url('admin.php?status=pending')) ?>">Pending</a> · <a href="<?= e(url('admin.php?status=reviewed')) ?>">Reviewed</a> · <a href="<?= e(url('admin.php?status=resolved')) ?>">Resolved</a></div></div>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     <form id="bulkReportsForm" method="post" data-bulk-confirm="Delete %d selected report(s)?" class="m-0">
                         <?= csrf_field() ?><input type="hidden" name="action" value="bulk_delete_reports"><input type="hidden" name="return_to" value="admin.php">
@@ -253,7 +257,7 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
                                     <strong><?= e($locationAddress) ?></strong>
                                     <br><small class="text-muted"><?= e($locationCoordinates) ?></small>
                                 </td>
-                                <td><?= e(substr($r['message'], 0, 40)) ?>...</td>
+                                <td><strong><?= e(REPORT_TYPES[$r['report_type'] ?? 'other'] ?? 'Legacy observation') ?></strong><br><?= e(substr($r['message'], 0, 40)) ?>...<br><small>Occurred: <?= e(ui_time($r['occurred_at'] ?? null)) ?><br>Last review: <?= e(ui_time($r['reviewed_at'] ?? null)) ?></small></td>
                                 <td><?= e($reporterName) ?></td>
                                 <td><?= e($r['contact_phone'] ?? 'N/A') ?><br><small><?= e($r['contact_email'] ?? '') ?></small></td>
                                 <td>
@@ -534,5 +538,6 @@ if (get('action') === 'export' || get('action') === 'export_reports') {
         });
 
     </script>
+<footer class="container py-3 small text-muted">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
 </body>
 </html>

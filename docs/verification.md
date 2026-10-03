@@ -18,3 +18,19 @@ Not completed:
 The temporary PHP runtime was no longer available when packaging resumed. The original lint/unit/integration results above describe completed checks; they are not claims of a fresh final runtime test. Run the included PHP tests and local checklist on the final files before marking the frontend handoff accepted.
 
 No live user database or GitHub files were modified. See backend-test-checklist.md for the remaining acceptance steps. The rule set remains an uncalibrated prototype.
+
+
+## su1 awareness upgrade validation
+
+Baseline a8ae411. PHP lint and existing risk/weather/assessment/presentation/map
+checks passed, plus 22 awareness checks. A disposable MariaDB 10.11 database
+imported the original schema, ran the additive migration twice, and passed 11
+integration checks for input retention, repeated timestamps, adjustments, report
+review/UTC occurrence, export, archival and invalid-window behavior.
+A headless browser passed authenticated dashboard/AJAX, JSON 401/403, typed report
+submission, pending queue and methodology flows with no page errors. Desktop
+1280px and mobile 390px screenshots were inspected; no whole-page horizontal
+overflow was detected. Weather used explicitly synthetic TEST/DEMO provider
+fixtures in disposable state: this is not a live-provider or accuracy test.
+Herd/MySQL 8 and XAMPP acceptance still need local verification. MGB coverage,
+source edition and reuse terms remain unresolved; no hazard subset is bundled.

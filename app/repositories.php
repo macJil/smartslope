@@ -93,8 +93,8 @@ function create_reading(array $data): int {
             location_id, type, rainfall_1h, rainfall_24h, rainfall_72h, risk_level,
             rainfall_forecast_24h, precipitation_probability_24h,
             soil_moisture_9_27cm, soil_moisture_27_81cm,
-            temperature, humidity, wind_speed, weather_code, observed_at, source
-         ) VALUES (?, 'reading', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            temperature, humidity, wind_speed, weather_code, observed_at, source, rule_version, rainfall_window_end, provider_payload
+         ) VALUES (?, 'reading', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
     $stmt->execute([
         $data['location_id'],
@@ -111,7 +111,10 @@ function create_reading(array $data): int {
         $data['wind_speed'] ?? null,
         $data['weather_code'] ?? null,
         $data['observed_at'],
-        $data['source'] ?? 'openmeteo'
+        $data['source'] ?? 'openmeteo',
+        $data['rule_version'] ?? RiskAnalyzer::VERSION,
+        $data['rainfall_window_end'] ?? null,
+        $data['provider_payload'] ?? null
     ]);
     return (int)$pdo->lastInsertId();
 }
@@ -169,8 +172,8 @@ function create_report(array $data): int {
     $pdo = db();
     $stmt = $pdo->prepare(
         "INSERT INTO events (
-            location_id, user_id, type, message, contact_phone, contact_email, house_landmark, status
-         ) VALUES (?, ?, 'report', ?, ?, ?, ?, 'pending')"
+            location_id, user_id, type, message, contact_phone, contact_email, house_landmark, status, report_type, occurred_at
+         ) VALUES (?, ?, 'report', ?, ?, ?, ?, 'pending', ?, ?)"
     );
     $stmt->execute([
         $data['location_id'],
@@ -178,7 +181,9 @@ function create_report(array $data): int {
         $data['message'],
         $data['contact_phone'],
         $data['contact_email'] ?? null,
-        $data['house_landmark'] ?? null
+        $data['house_landmark'] ?? null,
+        $data['report_type'] ?? 'other',
+        $data['occurred_at'] ?? null
     ]);
     return (int)$pdo->lastInsertId();
 }
@@ -187,8 +192,9 @@ function create_report(array $data): int {
 
 function update_report(int $id, string $status, int $adminId): bool {
     $pdo = db();
-    $stmt = $pdo->prepare("UPDATE events SET status = ? WHERE id = ? AND type = 'report'");
-    return $stmt->execute([$status, $id]);
+    if (!in_array($status, ['reviewed','resolved'], true)) throw new InvalidArgumentException('Invalid review status.');
+    $stmt = $pdo->prepare("UPDATE events SET status = ?, reviewed_by = ?, reviewed_at = UTC_TIMESTAMP() WHERE id = ? AND type = 'report'");
+    return $stmt->execute([$status, $adminId, $id]);
 }
 
 // Delete report
@@ -210,16 +216,19 @@ function archive_reading(int $id): bool {
 }
 
 
-function update_reading_risk(int $readingId, string $risk): void {
-    if (!in_array($risk, ['low', 'normal', 'medium', 'high'], true)) {
-        throw new InvalidArgumentException('Invalid risk category.');
-    }
-    $pdo = db();
-    $exists = $pdo->prepare("SELECT id FROM events WHERE id = ? AND type = 'reading' AND archived = 0");
-    $exists->execute([$readingId]);
-    if (!$exists->fetchColumn()) throw new InvalidArgumentException('Reading not found.');
-    $stmt = $pdo->prepare("UPDATE events SET risk_level = ? WHERE id = ? AND type = 'reading' AND archived = 0");
-    $stmt->execute([$risk, $readingId]);
+function update_reading_risk(int $readingId, string $risk, int $adminId, string $reason): void {
+    if (!in_array($risk, ['low','normal','medium','high'], true) || trim($reason)==='' || strlen($reason)>500) throw new InvalidArgumentException('Valid category and adjustment reason are required.');
+    $pdo=db(); $pdo->beginTransaction();
+    try {
+        $stmt=$pdo->prepare("SELECT risk_level, adjustment_log FROM events WHERE id=? AND type='reading' AND archived=0 FOR UPDATE");
+        $stmt->execute([$readingId]); $row=$stmt->fetch();
+        if (!$row) throw new InvalidArgumentException('Reading not found.');
+        $log=json_decode($row['adjustment_log'] ?? '[]',true);
+        if (!is_array($log)) throw new RuntimeException('Invalid existing adjustment log.');
+        $log[]=['by'=>$adminId,'at'=>gmdate('Y-m-d H:i:s'),'from'=>$row['risk_level'],'to'=>$risk,'reason'=>trim($reason)];
+        $stmt=$pdo->prepare('UPDATE events SET risk_level=?, adjustment_log=? WHERE id=?');
+        $stmt->execute([$risk,json_encode($log,JSON_THROW_ON_ERROR),$readingId]); $pdo->commit();
+    } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
 }
 
 // ============================================================================

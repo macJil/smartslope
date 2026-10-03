@@ -155,6 +155,7 @@ if ($selectedLocId) {
                     <a class="nav-link" href="<?= url('report.php') ?>">Submit Report</a>
                 <?php endif; ?>
                 <a class="nav-link" href="<?= url('readings.php') ?>">All Readings</a>
+                <a class="nav-link" href="<?= e(url('methodology.php')) ?>">Sources &amp; methodology</a>
                 <form method="post" action="<?= e(url('logout.php')) ?>" class="d-inline"><?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Logout</button></form>
             </div>
         </div>
@@ -230,7 +231,7 @@ if ($selectedLocId) {
             <div class="col-12 mb-4">
                 <div class="card h-100">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h2 class="h5 mb-0">Risk analyzer</h2>
+                        <h2 class="h5 mb-0">Landslide awareness analyzer</h2>
                         <?php if ($selectedLocId && $selectedLoc): ?>
                             <button type="button" id="refresh-weather" class="btn btn-sm btn-outline-primary">
                                 <i class="bi bi-arrow-clockwise"></i> Refresh Weather
@@ -245,6 +246,10 @@ if ($selectedLocId) {
 
         </div>
 
+        <?php if ($selectedLoc): ?>
+        <div class="card mb-4"><div class="card-header">Selected location: community reports</div><div class="card-body" id="location-reports"><?= ui_report_summary(location_report_summary($selectedLocId),$isAdmin) ?></div></div>
+        <div class="card mb-4"><div class="card-header">Selected location: rainfall history</div><div class="card-body" id="rainfall-history"><?= ui_history($readings) ?></div></div>
+        <?php endif; ?>
         <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5>Recent Weather Readings</h5>
@@ -591,5 +596,6 @@ if ($selectedLocId) {
             map.setView([selectedLoc.lat, selectedLoc.lng], 16);
         <?php endif; ?>
     </script>
+<footer class="container py-3 small text-muted">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
 </body>
 </html>

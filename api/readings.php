@@ -27,18 +27,29 @@ try {
     $latest = get_latest_reading($locationId);
     $assessment = reading_assessment($latest, $location);
     $readings = get_readings($locationId, 10);
+    if ($latest) unset($latest['provider_payload'], $latest['adjustment_log']);
+    foreach ($readings as &$row) unset($row['provider_payload'], $row['adjustment_log']);
+    unset($row);
+    $baseline = susceptibility_lookup($location);
+    $reportCounts = location_report_summary($locationId);
     reading_json(200, [
         'location' => array_intersect_key($location, array_flip(['id','name','purok','landmark','lat','lng','susceptibility'])),
         'latest' => $latest,
         'assessment' => $assessment,
+        'baseline' => $baseline, 'notices' => awareness_notices($assessment,$baseline),
+        'report_counts' => $reportCounts,
         'readings' => $readings,
         'view' => [
             'assessment' => ui_assessment_panel($latest, $location, $assessment),
             'readings' => ui_readings_rows($readings, is_admin(), 'dashboard-readings', 'bulkDashboardReadingsForm', [$locationId => $location]),
             'high' => ui_current_count($readings, 'high'),
             'medium' => ui_current_count($readings, 'medium'),
+            'history' => ui_history($readings),
+            'reports' => ui_report_summary($reportCounts,is_admin()),
         ],
     ]);
+} catch (ProviderRateLimit $error) {
+    header('Retry-After: 2'); reading_json(429, ['error'=>$error->getMessage()]);
 } catch (Throwable $error) {
     error_log('SmartSlope reading endpoint: ' . $error->getMessage());
     reading_json(503, ['error' => 'Weather data could not be loaded or saved. Previous readings remain available.']);
