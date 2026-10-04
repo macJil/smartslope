@@ -480,7 +480,9 @@ if ($selectedLocId) {
                 let colorClass = 'marker-color-unknown';
                 let riskLevel = '?';
 
-                const locationRisk = normalizedRisk(latest?.assessment?.current_category);
+                // Display the persisted latest category after a new login too.
+                // Freshness remains visible in the popup and is not a reset of risk.
+                const locationRisk = normalizedRisk(latest?.assessment?.category);
                 if (locationRisk !== 'unavailable') {
                     colorClass = 'marker-color-' + locationRisk;
                     riskLevel = locationRisk[0].toUpperCase();

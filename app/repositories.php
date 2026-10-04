@@ -149,7 +149,8 @@ function get_reports(?string $status = null): array {
         $id = (int)$report['location_id'];
         if (!isset($assessments[$id])) $assessments[$id] = reading_assessment(get_latest_reading($id), $report);
         $report['location_assessment'] = $assessments[$id];
-        $report['location_risk_level'] = $assessments[$id]['current_category'] ?? 'unavailable';
+        // Reports should retain the last saved location risk after a later login.
+        $report['location_risk_level'] = $assessments[$id]['category'] ?? 'unavailable';
     }
     unset($report);
     return $reports;

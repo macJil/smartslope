@@ -15,7 +15,9 @@ test_check(reading_assessment($bad, [], $now)['data_status']==='incomplete', 'In
 $bad=$reading; $bad['observed_at']=gmdate('Y-m-d H:i:s',$now+3600);
 test_check(reading_assessment($bad, [], $now)['data_status']==='incomplete', 'Future reading is incomplete.');
 $bad=$reading; $bad['observed_at']=gmdate('Y-m-d H:i:s',$now-20000);
-test_check(reading_assessment($bad, [], $now)['data_status']==='outdated', 'Old reading is historical, not current.');
+$outdated = reading_assessment($bad, [], $now);
+test_check($outdated['data_status']==='outdated', 'Old reading is historical, not current.');
+test_check($outdated['category']==='low' && $outdated['current_category']===null, 'Saved category remains available after it is no longer current.');
 $bad=$reading; $bad['rule_version']='old-rule';
 test_check(reading_assessment($bad, [], $now)['data_status']==='incomplete', 'Different rule version cannot be current.');
 $bad=$reading; $bad['risk_level']='high';

@@ -29,7 +29,7 @@
                 $('#current-medium-count').text(data.view.medium);
                 const selectAll = document.querySelector('[data-select-all="dashboard-readings"]');
                 if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
-                if (window.updateMapRisk) window.updateMapRisk(settings.locationId, data.assessment.current_category, data.assessment, data.latest);
+                if (window.updateMapRisk) window.updateMapRisk(settings.locationId, data.assessment.category, data.assessment, data.latest);
                 message('Weather request completed. Data status: ' + data.assessment.data_status + '.', false);
             })
             .fail(function (xhr) {

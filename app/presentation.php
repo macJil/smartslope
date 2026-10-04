@@ -44,6 +44,16 @@ function ui_current_category(array $assessment): ?string {
         in_array($category, ['low', 'normal', 'medium', 'high'], true) ? $category : null;
 }
 
+/**
+ * The category saved with the latest valid reading.  Unlike current_category,
+ * this remains available after the reading ages so a location keeps showing
+ * its last recorded risk on a later sign-in.
+ */
+function ui_saved_category(array $assessment): ?string {
+    $category = $assessment['category'] ?? null;
+    return in_array($category, ['low', 'normal', 'medium', 'high'], true) ? $category : null;
+}
+
 function ui_current_count(array $readings, string $category): int {
     return count(array_filter($readings, static fn(array $reading): bool =>
         ui_current_category($reading['assessment'] ?? []) === $category));
@@ -92,11 +102,11 @@ function ui_location_label(array $location): string {
 }
 
 function ui_category_badge(array $assessment): string {
-    $category = ui_current_category($assessment);
+    $category = ui_saved_category($assessment);
     $color = ['low'=>'success', 'normal'=>'primary', 'medium'=>'warning text-dark', 'high'=>'danger'][$category ?? ''] ?? 'secondary';
     $html = '<span class="badge bg-' . $color . '">' . e(ucfirst($category ?? 'unavailable')) . '</span>';
-    if (!$category && ($assessment['data_status'] ?? '') === 'outdated' && !empty($assessment['category'])) {
-        $html .= '<small class="d-block text-muted mt-1">Last saved: ' . e(ucfirst($assessment['category'])) . '</small>';
+    if ($category && ($assessment['data_status'] ?? '') !== 'current') {
+        $html .= '<small class="d-block text-muted mt-1">Last saved category</small>';
     }
     if (!empty($assessment['adjusted'])) {
         $html .= '<small class="d-block mt-1">Administrator-adjusted</small>';
