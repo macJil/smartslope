@@ -11,7 +11,7 @@ Use this guide for an 8 to 10 minute class presentation. Replace the founder pla
 5. **How data moves**. User selects a point; PHP requests Open-Meteo; validated values are saved; rules create a category; the dashboard displays it.
 6. **Database design**. Show the three tables and why readings/reports share `events` with a `type` field.
 7. **Risk categories and limits**. Explain the rainfall windows and state that thresholds are uncalibrated and not official alerts.
-8. **Security and testing**. Summarize sessions/roles, CSRF, PDO, output escaping and automated/local checks.
+8. **Security and testing**. Summarize sessions/roles, PDO, output escaping and automated/local checks.
 9. **Progress, business proposal and ask**. Working prototype; no traction or revenue claim. Ask for a pilot adviser, data access guidance and mentorship.
 10. **Next validation steps**. Verify local datasets and terms, test with users, evaluate false alarms/missed events, then decide whether sensors or a wider area are justified.
 

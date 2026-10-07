@@ -1,14 +1,9 @@
 <?php
+
 declare(strict_types=1);
 
-function fetch_weather(float $lat, float $lng): array {
-    $weather=provider_cached('weather', sprintf('%.5f,%.5f',$lat,$lng),
-        static fn()=>request_weather($lat,$lng), 2.0, 60, [60=>100,3600=>1000,86400=>5000]);
-    validate_weather_payload($weather);
-    return $weather;
-}
-
-function request_weather(float $lat, float $lng): array {
+function fetch_weather(float $lat, float $lng): array
+{
     $url = "https://api.open-meteo.com/v1/forecast?";
     $params = [
         'latitude' => $lat,
@@ -41,8 +36,10 @@ function request_weather(float $lat, float $lng): array {
     }
     $decoded['provider_retrieved_at_utc'] = gmdate('Y-m-d H:i:s');
     $decoded['request_parameters'] = $params;
-    foreach (['precipitation_probability'=>'%', 'soil_moisture_9_to_27cm'=>'m³/m³', 'soil_moisture_27_to_81cm'=>'m³/m³'] as $field=>$unit) {
-        if (($decoded['hourly_units'][$field] ?? null)!==$unit) unset($decoded['hourly'][$field]);
+    foreach (['precipitation_probability' => '%', 'soil_moisture_9_to_27cm' => 'm³/m³', 'soil_moisture_27_to_81cm' => 'm³/m³'] as $field => $unit) {
+        if (($decoded['hourly_units'][$field] ?? null) !== $unit) {
+            unset($decoded['hourly'][$field]);
+        }
     }
     validate_weather_payload($decoded);
     return $decoded;
@@ -50,11 +47,30 @@ function request_weather(float $lat, float $lng): array {
 
 // Calculate rainfall from hourly data
 
+function rainfall_total(array $samples, array $times): ?float
+{
+    $sum = 0.0;
+    foreach ($times as $timestamp) {
+        $value = $samples[$timestamp]['rain'] ?? null;
+        if ($value === null) {
+            return null;
+        }
+        $sum += $value;
+    }
+    if ($sum > 99999.99) {
+        return null;
+    }
+    return round($sum, 2);
+}
+
 /** Hourly precipitation is the sum of the preceding hour, labelled by its end. */
-function calculate_weather_indicators(array $hourly, string $currentTime): array {
+function calculate_weather_indicators(array $hourly, string $currentTime): array
+{
     $end = utc_timestamp($currentTime);
-    if ($end === null || !isset($hourly['time'], $hourly['precipitation']) ||
-        !is_array($hourly['time']) || !is_array($hourly['precipitation'])) {
+    if (
+        $end === null || !isset($hourly['time'], $hourly['precipitation']) ||
+        !is_array($hourly['time']) || !is_array($hourly['precipitation'])
+    ) {
         throw new RuntimeException('Missing hourly rainfall data.');
     }
     $end = intdiv($end, 3600) * 3600; // Last completed hourly interval.
@@ -66,29 +82,27 @@ function calculate_weather_indicators(array $hourly, string $currentTime): array
         }
         $samples[$timestamp] = ['index' => $i, 'rain' => finite_number($hourly['precipitation'][$i] ?? null, 0, 99999.99)];
     }
-    $total = static function (array $times) use ($samples): ?float {
-        $sum = 0.0;
-        foreach ($times as $timestamp) {
-            $value = $samples[$timestamp]['rain'] ?? null;
-            if ($value === null) return null;
-            $sum += $value;
-        }
-        return $sum <= 99999.99 ? round($sum, 2) : null;
-    };
     $result = [];
     foreach ([1, 24, 72] as $hours) {
         $times = [];
-        for ($i = 0; $i < $hours; $i++) $times[] = $end - $i * 3600;
-        $result['rainfall_' . $hours . 'h'] = $total($times);
+        for ($i = 0; $i < $hours; $i++) {
+            $times[] = $end - $i * 3600;
+        }
+        $result['rainfall_' . $hours . 'h'] = rainfall_total($samples, $times);
     }
     $future = [];
-    for ($i = 1; $i <= 24; $i++) $future[] = $end + $i * 3600;
-    $result['rainfall_forecast_24h'] = $total($future);
+    for ($i = 1; $i <= 24; $i++) {
+        $future[] = $end + $i * 3600;
+    }
+    $result['rainfall_forecast_24h'] = rainfall_total($samples, $future);
     $probabilities = [];
     foreach ($future as $timestamp) {
         $index = $samples[$timestamp]['index'] ?? null;
         $probability = $index === null ? null : finite_number($hourly['precipitation_probability'][$index] ?? null, 0, 100);
-        if ($probability === null) { $probabilities = []; break; }
+        if ($probability === null) {
+            $probabilities = [];
+            break;
+        }
         $probabilities[] = $probability;
     }
     $result['precipitation_probability_24h'] = count($probabilities) === 24 ? (int)round(max($probabilities)) : null;
@@ -100,72 +114,76 @@ function calculate_weather_indicators(array $hourly, string $currentTime): array
     return $result;
 }
 
-function validate_weather_payload(array $weather, ?int $now = null): void {
+function validate_weather_payload(array $weather, ?int $now = null): void
+{
     global $config;
     $current = $weather['current'] ?? null;
-    if (!is_array($current) || !is_array($weather['hourly'] ?? null) ||
-        !is_string($current['time'] ?? null)) throw new RuntimeException('Incomplete weather response.');
+    if (
+        !is_array($current) || !is_array($weather['hourly'] ?? null) ||
+        !is_string($current['time'] ?? null)
+    ) {
+        throw new RuntimeException('Incomplete weather response.');
+    }
     $observed = utc_timestamp($current['time']);
     $now = $now ?? time();
-    if ($observed === null) throw new RuntimeException('Invalid provider observation time.');
-    if ($observed > $now + ($config['future_tolerance_seconds'] ?? 300)) throw new RuntimeException('Provider observation is in the future.');
-    if ($now - $observed > ($config['freshness_seconds'] ?? 10800)) throw new RuntimeException('Provider observation is outdated.');
-    if (($weather['utc_offset_seconds'] ?? null) !== 0) throw new RuntimeException('Expected UTC provider timestamps.');
+    if ($observed === null) {
+        throw new RuntimeException('Invalid provider observation time.');
+    }
+    if ($observed > $now + ($config['future_tolerance_seconds'] ?? 300)) {
+        throw new RuntimeException('Provider observation is in the future.');
+    }
+    if ($now - $observed > ($config['freshness_seconds'] ?? 10800)) {
+        throw new RuntimeException('Provider observation is outdated.');
+    }
+    if (($weather['utc_offset_seconds'] ?? null) !== 0) {
+        throw new RuntimeException('Expected UTC provider timestamps.');
+    }
     foreach (['precipitation' => 'mm'] as $field => $unit) {
-        if (($weather['hourly_units'][$field] ?? null) !== $unit) throw new RuntimeException('Unexpected hourly units.');
+        if (($weather['hourly_units'][$field] ?? null) !== $unit) {
+            throw new RuntimeException('Unexpected hourly units.');
+        }
     }
     foreach (['temperature_2m' => '°C', 'relative_humidity_2m' => '%', 'wind_speed_10m' => 'km/h', 'precipitation' => 'mm', 'weather_code' => 'wmo code'] as $field => $unit) {
-        if (($weather['current_units'][$field] ?? null) !== $unit) throw new RuntimeException('Unexpected current units.');
+        if (($weather['current_units'][$field] ?? null) !== $unit) {
+            throw new RuntimeException('Unexpected current units.');
+        }
     }
-    foreach (['temperature_2m' => [-100, 100], 'relative_humidity_2m' => [0, 100],
-              'wind_speed_10m' => [0, 9999.99], 'weather_code' => [0, 99], 'precipitation' => [0, 99999.99]] as $field => $range) {
-        if (finite_number($current[$field] ?? null, $range[0], $range[1]) === null) throw new RuntimeException('Invalid current weather value.');
+    foreach (
+        ['temperature_2m' => [-100, 100], 'relative_humidity_2m' => [0, 100],
+              'wind_speed_10m' => [0, 9999.99], 'weather_code' => [0, 99], 'precipitation' => [0, 99999.99]] as $field => $range
+    ) {
+        if (finite_number($current[$field] ?? null, $range[0], $range[1]) === null) {
+            throw new RuntimeException('Invalid current weather value.');
+        }
     }
 }
 
-function refresh_location(int $locationId): array {
+function refresh_location(int $locationId): array
+{
     $location = get_location($locationId);
-    if (!$location || !$location['active'] || !$location['lat'] || !$location['lng'] ||
-        !is_in_irisan((float)$location['lat'], (float)$location['lng'])) {
+    if (
+        !$location || !$location['active'] || !$location['lat'] || !$location['lng'] ||
+        !is_in_irisan((float)$location['lat'], (float)$location['lng'])
+    ) {
         throw new InvalidArgumentException('Select an active Irisan location.');
     }
     $weather = fetch_weather((float)$location['lat'], (float)$location['lng']);
-    validate_weather_payload($weather);
     $current = $weather['current'];
     $indicators = calculate_weather_indicators($weather['hourly'] ?? [], $current['time']);
     $risk = calculate_risk($indicators['rainfall_1h'], $indicators['rainfall_24h'], $indicators['rainfall_72h']);
     $observed = utc_timestamp($current['time']);
-    $pdo = db();
-    $pdo->beginTransaction();
-    try {
-        // Lock the location so concurrent administrator removal cannot create an orphaned active reading.
-        $lock = $pdo->prepare('SELECT active FROM locations WHERE id = ? FOR UPDATE');
-        $lock->execute([$locationId]);
-        if (!(int)$lock->fetchColumn()) throw new RuntimeException('Location is no longer active.');
-        $id = create_reading(array_merge($indicators, [
-            'location_id' => $locationId, 'risk_level' => $risk,
-            'temperature' => $current['temperature_2m'] ?? null,
-            'humidity' => $current['relative_humidity_2m'] ?? null,
-            'wind_speed' => $current['wind_speed_10m'] ?? null,
-            'weather_code' => $current['weather_code'] ?? null,
-             'observed_at' => gmdate('Y-m-d H:i:s', $observed),
-            'rule_version' => RiskAnalyzer::VERSION,
-            'rainfall_window_end' => gmdate('Y-m-d H:i:s', intdiv($observed,3600)*3600),
-            'provider_payload' => json_encode(['classification'=>'API','request_coordinates'=>[$location['lat'],$location['lng']],
-                'request_policy'=>'73 past hours, 25 forecast hours, UTC; optional arrays discarded if units differ',
-                'response'=>$weather], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
-        ]));
-        $saved = get_latest_reading($locationId);
-        $pdo->commit();
-        return $saved;
-    } catch (Throwable $error) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        throw $error;
-    }
+    create_reading(array_merge($indicators, [
+        'location_id' => $locationId, 'risk_level' => $risk,
+        'temperature' => $current['temperature_2m'] ?? null,
+        'humidity' => $current['relative_humidity_2m'] ?? null,
+        'wind_speed' => $current['wind_speed_10m'] ?? null,
+        'weather_code' => $current['weather_code'] ?? null,
+         'observed_at' => gmdate('Y-m-d H:i:s', $observed),
+        'rule_version' => RiskAnalyzer::VERSION,
+        'rainfall_window_end' => gmdate('Y-m-d H:i:s', intdiv($observed, 3600) * 3600),
+        'provider_payload' => json_encode(['classification' => 'API','request_coordinates' => [$location['lat'],$location['lng']],
+            'request_policy' => '73 past hours, 25 forecast hours, UTC; optional arrays discarded if units differ',
+            'response' => $weather], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+    ]));
+    return get_latest_reading($locationId);
 }
-
-// ============================================================================
-// MAP BOUNDARY CHECK
-// ============================================================================
-
-// Simple bounds check for Barangay Irisan

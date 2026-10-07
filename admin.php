@@ -1,109 +1,131 @@
 <?php
-require_once __DIR__ . '/app/bootstrap.php';
+
+require_once __DIR__ . '/app/config.php';
+require_once __DIR__ . '/app/helpers.php';
+require_once __DIR__ . '/app/auth.php';
+require_once __DIR__ . '/app/RiskAnalyzer.php';
+require_once __DIR__ . '/app/assessment.php';
+require_once __DIR__ . '/app/susceptibility.php';
+require_once __DIR__ . '/app/awareness.php';
+require_once __DIR__ . '/app/presentation.php';
+require_once __DIR__ . '/app/repositories.php';
+require_once __DIR__ . '/app/maintenance.php';
+require_once __DIR__ . '/app/csv.php';
 start_session();
 require_admin();
 
 $reportFilter = (string)get('status', post('return_status'));
-$reportFilter = in_array($reportFilter, ['pending','reviewed','resolved'],true) ? $reportFilter : null;
-$reportReturn = 'admin.php' . ($reportFilter ? '?status='.$reportFilter : '') . '#reports';
+$reportFilter = in_array($reportFilter, ['pending','reviewed','resolved'], true) ? $reportFilter : null;
+$reportReturn = 'admin.php' . ($reportFilter ? '?status=' . $reportFilter : '') . '#reports';
 
-// Mutating actions require an administrator, POST, and a session-bound token.
+// Form actions use the signed-in administrator session.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    require_post_csrf();
     $action = (string)post('action');
     try {
-    if ($action === 'complete_setup') {
-        migrate_awareness_schema(); flash('success','Database setup completed. Review and reading edits are ready.'); redirect('admin.php');
-    }
-    if ($action === 'import_locations') {
-        $file=$_FILES['locations_csv']??[];
-        if (($file['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name']??'') || strtolower(pathinfo($file['name']??'',PATHINFO_EXTENSION))!=='csv' || ($file['size']??0)>5*1024*1024) throw new InvalidArgumentException('Invalid/not applicable file. Choose a downloaded Locations CSV (maximum 5 MB).');
-        $rows=parse_locations_csv((string)file_get_contents($file['tmp_name']));
-        $result=import_locations_csv($rows);
-        flash('success','Locations imported: '.$result['added'].' added, '.$result['updated'].' restored/updated, '.$result['unchanged'].' unchanged.'); redirect('admin.php#locations');
-    }
-    $bulkActions = [
-        'bulk_delete_reports' => ['field' => 'report_ids', 'operation' => 'delete_report', 'label' => 'reports deleted'],
-        'bulk_archive_readings' => ['field' => 'reading_ids', 'operation' => 'archive_reading', 'label' => 'readings removed from active lists'],
-        'bulk_remove_locations' => ['field' => 'location_ids', 'operation' => 'deactivate_location', 'label' => 'locations removed; history retained'],
-    ];
-    if (isset($bulkActions[$action])) {
-        $bulkAction = $bulkActions[$action];
-        $selectedIds = $_POST[$bulkAction['field']] ?? [];
-        if (!is_array($selectedIds)) $selectedIds = [];
-        $selectedIds = array_unique(array_filter(array_map(
-            static fn($value) => filter_var($value, FILTER_VALIDATE_INT),
-            $selectedIds
-        ), static fn($id) => $id !== false && $id > 0));
-        if (!$selectedIds) {
-            flash('error', 'Select at least one item first.');
+        if ($action === 'complete_setup') {
+            migrate_awareness_schema();
+            flash('success', 'Database setup completed. Review and reading edits are ready.');
+            redirect('admin.php');
+        }
+        if ($action === 'import_locations') {
+            $file = $_FILES['locations_csv'] ?? [];
+            if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? '')) {
+                throw new InvalidArgumentException('Choose a Locations CSV file to import.');
+            }
+            $rows = parse_locations_csv((string)file_get_contents($file['tmp_name']));
+            $result = import_locations_csv($rows);
+            flash('success', 'Locations imported: ' . $result['added'] . ' added, ' . $result['updated'] . ' restored/updated, ' . $result['unchanged'] . ' unchanged.');
+            redirect('admin.php#locations');
+        }
+        $bulkActions = [
+        'bulk_delete_reports' => ['field' => 'report_ids', 'label' => 'reports deleted'],
+        'bulk_archive_readings' => ['field' => 'reading_ids', 'label' => 'readings removed from active lists'],
+        'bulk_remove_locations' => ['field' => 'location_ids', 'label' => 'locations removed; history retained'],
+        ];
+        if (isset($bulkActions[$action])) {
+            $bulkAction = $bulkActions[$action];
+            $selectedIds = $_POST[$bulkAction['field']] ?? [];
+            if (!is_array($selectedIds)) {
+                $selectedIds = [];
+            }
+            $ids = [];
+            foreach ($selectedIds as $value) {
+                if (is_scalar($value) && (int)$value > 0) {
+                    $ids[] = (int)$value;
+                }
+            }
+            $selectedIds = $ids;
+            if (!$selectedIds) {
+                flash('error', 'Select at least one item first.');
+                $returnTo = post('return_to', 'admin.php');
+                redirect(in_array($returnTo, ['admin.php', 'dashboard.php', 'readings.php'], true) ? $returnTo : 'admin.php');
+            }
+
+            $changed = 0;
+            foreach ($selectedIds as $selectedId) {
+                if ($action === 'bulk_delete_reports') {
+                    $saved = delete_report($selectedId);
+                } elseif ($action === 'bulk_archive_readings') {
+                    $saved = archive_reading($selectedId);
+                } else {
+                    $saved = deactivate_location($selectedId);
+                }
+                if ($saved) {
+                    $changed++;
+                }
+            }
+            flash('success', $changed . ' ' . $bulkAction['label'] . '.');
             $returnTo = post('return_to', 'admin.php');
             redirect(in_array($returnTo, ['admin.php', 'dashboard.php', 'readings.php'], true) ? $returnTo : 'admin.php');
         }
 
-        $changed = 0;
-        $pdo = db();
-        $pdo->beginTransaction();
-        try {
-        foreach ($selectedIds as $selectedId) {
-            $changed += match ($bulkAction['operation']) {
-                'delete_report' => delete_report((int)$selectedId),
-                'archive_reading' => archive_reading((int)$selectedId),
-                'deactivate_location' => deactivate_location((int)$selectedId),
-            } ? 1 : 0;
+        $id = filter_var(post('id'), FILTER_VALIDATE_INT);
+        if (!$id || $id < 1) {
+            http_response_code(422);
+            exit('Invalid record.');
         }
-        $pdo->commit();
-        } catch (Throwable $error) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-            error_log('Bulk operation failed: ' . $error->getMessage());
-            flash('error', 'No selected changes were saved. Please try again.');
-            redirect('admin.php');
+        if ($action === 'review' || $action === 'resolve') {
+            if (!update_report($id, $action === 'review' ? 'reviewed' : 'resolved', (int)$_SESSION['user_id'])) {
+                throw new InvalidArgumentException('No report changed. It may already have been updated. Reload and check its current status.');
+            }
+        } elseif ($action === 'delete_report') {
+            delete_report($id);
+        } elseif ($action === 'remove_location') {
+            deactivate_location($id);
+        } else {
+            http_response_code(422);
+            exit('Invalid action.');
         }
-        flash('success', $changed . ' ' . $bulkAction['label'] . '.');
-        $returnTo = post('return_to', 'admin.php');
-        redirect(in_array($returnTo, ['admin.php', 'dashboard.php', 'readings.php'], true) ? $returnTo : 'admin.php');
-    }
-
-    $id = filter_var(post('id'), FILTER_VALIDATE_INT);
-    if (!$id || $id < 1) {
-        http_response_code(422);
-        exit('Invalid record.');
-    }
-    if ($action === 'review' || $action === 'resolve') {
-        if (!update_report($id, $action === 'review' ? 'reviewed' : 'resolved', (int)$_SESSION['user_id'])) throw new InvalidArgumentException('No report changed. It may already have been updated. Reload and check its current status.');
-    } elseif ($action === 'delete_report') {
-        delete_report($id);
-    } elseif ($action === 'remove_location') {
-        deactivate_location($id);
-    } else {
-        http_response_code(422);
-        exit('Invalid action.');
-    }
-    flash('success', 'Changes saved.');
-    redirect($reportReturn);
+        flash('success', 'Changes saved.');
+        redirect($reportReturn);
     } catch (Throwable $error) {
-        error_log('Admin action failed: '.$error->getMessage());
-        flash('error', $error instanceof PDOException ? 'Changes could not be saved. Complete database setup if shown below, then try again.' : $error->getMessage());
+        error_log('Admin action failed: ' . $error->getMessage());
+        flash('error', $error instanceof PDOException ? 'The operation stopped. Earlier rows may already be saved. Check the list before retrying.' : $error->getMessage());
         redirect($action === 'import_locations' ? 'admin.php#locations' : $reportReturn);
     }
 }
 
-$exportAction=(string)get('action');
-if (in_array($exportAction,['export','export_reports','export_locations'],true)) {
+$exportAction = (string)get('action');
+if (in_array($exportAction, ['export','export_reports','export_locations'], true)) {
     try {
-        $csv=match($exportAction) {
-            'export_reports'=>export_reports_csv(get_reports($reportFilter)),
-            'export_locations'=>export_locations_csv(get_locations()),
-            default=>export_readings_csv(get_all_readings(PHP_INT_MAX)),
-        };
-        $kind=match($exportAction) {'export_reports'=>'reports','export_locations'=>'locations',default=>'readings'};
-        download_csv('smartslope_'.$kind.'_'.gmdate('Y-m-d').'.csv',$csv);
+        if ($exportAction === 'export_reports') {
+            $csv = export_reports_csv(get_reports($reportFilter));
+            $kind = 'reports';
+        } elseif ($exportAction === 'export_locations') {
+            $csv = export_locations_csv(get_locations());
+            $kind = 'locations';
+        } else {
+            $csv = export_readings_csv(get_all_readings(PHP_INT_MAX));
+            $kind = 'readings';
+        }
+        download_csv('smartslope_' . $kind . '_' . gmdate('Y-m-d') . '.csv', $csv);
     } catch (Throwable $error) {
-        error_log('CSV export failed: '.$error->getMessage());
-        flash('error','CSV export failed: '.($error instanceof PDOException ? 'Database could not be read.' : $error->getMessage())); redirect('admin.php');
+        error_log('CSV export failed: ' . $error->getMessage());
+        flash('error', 'CSV export failed: ' . ($error instanceof PDOException ? 'Database could not be read.' : $error->getMessage()));
+        redirect('admin.php');
     }
 }
-$missingColumns=missing_awareness_columns();
+$missingColumns = missing_awareness_columns();
 $locations = get_locations();
 $uiLocations = array_column($locations, null, 'id');
 $readings = get_all_readings(50);
@@ -117,7 +139,6 @@ foreach ($reports as $report) {
         $reportedAddressesByLocation[$locationId] = $address;
     }
 }
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -174,7 +195,7 @@ foreach ($reports as $report) {
 
         <?php if ($missingColumns): ?>
         <div class="alert alert-warning" role="alert"><h3 class="h6">Database setup is incomplete</h3><p>The previous awareness upgrade needs additional fields for report review and reading edits. Back up your database, then complete setup. Existing records are retained.</p>
-        <form method="post" action="<?= e(url('admin.php')) ?>"><?= csrf_field() ?><input type="hidden" name="action" value="complete_setup"><button class="btn btn-warning" type="submit">Complete database setup</button></form></div>
+        <form method="post" action="<?= e(url('admin.php')) ?>"><input type="hidden" name="action" value="complete_setup"><button class="btn btn-warning" type="submit">Complete database setup</button></form></div>
         <?php endif; ?>
         <p class="small text-muted">Reading counts cover the latest 50 saved readings across active locations. Current means observed within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours; these are reading counts, not location counts.</p>
         <!-- Stats Row -->
@@ -223,7 +244,7 @@ foreach ($reports as $report) {
                 <?php endforeach; ?></nav><p class="small mb-0 mt-2"><?= count($reports) ?> <?= e($reportFilter??'total') ?> report(s)</p></div>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     <form id="bulkReportsForm" method="post" data-bulk-confirm="Delete %d selected report(s)?" class="m-0">
-                        <?= csrf_field() ?><input type="hidden" name="action" value="bulk_delete_reports"><input type="hidden" name="return_to" value="admin.php">
+                        <input type="hidden" name="action" value="bulk_delete_reports"><input type="hidden" name="return_to" value="admin.php">
                         <button class="btn btn-sm btn-outline-danger">Delete selected</button>
                     </form>
                     <a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export_reports'.($reportFilter?'&status='.$reportFilter:''))) ?>">Download reports CSV</a>
@@ -314,14 +335,14 @@ foreach ($reports as $report) {
                 <h5 class="mb-0">All Locations</h5>
                 <a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export_locations')) ?>">Download locations CSV</a>
                 <form method="post" action="<?= e(url('admin.php')) ?>" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-center">
-                    <?= csrf_field() ?><input type="hidden" name="action" value="import_locations">
+                    <input type="hidden" name="action" value="import_locations">
                     <label for="locations_csv" class="visually-hidden">Locations CSV to import</label>
                     <input type="file" class="form-control form-control-sm w-auto" id="locations_csv" name="locations_csv" accept=".csv,text/csv" required>
                     <button class="btn btn-sm btn-primary" type="submit">Import locations CSV</button>
-                    <small class="w-100 text-muted">Use an unchanged Locations CSV downloaded here. Import restores its location details and active status; existing readings and reports stay linked.</small>
+                    <small class="w-100 text-muted">Use the seven-column Locations CSV downloaded here. You may edit location details; coordinates identify existing locations. Rows save one at a time.</small>
                 </form>
                 <form id="bulkLocationsForm" method="post" data-bulk-confirm="Remove %d selected location(s)? Their reading and report history will be kept." class="m-0">
-                    <?= csrf_field() ?><input type="hidden" name="action" value="bulk_remove_locations"><input type="hidden" name="return_to" value="admin.php">
+                    <input type="hidden" name="action" value="bulk_remove_locations"><input type="hidden" name="return_to" value="admin.php">
                     <button class="btn btn-sm btn-outline-danger">Remove selected</button>
                 </form>
             </div>
@@ -381,7 +402,7 @@ foreach ($reports as $report) {
             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <h5 class="mb-0">All Weather Readings</h5><a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export')) ?>">Download readings CSV</a>
                 <form id="bulkAdminReadingsForm" method="post" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="m-0">
-                    <?= csrf_field() ?><input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="admin.php">
+                    <input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="admin.php">
                     <button class="btn btn-sm btn-outline-danger">Remove selected</button>
                 </form>
             </div>
@@ -453,7 +474,7 @@ foreach ($reports as $report) {
                 </div>
                 <div class="modal-footer">
                     <form method="post" action="<?= e(url('admin.php')) ?>" id="modalReportAction" hidden>
-                        <?= csrf_field() ?><input type="hidden" name="id" id="modalReportActionId">
+                        <input type="hidden" name="id" id="modalReportActionId">
                         <input type="hidden" name="action" id="modalReportActionName">
                         <input type="hidden" name="return_status" value="<?= e($reportFilter??'') ?>">
                         <button type="submit" class="btn btn-primary" id="modalReportActionButton">Mark as reviewed</button>

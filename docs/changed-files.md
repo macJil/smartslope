@@ -1,5 +1,7 @@
 # Backend patch file changes
 
+Historical implementation notes: [sf2 simplification](simplification-sf2.md) supersedes the bootstrap, CSRF, CSV signing, caching and rollback behavior described below.
+
 Base: s4 f8e7c50.
 
 | Action | Path |

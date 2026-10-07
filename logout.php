@@ -1,8 +1,9 @@
 <?php
-require_once __DIR__ . '/app/bootstrap.php';
+require_once __DIR__ . '/app/config.php';
+require_once __DIR__ . '/app/helpers.php';
+require_once __DIR__ . '/app/auth.php';
 start_session();
 
-require_post_csrf();
 $_SESSION = [];
 session_destroy();
 redirect('index.php');

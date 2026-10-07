@@ -1,49 +1,59 @@
 <?php
+
 declare(strict_types=1);
 
-function e($value): string {
+function e($value): string
+{
     return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
 // Get POST value safely
 
-function post(string $key, $default = '') {
+function post(string $key, $default = '')
+{
     $value = $_POST[$key] ?? $default;
     return is_scalar($value) ? $value : $default;
 }
 
 // Get GET value safely
 
-function get(string $key, $default = '') {
+function get(string $key, $default = '')
+{
     $value = $_GET[$key] ?? $default;
     return is_scalar($value) ? $value : $default;
 }
 
 // Build URL
 
-function url(string $path = ''): string {
+function url(string $path = ''): string
+{
     $base = '/' . trim(APP_BASE_PATH, '/');
     return rtrim($base, '/') . '/' . ltrim($path, '/');
 }
 
 // Redirect
 
-function redirect(string $path): void {
+function redirect(string $path): void
+{
     header("Location: " . url($path), true, 303);
     exit;
 }
 
 // Display local datetime
 
-function local_date(?string $value): string {
-    if (!$value) return '';
+function local_date(?string $value): string
+{
+    if (!$value) {
+        return '';
+    }
     $date = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $value, new DateTimeZone('UTC'));
     return $date ? $date->setTimezone(new DateTimeZone('Asia/Manila'))->format('M j, Y g:i A') : $value;
 }
 
-// Start session
+// Store or retrieve a flash message
 
-function flash(string $key, ?string $message = null): ?string {
+function flash(string $key, ?string $message = null): ?string
+{
     if ($message !== null) {
         $_SESSION['flash'][$key] = $message;
         return null;
@@ -53,15 +63,14 @@ function flash(string $key, ?string $message = null): ?string {
     return is_string($value) ? $value : null;
 }
 
-// ============================================================================
-// AUTHENTICATION FUNCTIONS
-// ============================================================================
+// Test whether a coordinate is inside the Irisan polygon.
 
-// Hash password
-
-function is_in_irisan(float $lat, float $lng): bool {
+function is_in_irisan(float $lat, float $lng): bool
+{
     $geo = json_decode((string)file_get_contents(APP_ROOT . '/assets/map/irisan.geojson'), true);
-    if (!is_array($geo)) return false;
+    if (!is_array($geo)) {
+        return false;
+    }
     $geometry = $geo['type'] === 'FeatureCollection'
         ? ($geo['features'][0]['geometry'] ?? null)
         : ($geo['geometry'] ?? $geo);
@@ -71,18 +80,24 @@ function is_in_irisan(float $lat, float $lng): bool {
         foreach ($polygon as $ringIndex => $ring) {
             $crosses = false;
             for ($i = 0, $j = count($ring) - 1; $i < count($ring); $j = $i++) {
-                [$x1, $y1] = $ring[$i]; [$x2, $y2] = $ring[$j];
-                if (($y1 > $lat) !== ($y2 > $lat) &&
-                    $lng < ($x2 - $x1) * ($lat - $y1) / ($y2 - $y1) + $x1) $crosses = !$crosses;
+                [$x1, $y1] = $ring[$i];
+                [$x2, $y2] = $ring[$j];
+                if (
+                    ($y1 > $lat) !== ($y2 > $lat) &&
+                    $lng < ($x2 - $x1) * ($lat - $y1) / ($y2 - $y1) + $x1
+                ) {
+                    $crosses = !$crosses;
+                }
             }
-            if ($ringIndex === 0) $inside = $crosses;
-            elseif ($crosses) $inside = false;
+            if ($ringIndex === 0) {
+                $inside = $crosses;
+            } elseif ($crosses) {
+                $inside = false;
+            }
         }
-        if ($inside) return true;
+        if ($inside) {
+            return true;
+        }
     }
     return false;
 }
-
-// ============================================================================
-// CSV EXPORT
-// ============================================================================

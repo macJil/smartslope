@@ -1,5 +1,7 @@
 # Admin and CSV fixes (su2)
 
+Historical implementation notes: [sf2 simplification](simplification-sf2.md) supersedes the bootstrap, CSRF, CSV signing, caching and rollback behavior described below.
+
 Baseline: `cebdad7590bb8ad9ce0915b8221f1c7dfa0d656b`.
 
 ## Install

@@ -44,7 +44,7 @@ No verified Irisan susceptibility polygons are bundled. Unknown remains unknown.
 
 ### How do you prevent common web attacks?
 
-We use prepared PDO statements, server-side role checks, password hashing, session ID regeneration, CSRF tokens for changes, output escaping, input validation and server access rules. We still need to test the server rules on the actual host, especially because Nginx ignores `.htaccess`.
+We use prepared PDO statements, server-side role checks, password hashing, session ID regeneration, output escaping and basic input checks and server access rules. This simplified branch removes CSRF protection. We still need to test the server rules on the actual host, especially because Nginx ignores `.htaccess`.
 
 ### How do you know the model is accurate?
 

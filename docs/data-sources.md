@@ -22,7 +22,7 @@ No verified Irisan susceptibility subset or historical event catalog is bundled.
 
 ## Optional reverse geocoding
 
-Nominatim is disabled by default. If enabled, the server sends selected coordinates to OpenStreetMap Foundation's public Nominatim service. The current policy caps use at one request per second and imposes additional requirements; the app implements spacing and caching for its limited optional aid. Review the [Nominatim Usage Policy](https://operations.osmfoundation.org/policies/nominatim/) before enabling. Landmark/coordinate labels work without geocoding.
+Nominatim is disabled by default. If enabled, the server sends selected coordinates to OpenStreetMap Foundation's public Nominatim service. The current policy caps use at one request per second and imposes additional requirements; this simplified branch does not implement spacing or caching. Review the [Nominatim Usage Policy](https://operations.osmfoundation.org/policies/nominatim/) before enabling. Landmark/coordinate labels work without geocoding.
 
 ## What SmartSlope does not consume
 

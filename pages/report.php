@@ -1,18 +1,29 @@
 <?php
-require_once __DIR__ . '/../app/bootstrap.php';
+
+require_once __DIR__ . '/../app/config.php';
+require_once __DIR__ . '/../app/helpers.php';
+require_once __DIR__ . '/../app/auth.php';
+require_once __DIR__ . '/../app/RiskAnalyzer.php';
+require_once __DIR__ . '/../app/assessment.php';
+require_once __DIR__ . '/../app/susceptibility.php';
+require_once __DIR__ . '/../app/awareness.php';
+require_once __DIR__ . '/../app/presentation.php';
+require_once __DIR__ . '/../app/repositories.php';
 start_session();
 require_login();
 
 $locations = get_locations();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    require_post_csrf();
     $reportType = (string)post('report_type', 'other');
     try {
-        if (!isset(REPORT_TYPES[$reportType])) throw new InvalidArgumentException('Choose a valid report type.');
+        if (!isset(REPORT_TYPES[$reportType])) {
+            throw new InvalidArgumentException('Choose a valid report type.');
+        }
         $occurredAt = report_occurrence((string)post('occurred_at'));
     } catch (InvalidArgumentException $error) {
-        flash('error', $error->getMessage()); redirect('report.php');
+        flash('error', $error->getMessage());
+        redirect('report.php');
     }
     $locationId = filter_var(post('location_id'), FILTER_VALIDATE_INT);
     $reportLat = post('report_lat');
@@ -24,11 +35,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $houseLandmark = post('house_landmark');
     $reportAddress = strlen((string)$reportAddress) <= 255 ? $reportAddress : '';
 
-    if (trim((string)$message) === '' || strlen((string)$message) > 65535 ||
+    if (
+        trim((string)$message) === '' || strlen((string)$message) > 65535 ||
         strlen((string)$contactEmail) > 254 || strlen((string)$contactPhone) > 20 ||
-        !preg_match('/^\+?[0-9]{10,15}$/', trim((string)$contactPhone)) ||
-        ($contactEmail !== '' && !filter_var($contactEmail, FILTER_VALIDATE_EMAIL)) ||
-        trim((string)$houseLandmark) === '' || strlen((string)$houseLandmark) > 255) {
+        trim((string)$contactPhone) === '' ||
+        trim((string)$houseLandmark) === '' || strlen((string)$houseLandmark) > 255
+    ) {
         flash('error', 'Please fill all required fields');
         redirect('report.php');
     }
@@ -53,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     try {
-    create_report([
+        create_report([
         'location_id' => $location['id'],
         'user_id' => $_SESSION['user_id'],
         'message' => $message,
@@ -61,8 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'contact_email' => $contactEmail,
         'house_landmark' => $houseLandmark,
         'report_type' => $reportType, 'occurred_at' => $occurredAt
-    ]);
-
+        ]);
     } catch (PDOException $error) {
         error_log('Report submission failed: ' . $error->getMessage());
         flash('error', 'Your report could not be saved. Please try again.');
@@ -214,7 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                             <div class="mb-3"><label for="occurred_at" class="form-label">When did you observe it? (Philippine time)</label>
                             <input type="datetime-local" id="occurred_at" name="occurred_at" class="form-control"><small class="text-muted">Leave blank if unknown.</small></div>
-                            <?= csrf_field() ?>
+
                             <div class="mb-3">
                                 <div class="form-floating">
                                     <select name="location_id" id="locationSelect" class="form-select" required aria-describedby="locationHelp selectedAddress">

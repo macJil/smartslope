@@ -1,9 +1,11 @@
 <?php
+
 declare(strict_types=1);
 
 // Environment, application paths and lazy PDO connection.
 
-function load_env_file(): void {
+function load_env_file(): void
+{
     $envFile = __DIR__ . '/../.env';
     if (!is_file($envFile)) {
         return;
@@ -25,7 +27,9 @@ function load_env_file(): void {
 
         $value = trim($value, " \t\n\r\0\x0B\"'");
 
-        if (getenv($name) !== false || array_key_exists($name, $_ENV)) continue;
+        if (getenv($name) !== false || array_key_exists($name, $_ENV)) {
+            continue;
+        }
         if (!array_key_exists($name, $_ENV)) {
             $_ENV[$name] = $value;
         }
@@ -36,7 +40,8 @@ function load_env_file(): void {
     }
 }
 
-function env_value(string $name, string $default = ''): string {
+function env_value(string $name, string $default = ''): string
+{
     $value = $_ENV[$name] ?? getenv($name);
     return $value === false ? $default : (string)$value;
 }
@@ -71,7 +76,8 @@ define('APP_BASE_PATH', $config['base_path'] !== '' ? $config['base_path'] : (in
 // ============================================================================
 // DATABASE CONNECTION
 // ============================================================================
-function db(): PDO {
+function db(): PDO
+{
     static $pdo = null;
     if ($pdo === null) {
         global $config;
@@ -85,3 +91,16 @@ function db(): PDO {
     }
     return $pdo;
 }
+
+// Keep database details out of browser error messages.
+function application_error(Throwable $error): void
+{
+    error_log('SmartSlope: ' . $error->getMessage());
+    http_response_code(500);
+    if (PHP_SAPI === 'cli') {
+        fwrite(STDERR, "SmartSlope operation failed; check the PHP error log.\n");
+        exit(1);
+    }
+    echo 'SmartSlope could not complete this request. Please try again or check the server configuration.';
+}
+set_exception_handler('application_error');

@@ -1,5 +1,13 @@
 <?php
-require_once __DIR__ . '/app/bootstrap.php';
+require_once __DIR__ . '/app/config.php';
+require_once __DIR__ . '/app/helpers.php';
+require_once __DIR__ . '/app/auth.php';
+require_once __DIR__ . '/app/RiskAnalyzer.php';
+require_once __DIR__ . '/app/assessment.php';
+require_once __DIR__ . '/app/susceptibility.php';
+require_once __DIR__ . '/app/awareness.php';
+require_once __DIR__ . '/app/presentation.php';
+require_once __DIR__ . '/app/repositories.php';
 start_session();
 require_login();
 
@@ -35,7 +43,7 @@ if (get('action') === 'export') {
             <div>
                 <?php if ($isAdmin): ?>
                     <form id="bulkReadingsPageForm" method="post" action="<?= e(url('admin.php')) ?>" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="d-inline">
-                        <?= csrf_field() ?><input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="readings.php">
+                        <input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="readings.php">
                         <button class="btn btn-outline-danger">Remove selected</button>
                     </form>
                     <a href="<?= url('readings.php?action=export') ?>" class="btn btn-outline-success">Export CSV</a>

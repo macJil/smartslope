@@ -14,7 +14,7 @@
         $('#risk-content').attr('aria-busy', 'true');
         feedback.addClass('d-none').text('');
         $.ajax({url:settings.apiUrl, method:'POST', dataType:'json', timeout:45000,
-            data:{location_id:settings.locationId, csrf_token:settings.csrf}})
+            data:{location_id:settings.locationId}})
             .done(function (data) {
                 // Fragments come only from our authenticated API and escape every data value.
                 if (!data.view || typeof data.view.assessment !== 'string' || typeof data.view.readings !== 'string') {

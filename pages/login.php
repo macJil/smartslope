@@ -1,5 +1,9 @@
 <?php
-require_once __DIR__ . '/../app/bootstrap.php';
+
+require_once __DIR__ . '/../app/config.php';
+require_once __DIR__ . '/../app/helpers.php';
+require_once __DIR__ . '/../app/auth.php';
+require_once __DIR__ . '/../app/repositories.php';
 start_session();
 
 // If already logged in, redirect to dashboard
@@ -9,7 +13,6 @@ if (is_logged_in()) {
 
 // Handle login
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
-    require_post_csrf();
     $username = trim(post('username'));
     $password = post('password');
 
@@ -32,25 +35,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
 
 // Handle registration
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
-    require_post_csrf();
     $fullName = trim(post('full_name'));
     $username = trim(post('username'));
     $email = trim(post('email'));
     $phone = trim(post('phone'));
     $password = post('password');
 
-    if ($fullName === '' || strlen($fullName) > 100 || strlen($email) > 254 || strlen($phone) > 20 || strlen($password) > 72 || !preg_match('/^[a-zA-Z0-9_]{3,50}$/', $username) ||
-        !filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^\+?[0-9]{10,15}$/', $phone) ||
-        strlen($password) < 8) {
-        flash('error', 'Enter a valid username, email, phone and password (8-72 bytes).');
-        redirect('index.php');
-    }
-
-    $pdo = db();
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE username = ? OR email = ? OR phone = ?");
-    $stmt->execute([$username, $email, $phone]);
-    if ($stmt->fetchColumn() > 0) {
-        flash('error', 'Username, email, or phone already exists');
+    if (
+        $fullName === '' || $username === '' || $email === '' || $phone === '' || $password === '' ||
+        strlen($fullName) > 100 || strlen($username) > 50 || strlen($email) > 254 ||
+        strlen($phone) > 20 || strlen($password) > 72
+    ) {
+        flash('error', 'Fill all fields and keep them within the form limits.');
         redirect('index.php');
     }
 
@@ -92,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
                     <h2 id="login-title" class="h4 mb-2">Log in</h2>
                     <p class="page-subtitle mb-3">Continue to the Irisan dashboard.</p>
                     <form method="post">
-                        <?= csrf_field() ?>
+
                         <input type="hidden" name="login" value="1">
                         <div class="form-floating mb-3">
                             <input type="text" name="username" id="login_username" class="form-control" placeholder="Username" autocomplete="username" required autofocus>
@@ -109,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
                     <h2 id="register-title" class="h4 mb-2">Create an account</h2>
                     <p class="page-subtitle mb-3">Register as a resident to submit observations.</p>
                     <form method="post">
-                        <?= csrf_field() ?>
+
                         <input type="hidden" name="register" value="1">
                         <div class="d-flex flex-column gap-3">
                             <div class="form-floating">

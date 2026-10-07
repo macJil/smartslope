@@ -1,5 +1,13 @@
 <?php
-require_once __DIR__ . '/../app/bootstrap.php';
+require_once __DIR__ . '/../app/config.php';
+require_once __DIR__ . '/../app/helpers.php';
+require_once __DIR__ . '/../app/auth.php';
+require_once __DIR__ . '/../app/RiskAnalyzer.php';
+require_once __DIR__ . '/../app/assessment.php';
+require_once __DIR__ . '/../app/susceptibility.php';
+require_once __DIR__ . '/../app/awareness.php';
+require_once __DIR__ . '/../app/presentation.php';
+require_once __DIR__ . '/../app/repositories.php';
 start_session();
 require_login();
 
@@ -243,7 +251,7 @@ if ($selectedLocId) {
                 <div class="d-flex flex-wrap gap-2">
                     <?php if ($isAdmin): ?>
                         <form id="bulkDashboardReadingsForm" method="post" action="<?= e(url('admin.php')) ?>" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="m-0">
-                            <?= csrf_field() ?><input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="dashboard.php">
+                            <input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="dashboard.php">
                             <button class="btn btn-sm btn-outline-danger">Remove selected</button>
                         </form>
                     <?php endif; ?>
@@ -318,7 +326,7 @@ if ($selectedLocId) {
                                 </td>
                                 <td><?= local_date($r['created_at']) ?></td>
                                 <td>
-                                    <form method="post" action="<?= e(url('admin.php')) ?>"><?= csrf_field() ?><input type="hidden" name="action" value="review"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-primary">Review</button></form>
+                                    <form method="post" action="<?= e(url('admin.php')) ?>"><input type="hidden" name="action" value="review"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-primary">Review</button></form>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -337,9 +345,9 @@ if ($selectedLocId) {
 
     <?= ui_weather_modal() ?>
     <form id="map-selection-form" method="post" action="<?= e(url('actions/save_location.php')) ?>" hidden>
-        <?= csrf_field() ?><input type="hidden" name="location_id"><input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="address">
+        <input type="hidden" name="location_id"><input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="address">
     </form>
-    <script>window.SmartSlope = <?= json_encode(['locationId'=>$selectedLocId,'apiUrl'=>url('api/readings.php'),'csrf'=>csrf_token(),'isAdmin'=>$isAdmin,'editUrl'=>url('actions/save_reading.php?reading_id=')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
+    <script>window.SmartSlope = <?= json_encode(['locationId'=>$selectedLocId,'apiUrl'=>url('api/readings.php'),'isAdmin'=>$isAdmin,'editUrl'=>url('actions/save_reading.php?reading_id=')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
     <script src="<?= e(url('assets/js/vendor/jquery.min.js')) ?>"></script>
     <script src="<?= e(url('assets/js/dashboard.js')) ?>"></script>
     <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>

@@ -1,6 +1,17 @@
 <?php
 declare(strict_types=1);
-require_once __DIR__ . '/../app/bootstrap.php';
+require_once __DIR__ . '/../app/config.php';
+require_once __DIR__ . '/../app/helpers.php';
+require_once __DIR__ . '/../app/auth.php';
+require_once __DIR__ . '/../app/RiskAnalyzer.php';
+require_once __DIR__ . '/../app/assessment.php';
+require_once __DIR__ . '/../app/susceptibility.php';
+require_once __DIR__ . '/../app/awareness.php';
+require_once __DIR__ . '/../app/presentation.php';
+require_once __DIR__ . '/../app/repositories.php';
+require_once __DIR__ . '/../app/maintenance.php';
+require_once __DIR__ . '/../app/csv.php';
+require_once __DIR__ . '/../app/weather.php';
 $checks=0;
 function expect(bool $ok, string $message): void { global $checks; if (!$ok) throw new RuntimeException($message); $checks++; }
 $now=time();
@@ -44,12 +55,4 @@ $html=ui_assessment_panel($r,[], $hostile);
 expect(!str_contains($html,'<script>') && str_contains($html,'&lt;script&gt;'),'Notice/reasons escaped.');
 expect(str_contains(ui_report_summary(['pending'=>2],true),'Review pending reports'),'Admin queue notice.');
 expect(!str_contains(ui_report_summary(['pending'=>2],false),'Review pending reports'),'Resident summary has no admin action.');
-$id='test-' . bin2hex(random_bytes(5)); $calls=0;
-$fetch=static function() use (&$calls): array { $calls++; return ['value'=>1]; };
-provider_cached($id,'one',$fetch,0,60,[60=>1]); provider_cached($id,'one',$fetch,0,60,[60=>1]);
-expect($calls===1,'Cache must avoid repeated upstream calls.');
-try { provider_cached($id,'two',$fetch,0,60,[60=>1]); throw new LogicException('Quota exceeded.'); }
-catch (ProviderRateLimit $e) { expect(true,'Shared request budget enforced.'); }
-$root=sys_get_temp_dir() . '/smartslope-' . substr(hash('sha256',APP_ROOT),0,16);
-unlink($root.'/'.$id.'.json'); unlink($root.'/'.$id.'.lock');
 echo "$checks awareness checks passed.\n";

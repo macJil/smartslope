@@ -1,9 +1,16 @@
 <?php
+
 declare(strict_types=1);
-require_once __DIR__ . '/../app/bootstrap.php';
+
+require_once __DIR__ . '/../app/config.php';
+require_once __DIR__ . '/../app/helpers.php';
+require_once __DIR__ . '/../app/auth.php';
+require_once __DIR__ . '/../app/RiskAnalyzer.php';
+require_once __DIR__ . '/../app/assessment.php';
+require_once __DIR__ . '/../app/repositories.php';
+require_once __DIR__ . '/../app/weather.php';
 start_session();
 require_login();
-require_post_csrf();
 
 try {
     $locationId = filter_var($_POST['location_id'] ?? null, FILTER_VALIDATE_INT);
@@ -13,7 +20,9 @@ try {
     }
     if ($locationId) {
         $location = get_location($locationId);
-        if (!$location || !$location['active']) throw new InvalidArgumentException('Unknown location.');
+        if (!$location || !$location['active']) {
+            throw new InvalidArgumentException('Unknown location.');
+        }
         if ($address !== '' && $location['lat'] !== null && $location['lng'] !== null) {
             $location = get_or_create_location((float)$location['lat'], (float)$location['lng'], $address);
         }
@@ -31,6 +40,8 @@ try {
 } catch (Throwable $error) {
     error_log('SmartSlope weather refresh: ' . $error->getMessage());
     flash('error', 'The location was selected, but current weather could not be saved. Try Refresh later.');
-    if (isset($location)) redirect('dashboard.php?location_id=' . $location['id']);
+    if (isset($location)) {
+        redirect('dashboard.php?location_id=' . $location['id']);
+    }
     redirect('dashboard.php');
 }

@@ -1,5 +1,7 @@
 # SmartSlope awareness upgrade
 
+Historical implementation notes: [sf2 simplification](simplification-sf2.md) supersedes the bootstrap, CSRF, CSV signing, caching and rollback behavior described below.
+
 Baseline: su1 a8ae411204c785e18c0159c94b395c8a437e4f38.
 Sensors and AI are excluded. Manual weather refresh remains. Three tables remain:
 users, locations, events. No alert/sensor table or background task is introduced.

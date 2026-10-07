@@ -21,14 +21,14 @@ node tests/map-boundary.test.cjs
 Test both `/` on Herd and `/smartslope/` on XAMPP. Verify PHP PDO MySQL and cURL are enabled. Use separate browser profiles or normal/private windows for resident/admin sessions.
 
 1. Register a unique resident; check missing/overlength fields, invalid phone/email, short password and duplicate username/email/phone. Confirm server-assigned resident role.
-2. Login/logout; ensure resident requests to admin mutations cannot change data. Invalid/missing CSRF must return 403.
+2. Login/logout; ensure resident requests to admin mutations cannot change data. Session-authenticated submissions do not require a CSRF token in this branch.
 3. Select an Irisan point. Confirm a successful API response creates one snapshot and updates the selected list/marker. A second successful refresh appends another snapshot, even if observation time is unchanged.
 4. Disconnect internet. Map tiles/boundary should remain available. Weather refresh fails visibly and preserves stored rows. Optional reverse geocoding times out after four seconds.
 5. Set an observation time older than three hours in a disposable test database. Reload dashboard, admin, readings and report view. They must show outdated/last-known data and no current colored risk marker.
 6. In a test database, set rainfall or risk to null. Pages and AJAX must remain usable and display incomplete/unavailable.
 7. Submit reports with required phone, optional email and a map location. Review/resolve the report as admin. Open multiple report maps and confirm correct coordinates. Reporter identity must not change.
 8. Edit a reading category. Weather/location/time must remain unchanged. A differing category shows administrator-adjusted. Archive rows and remove locations; ensure historical rows are retained in the database. Existing active-list filtering excludes inactive locations.
-9. Test bulk removal, empty selection and malformed IDs. Database failures roll back the selected bulk transaction.
+9. Test bulk removal, empty selection and malformed IDs. A later failure may leave earlier bulk changes saved.
 10. Export reports/readings CSV; check contacts, UTC columns, freshness, adjusted status, and formula-like report text.
 11. API: logged-out GET returns JSON 401; invalid POST token 403; malformed ID 422; inactive/missing location 404; unsupported method 405; provider failure 503. GET must not insert rows.
 12. Direct HTTP access to `.env`, `database/schema.sql`, `app/config.php` and `tests/risk.php` must be denied. Check server logs for errors.

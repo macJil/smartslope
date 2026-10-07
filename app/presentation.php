@@ -29,7 +29,7 @@ function ui_navigation(string $active): string {
                         <a class="nav-link<?= $active === $key ? ' active' : '' ?>" href="<?= e(url($path)) ?>"<?= $active === $key ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
                     <?php endforeach; ?>
                     <form method="post" action="<?= e(url('logout.php')) ?>" class="nav-logout">
-                        <?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Log out</button>
+                        <button class="nav-link btn btn-link" type="submit">Log out</button>
                     </form>
                 </div>
             </div>
@@ -45,8 +45,11 @@ function ui_current_category(array $assessment): ?string {
 }
 
 function ui_current_count(array $readings, string $category): int {
-    return count(array_filter($readings, static fn(array $reading): bool =>
-        ui_current_category($reading['assessment'] ?? []) === $category));
+    $count = 0;
+    foreach ($readings as $reading) {
+        if (ui_current_category($reading['assessment'] ?? []) === $category) $count++;
+    }
+    return $count;
 }
 
 function ui_number($value, string $unit = ''): string {
@@ -58,11 +61,9 @@ function ui_time(?string $value): string {
 }
 
 function ui_source(?string $source): string {
-    return match ($source) {
-        'openmeteo' => 'Open-Meteo weather provider (modeled data)',
-        'manual' => 'Manual entry',
-        default => 'Source unavailable',
-    };
+    if ($source === 'openmeteo') return 'Open-Meteo weather provider (modeled data)';
+    if ($source === 'manual') return 'Manual entry';
+    return 'Source unavailable';
 }
 
 function ui_location_label(array $location): string {

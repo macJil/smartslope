@@ -1,13 +1,15 @@
 <?php
+
 declare(strict_types=1);
 
-function create_user(string $fullName, string $username, string $email, string $phone, string $password): int {
+function create_user(string $fullName, string $username, string $email, string $phone, string $password): int
+{
     $pdo = db();
     $stmt = $pdo->prepare(
         "INSERT INTO users (full_name, username, email, phone, password, role)
          VALUES (?, ?, ?, ?, ?, 'user')"
     );
-    $stmt->execute([$fullName, $username, $email, $phone, hash_password($password)]);
+    $stmt->execute([$fullName, $username, $email, $phone, password_hash($password, PASSWORD_DEFAULT)]);
     return (int)$pdo->lastInsertId();
 }
 
@@ -17,14 +19,16 @@ function create_user(string $fullName, string $username, string $email, string $
 
 // Get all active locations
 
-function get_locations(): array {
+function get_locations(): array
+{
     $pdo = db();
     return $pdo->query("SELECT * FROM locations WHERE active = 1 ORDER BY name")->fetchAll();
 }
 
 // Get location by ID
 
-function get_location(int $id): ?array {
+function get_location(int $id): ?array
+{
     $pdo = db();
     $stmt = $pdo->prepare("SELECT * FROM locations WHERE id = ?");
     $stmt->execute([$id]);
@@ -33,7 +37,8 @@ function get_location(int $id): ?array {
 
 // Deactivate location
 
-function deactivate_location(int $id): bool {
+function deactivate_location(int $id): bool
+{
     $pdo = db();
     $stmt = $pdo->prepare("UPDATE locations SET active = 0 WHERE id = ?");
     $stmt->execute([$id]);
@@ -42,7 +47,8 @@ function deactivate_location(int $id): bool {
 
 // Get latest reading for location
 
-function get_latest_reading(int $locationId): ?array {
+function get_latest_reading(int $locationId): ?array
+{
     $pdo = db();
     $stmt = $pdo->prepare(
         "SELECT * FROM events
@@ -56,7 +62,8 @@ function get_latest_reading(int $locationId): ?array {
 
 // Get readings for location
 
-function get_readings(int $locationId, int $limit = 50): array {
+function get_readings(int $locationId, int $limit = 50): array
+{
     $pdo = db();
     $stmt = $pdo->prepare(
         "SELECT * FROM events
@@ -66,12 +73,17 @@ function get_readings(int $locationId, int $limit = 50): array {
     $stmt->bindValue(1, $locationId, PDO::PARAM_INT);
     $stmt->bindValue(2, max(1, $limit), PDO::PARAM_INT);
     $stmt->execute();
-    return array_map('assess_reading', $stmt->fetchAll());
+    $rows = $stmt->fetchAll();
+    foreach ($rows as $index => $row) {
+        $rows[$index] = assess_reading($row);
+    }
+    return $rows;
 }
 
 // Get all recent readings
 
-function get_all_readings(int $limit = 100): array {
+function get_all_readings(int $limit = 100): array
+{
     $pdo = db();
     $rows = $pdo->query(
         "SELECT e.*, l.name as location_name, l.purok, l.lat, l.lng
@@ -81,12 +93,16 @@ function get_all_readings(int $limit = 100): array {
          ORDER BY e.observed_at DESC, e.id DESC
          LIMIT " . max(1, (int)$limit)
     )->fetchAll();
-    return array_map('assess_reading', $rows);
+    foreach ($rows as $index => $row) {
+        $rows[$index] = assess_reading($row);
+    }
+    return $rows;
 }
 
 // Create reading
 
-function create_reading(array $data): int {
+function create_reading(array $data): int
+{
     $pdo = db();
     $stmt = $pdo->prepare(
         "INSERT INTO events (
@@ -119,9 +135,9 @@ function create_reading(array $data): int {
     return (int)$pdo->lastInsertId();
 }
 
-// Calculate risk level
 
-function get_reports(?string $status = null): array {
+function get_reports(?string $status = null): array
+{
     $pdo = db();
     $sql = "SELECT e.*, l.name as location_name, l.purok, l.landmark, l.lat, l.lng,
                    l.susceptibility, u.full_name as reporter_name
@@ -141,7 +157,9 @@ function get_reports(?string $status = null): array {
     $assessments = [];
     foreach ($reports as &$report) {
         $id = (int)$report['location_id'];
-        if (!isset($assessments[$id])) $assessments[$id] = reading_assessment(get_latest_reading($id), $report);
+        if (!isset($assessments[$id])) {
+            $assessments[$id] = reading_assessment(get_latest_reading($id), $report);
+        }
         $report['location_assessment'] = $assessments[$id];
         $report['location_risk_level'] = $assessments[$id]['current_category'] ?? 'unavailable';
     }
@@ -151,7 +169,8 @@ function get_reports(?string $status = null): array {
 
 // Get pending report counts by location
 
-function get_pending_counts(): array {
+function get_pending_counts(): array
+{
     $pdo = db();
     $stmt = $pdo->query(
         "SELECT location_id, COUNT(*) as count
@@ -168,7 +187,8 @@ function get_pending_counts(): array {
 
 // Create report
 
-function create_report(array $data): int {
+function create_report(array $data): int
+{
     $pdo = db();
     $stmt = $pdo->prepare(
         "INSERT INTO events (
@@ -190,10 +210,13 @@ function create_report(array $data): int {
 
 // Update report status
 
-function update_report(int $id, string $status, int $adminId): bool {
+function update_report(int $id, string $status, int $adminId): bool
+{
     require_awareness_schema();
     $pdo = db();
-    if (!in_array($status, ['reviewed','resolved'], true)) throw new InvalidArgumentException('Invalid review status.');
+    if (!in_array($status, ['reviewed','resolved'], true)) {
+        throw new InvalidArgumentException('Invalid review status.');
+    }
     $stmt = $pdo->prepare("UPDATE events SET status = ?, reviewed_by = ?, reviewed_at = UTC_TIMESTAMP() WHERE id = ? AND type = 'report' AND status = ?");
     $stmt->execute([$status, $adminId, $id, $status === 'reviewed' ? 'pending' : 'reviewed']);
     return $stmt->rowCount() === 1;
@@ -201,7 +224,8 @@ function update_report(int $id, string $status, int $adminId): bool {
 
 // Delete report
 
-function delete_report(int $id): bool {
+function delete_report(int $id): bool
+{
     $pdo = db();
     $stmt = $pdo->prepare("DELETE FROM events WHERE id = ? AND type = 'report'");
     $stmt->execute([$id]);
@@ -210,7 +234,8 @@ function delete_report(int $id): bool {
 
 // Archive reading
 
-function archive_reading(int $id): bool {
+function archive_reading(int $id): bool
+{
     $pdo = db();
     $stmt = $pdo->prepare("UPDATE events SET archived = 1 WHERE id = ? AND type = 'reading' AND archived = 0");
     $stmt->execute([$id]);
@@ -218,29 +243,31 @@ function archive_reading(int $id): bool {
 }
 
 
-function update_reading_risk(int $readingId, string $risk, int $adminId, string $reason): void {
+function update_reading_risk(int $readingId, string $risk, int $adminId, string $reason): void
+{
     require_awareness_schema();
-    if (!in_array($risk, ['low','normal','medium','high'], true) || trim($reason)==='' || strlen($reason)>500) throw new InvalidArgumentException('Valid category and adjustment reason are required.');
-    $pdo=db(); $pdo->beginTransaction();
-    try {
-        $stmt=$pdo->prepare("SELECT risk_level, adjustment_log FROM events WHERE id=? AND type='reading' AND archived=0 FOR UPDATE");
-        $stmt->execute([$readingId]); $row=$stmt->fetch();
-        if (!$row) throw new InvalidArgumentException('Reading not found.');
-        $log=json_decode($row['adjustment_log'] ?? '[]',true);
-        if (!is_array($log)) throw new RuntimeException('Invalid existing adjustment log.');
-        $log[]=['by'=>$adminId,'at'=>gmdate('Y-m-d H:i:s'),'from'=>$row['risk_level'],'to'=>$risk,'reason'=>trim($reason)];
-        $stmt=$pdo->prepare('UPDATE events SET risk_level=?, adjustment_log=? WHERE id=?');
-        $stmt->execute([$risk,json_encode($log,JSON_THROW_ON_ERROR),$readingId]); $pdo->commit();
-    } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
+    if (!in_array($risk, ['low','normal','medium','high'], true) || trim($reason) === '' || strlen($reason) > 500) {
+        throw new InvalidArgumentException('Valid category and adjustment reason are required.');
+    }
+    $pdo = db();
+    $stmt = $pdo->prepare("SELECT risk_level, adjustment_log FROM events WHERE id=? AND type='reading' AND archived=0");
+    $stmt->execute([$readingId]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        throw new InvalidArgumentException('Reading not found.');
+    }
+    $log = json_decode($row['adjustment_log'] ?? '[]', true);
+    if (!is_array($log)) {
+        throw new RuntimeException('Invalid existing adjustment log.');
+    }
+    $log[] = ['by' => $adminId,'at' => gmdate('Y-m-d H:i:s'),'from' => $row['risk_level'],'to' => $risk,'reason' => trim($reason)];
+    $stmt = $pdo->prepare('UPDATE events SET risk_level=?, adjustment_log=? WHERE id=?');
+    $stmt->execute([$risk,json_encode($log, JSON_THROW_ON_ERROR),$readingId]);
 }
 
-// ============================================================================
-// WEATHER API FUNCTIONS
-// ============================================================================
 
-// Fetch weather from Open-Meteo
-
-function get_or_create_location(float $lat, float $lng, ?string $landmark = null): array {
+function get_or_create_location(float $lat, float $lng, ?string $landmark = null): array
+{
     if (!is_finite($lat) || !is_finite($lng) || !is_in_irisan($lat, $lng) || strlen((string)$landmark) > 255) {
         throw new InvalidArgumentException('Invalid Irisan location or address.');
     }
@@ -273,15 +300,6 @@ function get_or_create_location(float $lat, float $lng, ?string $landmark = null
          VALUES (?, 'Map point', ?, ?, ?, 'unknown', 1)"
     );
     $landmark = trim((string)$landmark);
-    try {
-        $stmt->execute([$name, $landmark !== '' ? $landmark : null, $lat, $lng]);
-    } catch (PDOException $error) {
-        if ($error->getCode() !== '23000') throw $error;
-        $existing = $pdo->prepare('SELECT * FROM locations WHERE lat = ? AND lng = ?');
-        $existing->execute([$lat, $lng]);
-        $row = $existing->fetch();
-        if (!$row || !$row['active']) throw $error;
-        return $row;
-    }
+    $stmt->execute([$name, $landmark !== '' ? $landmark : null, $lat, $lng]);
     return get_location((int)$pdo->lastInsertId());
 }

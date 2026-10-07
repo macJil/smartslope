@@ -1,0 +1,2897 @@
+diff --git a/.env.example b/.env.example
+index a50a8d8..2269863 100644
+--- a/.env.example
++++ b/.env.example
+@@ -11,7 +11,3 @@ READING_MAX_AGE_SECONDS=10800
+ 
+ # Optional address aid: read Nominatim policy before enabling.
+ NOMINATIM_ENABLED=0
+-
+-# Optional 64-hex-character secret for location CSV verification.
+-# If blank, the first location export creates and saves one in .env. Back it up.
+-CSV_SIGNING_KEY=
+diff --git a/README.md b/README.md
+index 7a5363e..d552ccf 100644
+--- a/README.md
++++ b/README.md
+@@ -1,4 +1,6 @@
+ # SmartSlope | Irisan prototype
++
++This `sf2` simplification uses direct PHP includes and session login. See [changes and behavior differences](docs/simplification-sf2.md), especially editable CSVs, partial saves and removed CSRF/provider controls.
+ SmartSlope is a student prototype for rainfall screening and community ground-condition reporting in Barangay Irisan, Baguio City. It uses PHP and PDO/MySQL, locally bundled Bootstrap/Leaflet/jQuery, an offline Irisan map, and Open-Meteo weather data.
+ 
+ The website supports resident accounts, map-point selection, manual weather refresh and saved reading history, explainable rainfall categories, resident reports, administrator review, risk-category correction with a reason, reading archival and CSV workflows.
+diff --git a/actions/delete_reading.php b/actions/delete_reading.php
+index c8f1da1..64b57bd 100644
+--- a/actions/delete_reading.php
++++ b/actions/delete_reading.php
+@@ -1,9 +1,13 @@
+ <?php
++
+ declare(strict_types=1);
+-require_once __DIR__ . '/../app/bootstrap.php';
++
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/auth.php';
++require_once __DIR__ . '/../app/repositories.php';
+ start_session();
+ require_admin();
+-require_post_csrf();
+ 
+ $readingId = filter_var($_POST['reading_id'] ?? null, FILTER_VALIDATE_INT);
+ if ($readingId && $readingId > 0) {
+diff --git a/actions/save_location.php b/actions/save_location.php
+index 11d0648..c8379af 100644
+--- a/actions/save_location.php
++++ b/actions/save_location.php
+@@ -1,9 +1,16 @@
+ <?php
++
+ declare(strict_types=1);
+-require_once __DIR__ . '/../app/bootstrap.php';
++
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/auth.php';
++require_once __DIR__ . '/../app/RiskAnalyzer.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/repositories.php';
++require_once __DIR__ . '/../app/weather.php';
+ start_session();
+ require_login();
+-require_post_csrf();
+ 
+ try {
+     $locationId = filter_var($_POST['location_id'] ?? null, FILTER_VALIDATE_INT);
+@@ -13,7 +20,9 @@ try {
+     }
+     if ($locationId) {
+         $location = get_location($locationId);
+-        if (!$location || !$location['active']) throw new InvalidArgumentException('Unknown location.');
++        if (!$location || !$location['active']) {
++            throw new InvalidArgumentException('Unknown location.');
++        }
+         if ($address !== '' && $location['lat'] !== null && $location['lng'] !== null) {
+             $location = get_or_create_location((float)$location['lat'], (float)$location['lng'], $address);
+         }
+@@ -31,6 +40,8 @@ try {
+ } catch (Throwable $error) {
+     error_log('SmartSlope weather refresh: ' . $error->getMessage());
+     flash('error', 'The location was selected, but current weather could not be saved. Try Refresh later.');
+-    if (isset($location)) redirect('dashboard.php?location_id=' . $location['id']);
++    if (isset($location)) {
++        redirect('dashboard.php?location_id=' . $location['id']);
++    }
+     redirect('dashboard.php');
+ }
+diff --git a/actions/save_reading.php b/actions/save_reading.php
+index c440260..59dba52 100644
+--- a/actions/save_reading.php
++++ b/actions/save_reading.php
+@@ -1,9 +1,19 @@
+ <?php
+-require_once __DIR__ . '/../app/bootstrap.php';
++
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/auth.php';
++require_once __DIR__ . '/../app/RiskAnalyzer.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/susceptibility.php';
++require_once __DIR__ . '/../app/awareness.php';
++require_once __DIR__ . '/../app/presentation.php';
++require_once __DIR__ . '/../app/repositories.php';
++require_once __DIR__ . '/../app/maintenance.php';
+ start_session();
+ require_admin();
+ 
+-$readingId = (int)(($_SERVER['REQUEST_METHOD']??'GET')==='POST' ? post('reading_id',get('reading_id',0)) : get('reading_id',0));
++$readingId = (int)(($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' ? post('reading_id', get('reading_id', 0)) : get('reading_id', 0));
+ $error = '';
+ $missingColumns = missing_awareness_columns();
+ 
+@@ -16,23 +26,25 @@ $pdo = db();
+ $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND type = 'reading' AND archived = 0");
+ $stmt->execute([$readingId]);
+ $reading = $stmt->fetch();
+-if ($reading) $reading = assess_reading($reading);
++if ($reading) {
++    $reading = assess_reading($reading);
++}
+ 
+ if (!$reading) {
+     flash('error', 'Reading not found');
+     redirect('admin.php');
+ }
+ 
+-// CSRF is checked even when form fields are malformed.
+-if (($_SERVER['REQUEST_METHOD']??'GET') === 'POST') {
+-    require_post_csrf();
++if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
+     try {
+-        $riskLevel=(string)post('risk_level'); $reason=trim((string)post('adjustment_reason'));
+-        update_reading_risk($readingId,$riskLevel,(int)$_SESSION['user_id'],$reason);
+-        flash('success','Reading category updated. Rainfall values are unchanged.'); redirect('admin.php');
++        $riskLevel = (string)post('risk_level');
++        $reason = trim((string)post('adjustment_reason'));
++        update_reading_risk($readingId, $riskLevel, (int)$_SESSION['user_id'], $reason);
++        flash('success', 'Reading category updated. Rainfall values are unchanged.');
++        redirect('admin.php');
+     } catch (Throwable $exception) {
+-        error_log('Reading edit failed: '.$exception->getMessage());
+-        $error=$exception instanceof PDOException ? 'The update could not be saved. Complete database setup in Admin Panel if needed, then try again.' : $exception->getMessage();
++        error_log('Reading edit failed: ' . $exception->getMessage());
++        $error = $exception instanceof PDOException ? 'The update could not be saved. Complete database setup in Admin Panel if needed, then try again.' : $exception->getMessage();
+         http_response_code($exception instanceof InvalidArgumentException ? 422 : 503);
+     }
+ }
+@@ -64,7 +76,7 @@ $loc = get_location($reading['location_id']);
+                         <?php if ($missingColumns): ?><div class="alert alert-warning">Database setup is incomplete. <a href="<?= e(url('admin.php')) ?>">Open Admin Panel to complete setup.</a></div><?php endif; ?>
+                         <form method="post" action="<?= e(url('actions/save_reading.php?reading_id='.$readingId)) ?>">
+                             <input type="hidden" name="reading_id" value="<?= $readingId ?>">
+-                            <?= csrf_field() ?>
++
+                             <input type="hidden" name="update_reading" value="1">
+                             <div class="form-floating mb-3">
+                                 <textarea name="adjustment_reason" id="adjustment_reason" class="form-control" placeholder="Adjustment reason" style="height: 7rem" maxlength="500" required><?= e(post('adjustment_reason')) ?></textarea>
+diff --git a/admin.php b/admin.php
+index c52acbc..9b58980 100644
+--- a/admin.php
++++ b/admin.php
+@@ -1,109 +1,131 @@
+ <?php
+-require_once __DIR__ . '/app/bootstrap.php';
++
++require_once __DIR__ . '/app/config.php';
++require_once __DIR__ . '/app/helpers.php';
++require_once __DIR__ . '/app/auth.php';
++require_once __DIR__ . '/app/RiskAnalyzer.php';
++require_once __DIR__ . '/app/assessment.php';
++require_once __DIR__ . '/app/susceptibility.php';
++require_once __DIR__ . '/app/awareness.php';
++require_once __DIR__ . '/app/presentation.php';
++require_once __DIR__ . '/app/repositories.php';
++require_once __DIR__ . '/app/maintenance.php';
++require_once __DIR__ . '/app/csv.php';
+ start_session();
+ require_admin();
+ 
+ $reportFilter = (string)get('status', post('return_status'));
+-$reportFilter = in_array($reportFilter, ['pending','reviewed','resolved'],true) ? $reportFilter : null;
+-$reportReturn = 'admin.php' . ($reportFilter ? '?status='.$reportFilter : '') . '#reports';
++$reportFilter = in_array($reportFilter, ['pending','reviewed','resolved'], true) ? $reportFilter : null;
++$reportReturn = 'admin.php' . ($reportFilter ? '?status=' . $reportFilter : '') . '#reports';
+ 
+-// Mutating actions require an administrator, POST, and a session-bound token.
++// Form actions use the signed-in administrator session.
+ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+-    require_post_csrf();
+     $action = (string)post('action');
+     try {
+-    if ($action === 'complete_setup') {
+-        migrate_awareness_schema(); flash('success','Database setup completed. Review and reading edits are ready.'); redirect('admin.php');
+-    }
+-    if ($action === 'import_locations') {
+-        $file=$_FILES['locations_csv']??[];
+-        if (($file['error']??UPLOAD_ERR_NO_FILE)!==UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name']??'') || strtolower(pathinfo($file['name']??'',PATHINFO_EXTENSION))!=='csv' || ($file['size']??0)>5*1024*1024) throw new InvalidArgumentException('Invalid/not applicable file. Choose a downloaded Locations CSV (maximum 5 MB).');
+-        $rows=parse_locations_csv((string)file_get_contents($file['tmp_name']));
+-        $result=import_locations_csv($rows);
+-        flash('success','Locations imported: '.$result['added'].' added, '.$result['updated'].' restored/updated, '.$result['unchanged'].' unchanged.'); redirect('admin.php#locations');
+-    }
+-    $bulkActions = [
+-        'bulk_delete_reports' => ['field' => 'report_ids', 'operation' => 'delete_report', 'label' => 'reports deleted'],
+-        'bulk_archive_readings' => ['field' => 'reading_ids', 'operation' => 'archive_reading', 'label' => 'readings removed from active lists'],
+-        'bulk_remove_locations' => ['field' => 'location_ids', 'operation' => 'deactivate_location', 'label' => 'locations removed; history retained'],
+-    ];
+-    if (isset($bulkActions[$action])) {
+-        $bulkAction = $bulkActions[$action];
+-        $selectedIds = $_POST[$bulkAction['field']] ?? [];
+-        if (!is_array($selectedIds)) $selectedIds = [];
+-        $selectedIds = array_unique(array_filter(array_map(
+-            static fn($value) => filter_var($value, FILTER_VALIDATE_INT),
+-            $selectedIds
+-        ), static fn($id) => $id !== false && $id > 0));
+-        if (!$selectedIds) {
+-            flash('error', 'Select at least one item first.');
++        if ($action === 'complete_setup') {
++            migrate_awareness_schema();
++            flash('success', 'Database setup completed. Review and reading edits are ready.');
++            redirect('admin.php');
++        }
++        if ($action === 'import_locations') {
++            $file = $_FILES['locations_csv'] ?? [];
++            if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? '')) {
++                throw new InvalidArgumentException('Choose a Locations CSV file to import.');
++            }
++            $rows = parse_locations_csv((string)file_get_contents($file['tmp_name']));
++            $result = import_locations_csv($rows);
++            flash('success', 'Locations imported: ' . $result['added'] . ' added, ' . $result['updated'] . ' restored/updated, ' . $result['unchanged'] . ' unchanged.');
++            redirect('admin.php#locations');
++        }
++        $bulkActions = [
++        'bulk_delete_reports' => ['field' => 'report_ids', 'label' => 'reports deleted'],
++        'bulk_archive_readings' => ['field' => 'reading_ids', 'label' => 'readings removed from active lists'],
++        'bulk_remove_locations' => ['field' => 'location_ids', 'label' => 'locations removed; history retained'],
++        ];
++        if (isset($bulkActions[$action])) {
++            $bulkAction = $bulkActions[$action];
++            $selectedIds = $_POST[$bulkAction['field']] ?? [];
++            if (!is_array($selectedIds)) {
++                $selectedIds = [];
++            }
++            $ids = [];
++            foreach ($selectedIds as $value) {
++                if (is_scalar($value) && (int)$value > 0) {
++                    $ids[] = (int)$value;
++                }
++            }
++            $selectedIds = $ids;
++            if (!$selectedIds) {
++                flash('error', 'Select at least one item first.');
++                $returnTo = post('return_to', 'admin.php');
++                redirect(in_array($returnTo, ['admin.php', 'dashboard.php', 'readings.php'], true) ? $returnTo : 'admin.php');
++            }
++
++            $changed = 0;
++            foreach ($selectedIds as $selectedId) {
++                if ($action === 'bulk_delete_reports') {
++                    $saved = delete_report($selectedId);
++                } elseif ($action === 'bulk_archive_readings') {
++                    $saved = archive_reading($selectedId);
++                } else {
++                    $saved = deactivate_location($selectedId);
++                }
++                if ($saved) {
++                    $changed++;
++                }
++            }
++            flash('success', $changed . ' ' . $bulkAction['label'] . '.');
+             $returnTo = post('return_to', 'admin.php');
+             redirect(in_array($returnTo, ['admin.php', 'dashboard.php', 'readings.php'], true) ? $returnTo : 'admin.php');
+         }
+ 
+-        $changed = 0;
+-        $pdo = db();
+-        $pdo->beginTransaction();
+-        try {
+-        foreach ($selectedIds as $selectedId) {
+-            $changed += match ($bulkAction['operation']) {
+-                'delete_report' => delete_report((int)$selectedId),
+-                'archive_reading' => archive_reading((int)$selectedId),
+-                'deactivate_location' => deactivate_location((int)$selectedId),
+-            } ? 1 : 0;
++        $id = filter_var(post('id'), FILTER_VALIDATE_INT);
++        if (!$id || $id < 1) {
++            http_response_code(422);
++            exit('Invalid record.');
+         }
+-        $pdo->commit();
+-        } catch (Throwable $error) {
+-            if ($pdo->inTransaction()) $pdo->rollBack();
+-            error_log('Bulk operation failed: ' . $error->getMessage());
+-            flash('error', 'No selected changes were saved. Please try again.');
+-            redirect('admin.php');
++        if ($action === 'review' || $action === 'resolve') {
++            if (!update_report($id, $action === 'review' ? 'reviewed' : 'resolved', (int)$_SESSION['user_id'])) {
++                throw new InvalidArgumentException('No report changed. It may already have been updated. Reload and check its current status.');
++            }
++        } elseif ($action === 'delete_report') {
++            delete_report($id);
++        } elseif ($action === 'remove_location') {
++            deactivate_location($id);
++        } else {
++            http_response_code(422);
++            exit('Invalid action.');
+         }
+-        flash('success', $changed . ' ' . $bulkAction['label'] . '.');
+-        $returnTo = post('return_to', 'admin.php');
+-        redirect(in_array($returnTo, ['admin.php', 'dashboard.php', 'readings.php'], true) ? $returnTo : 'admin.php');
+-    }
+-
+-    $id = filter_var(post('id'), FILTER_VALIDATE_INT);
+-    if (!$id || $id < 1) {
+-        http_response_code(422);
+-        exit('Invalid record.');
+-    }
+-    if ($action === 'review' || $action === 'resolve') {
+-        if (!update_report($id, $action === 'review' ? 'reviewed' : 'resolved', (int)$_SESSION['user_id'])) throw new InvalidArgumentException('No report changed. It may already have been updated. Reload and check its current status.');
+-    } elseif ($action === 'delete_report') {
+-        delete_report($id);
+-    } elseif ($action === 'remove_location') {
+-        deactivate_location($id);
+-    } else {
+-        http_response_code(422);
+-        exit('Invalid action.');
+-    }
+-    flash('success', 'Changes saved.');
+-    redirect($reportReturn);
++        flash('success', 'Changes saved.');
++        redirect($reportReturn);
+     } catch (Throwable $error) {
+-        error_log('Admin action failed: '.$error->getMessage());
+-        flash('error', $error instanceof PDOException ? 'Changes could not be saved. Complete database setup if shown below, then try again.' : $error->getMessage());
++        error_log('Admin action failed: ' . $error->getMessage());
++        flash('error', $error instanceof PDOException ? 'The operation stopped. Earlier rows may already be saved. Check the list before retrying.' : $error->getMessage());
+         redirect($action === 'import_locations' ? 'admin.php#locations' : $reportReturn);
+     }
+ }
+ 
+-$exportAction=(string)get('action');
+-if (in_array($exportAction,['export','export_reports','export_locations'],true)) {
++$exportAction = (string)get('action');
++if (in_array($exportAction, ['export','export_reports','export_locations'], true)) {
+     try {
+-        $csv=match($exportAction) {
+-            'export_reports'=>export_reports_csv(get_reports($reportFilter)),
+-            'export_locations'=>export_locations_csv(get_locations()),
+-            default=>export_readings_csv(get_all_readings(PHP_INT_MAX)),
+-        };
+-        $kind=match($exportAction) {'export_reports'=>'reports','export_locations'=>'locations',default=>'readings'};
+-        download_csv('smartslope_'.$kind.'_'.gmdate('Y-m-d').'.csv',$csv);
++        if ($exportAction === 'export_reports') {
++            $csv = export_reports_csv(get_reports($reportFilter));
++            $kind = 'reports';
++        } elseif ($exportAction === 'export_locations') {
++            $csv = export_locations_csv(get_locations());
++            $kind = 'locations';
++        } else {
++            $csv = export_readings_csv(get_all_readings(PHP_INT_MAX));
++            $kind = 'readings';
++        }
++        download_csv('smartslope_' . $kind . '_' . gmdate('Y-m-d') . '.csv', $csv);
+     } catch (Throwable $error) {
+-        error_log('CSV export failed: '.$error->getMessage());
+-        flash('error','CSV export failed: '.($error instanceof PDOException ? 'Database could not be read.' : $error->getMessage())); redirect('admin.php');
++        error_log('CSV export failed: ' . $error->getMessage());
++        flash('error', 'CSV export failed: ' . ($error instanceof PDOException ? 'Database could not be read.' : $error->getMessage()));
++        redirect('admin.php');
+     }
+ }
+-$missingColumns=missing_awareness_columns();
++$missingColumns = missing_awareness_columns();
+ $locations = get_locations();
+ $uiLocations = array_column($locations, null, 'id');
+ $readings = get_all_readings(50);
+@@ -117,7 +139,6 @@ foreach ($reports as $report) {
+         $reportedAddressesByLocation[$locationId] = $address;
+     }
+ }
+-
+ ?>
+ <!DOCTYPE html>
+ <html lang="en">
+@@ -174,7 +195,7 @@ foreach ($reports as $report) {
+ 
+         <?php if ($missingColumns): ?>
+         <div class="alert alert-warning" role="alert"><h3 class="h6">Database setup is incomplete</h3><p>The previous awareness upgrade needs additional fields for report review and reading edits. Back up your database, then complete setup. Existing records are retained.</p>
+-        <form method="post" action="<?= e(url('admin.php')) ?>"><?= csrf_field() ?><input type="hidden" name="action" value="complete_setup"><button class="btn btn-warning" type="submit">Complete database setup</button></form></div>
++        <form method="post" action="<?= e(url('admin.php')) ?>"><input type="hidden" name="action" value="complete_setup"><button class="btn btn-warning" type="submit">Complete database setup</button></form></div>
+         <?php endif; ?>
+         <p class="small text-muted">Reading counts cover the latest 50 saved readings across active locations. Current means observed within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours; these are reading counts, not location counts.</p>
+         <!-- Stats Row -->
+@@ -223,7 +244,7 @@ foreach ($reports as $report) {
+                 <?php endforeach; ?></nav><p class="small mb-0 mt-2"><?= count($reports) ?> <?= e($reportFilter??'total') ?> report(s)</p></div>
+                 <div class="d-flex flex-wrap gap-2 align-items-center">
+                     <form id="bulkReportsForm" method="post" data-bulk-confirm="Delete %d selected report(s)?" class="m-0">
+-                        <?= csrf_field() ?><input type="hidden" name="action" value="bulk_delete_reports"><input type="hidden" name="return_to" value="admin.php">
++                        <input type="hidden" name="action" value="bulk_delete_reports"><input type="hidden" name="return_to" value="admin.php">
+                         <button class="btn btn-sm btn-outline-danger">Delete selected</button>
+                     </form>
+                     <a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export_reports'.($reportFilter?'&status='.$reportFilter:''))) ?>">Download reports CSV</a>
+@@ -314,14 +335,14 @@ foreach ($reports as $report) {
+                 <h5 class="mb-0">All Locations</h5>
+                 <a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export_locations')) ?>">Download locations CSV</a>
+                 <form method="post" action="<?= e(url('admin.php')) ?>" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-center">
+-                    <?= csrf_field() ?><input type="hidden" name="action" value="import_locations">
++                    <input type="hidden" name="action" value="import_locations">
+                     <label for="locations_csv" class="visually-hidden">Locations CSV to import</label>
+                     <input type="file" class="form-control form-control-sm w-auto" id="locations_csv" name="locations_csv" accept=".csv,text/csv" required>
+                     <button class="btn btn-sm btn-primary" type="submit">Import locations CSV</button>
+-                    <small class="w-100 text-muted">Use an unchanged Locations CSV downloaded here. Import restores its location details and active status; existing readings and reports stay linked.</small>
++                    <small class="w-100 text-muted">Use the seven-column Locations CSV downloaded here. You may edit location details; coordinates identify existing locations. Rows save one at a time.</small>
+                 </form>
+                 <form id="bulkLocationsForm" method="post" data-bulk-confirm="Remove %d selected location(s)? Their reading and report history will be kept." class="m-0">
+-                    <?= csrf_field() ?><input type="hidden" name="action" value="bulk_remove_locations"><input type="hidden" name="return_to" value="admin.php">
++                    <input type="hidden" name="action" value="bulk_remove_locations"><input type="hidden" name="return_to" value="admin.php">
+                     <button class="btn btn-sm btn-outline-danger">Remove selected</button>
+                 </form>
+             </div>
+@@ -381,7 +402,7 @@ foreach ($reports as $report) {
+             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                 <h5 class="mb-0">All Weather Readings</h5><a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export')) ?>">Download readings CSV</a>
+                 <form id="bulkAdminReadingsForm" method="post" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="m-0">
+-                    <?= csrf_field() ?><input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="admin.php">
++                    <input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="admin.php">
+                     <button class="btn btn-sm btn-outline-danger">Remove selected</button>
+                 </form>
+             </div>
+@@ -453,7 +474,7 @@ foreach ($reports as $report) {
+                 </div>
+                 <div class="modal-footer">
+                     <form method="post" action="<?= e(url('admin.php')) ?>" id="modalReportAction" hidden>
+-                        <?= csrf_field() ?><input type="hidden" name="id" id="modalReportActionId">
++                        <input type="hidden" name="id" id="modalReportActionId">
+                         <input type="hidden" name="action" id="modalReportActionName">
+                         <input type="hidden" name="return_status" value="<?= e($reportFilter??'') ?>">
+                         <button type="submit" class="btn btn-primary" id="modalReportActionButton">Mark as reviewed</button>
+diff --git a/api/address.php b/api/address.php
+index e8c3e07..7e22f69 100644
+--- a/api/address.php
++++ b/api/address.php
+@@ -1,23 +1,48 @@
+ <?php
++
+ declare(strict_types=1);
+-require_once __DIR__ . '/../app/bootstrap.php';
+-start_session(); header('Content-Type: application/json; charset=UTF-8'); header('Cache-Control: no-store');
+-function address_json(int $status, array $body): void { http_response_code($status); echo json_encode($body,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE); exit; }
+-if (!is_logged_in()) address_json(401,['error'=>'Sign in required.']);
+-if (($_SERVER['REQUEST_METHOD']??'GET')!=='GET') { header('Allow: GET'); address_json(405,['error'=>'Method not allowed.']); }
+-if (env_value('NOMINATIM_ENABLED','0')!=='1') address_json(200,['address'=>'']);
+-$lat=finite_number(get('lat'),-90,90); $lng=finite_number(get('lng'),-180,180);
+-if ($lat===null || $lng===null || !is_in_irisan($lat,$lng)) address_json(422,['error'=>'Select an Irisan point.']);
++
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/auth.php';
++require_once __DIR__ . '/../app/assessment.php';
++start_session();
++header('Content-Type: application/json; charset=UTF-8');
++header('Cache-Control: no-store');
++function address_json(int $status, array $body): void
++{
++    http_response_code($status);
++    echo json_encode($body, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
++    exit;
++}
++if (!is_logged_in()) {
++    address_json(401, ['error' => 'Sign in required.']);
++}
++if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
++    header('Allow: GET');
++    address_json(405, ['error' => 'Method not allowed.']);
++}
++if (env_value('NOMINATIM_ENABLED', '0') !== '1') {
++    address_json(200, ['address' => '']);
++}
++$lat = finite_number(get('lat'), -90, 90);
++$lng = finite_number(get('lng'), -180, 180);
++if ($lat === null || $lng === null || !is_in_irisan($lat, $lng)) {
++    address_json(422, ['error' => 'Select an Irisan point.']);
++}
+ session_write_close();
+ try {
+-    $data=provider_cached('address',sprintf('%.5f,%.5f',$lat,$lng),static function() use ($lat,$lng): array {
+-        $ch=curl_init('https://nominatim.openstreetmap.org/reverse?' . http_build_query(['format'=>'jsonv2','lat'=>$lat,'lon'=>$lng,'zoom'=>18,'addressdetails'=>1]));
+-        curl_setopt_array($ch,[CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>4,CURLOPT_CONNECTTIMEOUT=>3,CURLOPT_USERAGENT=>'SmartSlope/1.0 (academic Irisan prototype)',CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2]);
+-        $body=curl_exec($ch); $status=curl_getinfo($ch,CURLINFO_HTTP_CODE); curl_close($ch);
+-        $decoded=$body===false ? null : json_decode($body,true);
+-        if ($status!==200 || !is_array($decoded)) throw new RuntimeException('Address provider unavailable.');
+-        return ['address'=>implode('',array_slice(preg_split('//u',(string)($decoded['display_name']??''),-1,PREG_SPLIT_NO_EMPTY) ?: [],0,255))];
+-    },1.1,86400,[60=>50,3600=>1000,86400=>5000]);
+-    address_json(200,$data);
+-} catch (ProviderRateLimit $e) { header('Retry-After: 2'); address_json(429,['error'=>$e->getMessage()]); }
+-catch (Throwable $e) { address_json(503,['error'=>'Address lookup unavailable; enter a landmark.']); }
++        $ch = curl_init('https://nominatim.openstreetmap.org/reverse?' . http_build_query(['format' => 'jsonv2','lat' => $lat,'lon' => $lng,'zoom' => 18,'addressdetails' => 1]));
++        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true,CURLOPT_TIMEOUT => 4,CURLOPT_CONNECTTIMEOUT => 3,CURLOPT_USERAGENT => 'SmartSlope/1.0 (academic Irisan prototype)',CURLOPT_SSL_VERIFYPEER => true,CURLOPT_SSL_VERIFYHOST => 2]);
++        $body = curl_exec($ch);
++    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
++    curl_close($ch);
++        $decoded = $body === false ? null : json_decode($body, true);
++    if ($status !== 200 || !is_array($decoded)) {
++        throw new RuntimeException('Address provider unavailable.');
++    }
++    $data = ['address' => implode('', array_slice(preg_split('//u', (string)($decoded['display_name'] ?? ''), -1, PREG_SPLIT_NO_EMPTY) ?: [], 0, 255))];
++    address_json(200, $data);
++} catch (Throwable $e) {
++    address_json(503, ['error' => 'Address lookup unavailable; enter a landmark.']);
++}
+diff --git a/api/readings.php b/api/readings.php
+index be103a4..fb1f9bf 100644
+--- a/api/readings.php
++++ b/api/readings.php
+@@ -1,34 +1,57 @@
+ <?php
++
+ declare(strict_types=1);
+-require_once __DIR__ . '/../app/bootstrap.php';
++
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/auth.php';
++require_once __DIR__ . '/../app/RiskAnalyzer.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/susceptibility.php';
++require_once __DIR__ . '/../app/awareness.php';
++require_once __DIR__ . '/../app/presentation.php';
++require_once __DIR__ . '/../app/repositories.php';
++require_once __DIR__ . '/../app/weather.php';
+ start_session();
+ header('Content-Type: application/json; charset=UTF-8');
+ header('Cache-Control: no-store');
+ header('X-Content-Type-Options: nosniff');
+ 
+-function reading_json(int $status, array $body): void {
++function reading_json(int $status, array $body): void
++{
+     http_response_code($status);
+     echo json_encode($body, JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
+     exit;
+ }
+-if (!is_logged_in()) reading_json(401, ['error' => 'Please sign in again.']);
++if (!is_logged_in()) {
++    reading_json(401, ['error' => 'Please sign in again.']);
++}
+ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+ if (!in_array($method, ['GET', 'POST'], true)) {
+     header('Allow: GET, POST');
+     reading_json(405, ['error' => 'Method not allowed.']);
+ }
+-if ($method === 'POST' && !valid_csrf()) reading_json(403, ['error' => 'Invalid request token. Reload the page and try again.']);
+ $locationId = filter_var($method === 'POST' ? post('location_id') : get('location_id'), FILTER_VALIDATE_INT);
+-if (!$locationId || $locationId < 1) reading_json(422, ['error' => 'A positive location ID is required.']);
++if (!$locationId || $locationId < 1) {
++    reading_json(422, ['error' => 'A positive location ID is required.']);
++}
+ try {
+     $location = get_location($locationId);
+-    if (!$location || !$location['active']) reading_json(404, ['error' => 'Location not found.']);
+-    if ($method === 'POST') refresh_location($locationId);
++    if (!$location || !$location['active']) {
++        reading_json(404, ['error' => 'Location not found.']);
++    }
++    if ($method === 'POST') {
++        refresh_location($locationId);
++    }
+     $latest = get_latest_reading($locationId);
+     $assessment = reading_assessment($latest, $location);
+     $readings = get_readings($locationId, 10);
+-    if ($latest) unset($latest['provider_payload'], $latest['adjustment_log']);
+-    foreach ($readings as &$row) unset($row['provider_payload'], $row['adjustment_log']);
++    if ($latest) {
++        unset($latest['provider_payload'], $latest['adjustment_log']);
++    }
++    foreach ($readings as &$row) {
++        unset($row['provider_payload'], $row['adjustment_log']);
++    }
+     unset($row);
+     $baseline = susceptibility_lookup($location);
+     $reportCounts = location_report_summary($locationId);
+@@ -36,7 +59,7 @@ try {
+         'location' => array_intersect_key($location, array_flip(['id','name','purok','landmark','lat','lng','susceptibility'])),
+         'latest' => $latest,
+         'assessment' => $assessment,
+-        'baseline' => $baseline, 'notices' => awareness_notices($assessment,$baseline),
++        'baseline' => $baseline, 'notices' => awareness_notices($assessment, $baseline),
+         'report_counts' => $reportCounts,
+         'readings' => $readings,
+         'view' => [
+@@ -45,11 +68,9 @@ try {
+             'high' => ui_current_count($readings, 'high'),
+             'medium' => ui_current_count($readings, 'medium'),
+             'history' => ui_history($readings),
+-            'reports' => ui_report_summary($reportCounts,is_admin()),
++            'reports' => ui_report_summary($reportCounts, is_admin()),
+         ],
+     ]);
+-} catch (ProviderRateLimit $error) {
+-    header('Retry-After: 2'); reading_json(429, ['error'=>$error->getMessage()]);
+ } catch (Throwable $error) {
+     error_log('SmartSlope reading endpoint: ' . $error->getMessage());
+     reading_json(503, ['error' => 'Weather data could not be loaded or saved. Previous readings remain available.']);
+diff --git a/app/assessment.php b/app/assessment.php
+index 4345f3d..4794870 100644
+--- a/app/assessment.php
++++ b/app/assessment.php
+@@ -1,31 +1,48 @@
+ <?php
++
+ declare(strict_types=1);
+ 
+-function utc_timestamp(?string $value): ?int {
+-    if (!$value) return null;
++function utc_timestamp(?string $value): ?int
++{
++    if (!$value) {
++        return null;
++    }
+     foreach (['Y-m-d H:i:s', 'Y-m-d\TH:i', 'Y-m-d\TH:i:s'] as $format) {
+         $date = DateTimeImmutable::createFromFormat('!' . $format, $value, new DateTimeZone('UTC'));
+-        if ($date && $date->format($format) === $value) return $date->getTimestamp();
++        if ($date && $date->format($format) === $value) {
++            return $date->getTimestamp();
++        }
+     }
+     return null;
+ }
+ 
+-function finite_number($value, ?float $minimum = null, ?float $maximum = null): ?float {
+-    if (!is_numeric($value)) return null;
++function finite_number($value, ?float $minimum = null, ?float $maximum = null): ?float
++{
++    if (!is_numeric($value)) {
++        return null;
++    }
+     $number = (float)$value;
+-    if (!is_finite($number) || ($minimum !== null && $number < $minimum) ||
+-        ($maximum !== null && $number > $maximum)) return null;
++    if (
++        !is_finite($number) || ($minimum !== null && $number < $minimum) ||
++        ($maximum !== null && $number > $maximum)
++    ) {
++        return null;
++    }
+     return $number;
+ }
+ 
+-function calculate_risk(?float $r1, ?float $r24, ?float $r72): string {
++function calculate_risk(?float $r1, ?float $r24, ?float $r72): string
++{
+     $level = (new RiskAnalyzer())->analyze($r1, $r24, $r72);
+-    if ($level === null) throw new RuntimeException('Rainfall history is incomplete or invalid.');
++    if ($level === null) {
++        throw new RuntimeException('Rainfall history is incomplete or invalid.');
++    }
+     return $level;
+ }
+ 
+ /** Request-time freshness; the legacy stale column is not used as a clock. */
+-function reading_assessment(?array $reading, array $location = [], ?int $now = null): array {
++function reading_assessment(?array $reading, array $location = [], ?int $now = null): array
++{
+     global $config;
+     $now = $now ?? time();
+     $result = [
+@@ -37,21 +54,26 @@ function reading_assessment(?array $reading, array $location = [], ?int $now = n
+         'retrieved_at' => $reading['created_at'] ?? null,
+         'rainfall_window_end' => null, 'provenance_status' => 'unavailable', 'classification' => 'CALCULATED',
+     ];
+-    if (!$reading) return $result;
++    if (!$reading) {
++        return $result;
++    }
+     $analysis = (new RiskAnalyzer())->explain(
+         finite_number($reading['rainfall_1h'] ?? null, 0),
+         finite_number($reading['rainfall_24h'] ?? null, 0),
+         finite_number($reading['rainfall_72h'] ?? null, 0)
+     );
+-    $values = array_map(static fn($key) => finite_number($reading[$key] ?? null, 0), ['rainfall_1h','rainfall_24h','rainfall_72h']);
++    $values = [];
++    foreach (['rainfall_1h', 'rainfall_24h', 'rainfall_72h'] as $key) {
++        $values[] = finite_number($reading[$key] ?? null, 0);
++    }
+     if (!in_array(null, $values, true) && ($values[0] > $values[1] || $values[1] > $values[2])) {
+-        $analysis = ['category'=>null, 'reasons'=>['Rainfall totals are inconsistent: 1h must not exceed 24h, and 24h must not exceed 72h.']];
++        $analysis = ['category' => null, 'reasons' => ['Rainfall totals are inconsistent: 1h must not exceed 24h, and 24h must not exceed 72h.']];
+     }
+     if (!empty($reading['rule_version']) && $reading['rule_version'] !== RiskAnalyzer::VERSION) {
+-        $analysis = ['category'=>null, 'reasons'=>['This record uses a different rule version; a current assessment is unavailable.']];
++        $analysis = ['category' => null, 'reasons' => ['This record uses a different rule version; a current assessment is unavailable.']];
+     }
+     $observedTimestamp = utc_timestamp($reading['observed_at'] ?? null);
+-    $result['rainfall_window_end'] = $reading['rainfall_window_end'] ?? ($observedTimestamp === null ? null : gmdate('Y-m-d H:i:s', intdiv($observedTimestamp,3600)*3600));
++    $result['rainfall_window_end'] = $reading['rainfall_window_end'] ?? ($observedTimestamp === null ? null : gmdate('Y-m-d H:i:s', intdiv($observedTimestamp, 3600) * 3600));
+     $result['provenance_status'] = empty($reading['provider_payload']) ? 'legacy_without_hourly_inputs' : 'saved_provider_inputs';
+     $result['classification'] = 'CALCULATED';
+     $result['calculated_category'] = $analysis['category'];
+@@ -59,22 +81,30 @@ function reading_assessment(?array $reading, array $location = [], ?int $now = n
+     $stored = $reading['risk_level'] ?? null;
+     $validStored = in_array($stored, ['low', 'normal', 'medium', 'high'], true);
+     $observed = utc_timestamp($reading['observed_at'] ?? null);
+-    if ($analysis['category'] === null || !$validStored || $observed === null ||
+-        $observed > $now + ($config['future_tolerance_seconds'] ?? 300)) {
++    if (
++        $analysis['category'] === null || !$validStored || $observed === null ||
++        $observed > $now + ($config['future_tolerance_seconds'] ?? 300)
++    ) {
+         $result['data_status'] = 'incomplete';
+         $result['reasons'][] = 'A current assessment is unavailable because saved values or the observation time are invalid.';
+         return $result;
+     }
+     $result['category'] = $stored;
+     $result['adjusted'] = $stored !== $analysis['category'] || !empty($reading['adjustment_log']);
+-    if ($result['adjusted']) $result['reasons'][] = 'Administrator-adjusted category; calculated rainfall category: ' . $analysis['category'] . '.';
++    if ($result['adjusted']) {
++        $result['reasons'][] = 'Administrator-adjusted category; calculated rainfall category: ' . $analysis['category'] . '.';
++    }
+     $result['data_status'] = $now - $observed > ($config['freshness_seconds'] ?? 10800) ? 'outdated' : 'current';
+-    if ($result['data_status'] === 'current') $result['current_category'] = $stored;
+-    else $result['reasons'][] = 'This is the last known category; refresh to obtain current data.';
++    if ($result['data_status'] === 'current') {
++        $result['current_category'] = $stored;
++    } else {
++        $result['reasons'][] = 'This is the last known category; refresh to obtain current data.';
++    }
+     return $result;
+ }
+ 
+-function assess_reading(array $reading): array {
++function assess_reading(array $reading): array
++{
+     $reading['assessment'] = reading_assessment($reading);
+     // Compatibility for existing templates. Never write this derived value back.
+     $reading['stale'] = $reading['assessment']['data_status'] === 'current' ? 0 : 1;
+diff --git a/app/auth.php b/app/auth.php
+index c472952..e326118 100644
+--- a/app/auth.php
++++ b/app/auth.php
+@@ -1,7 +1,9 @@
+ <?php
++
+ declare(strict_types=1);
+ 
+-function start_session(): void {
++function start_session(): void
++{
+     if (session_status() !== PHP_SESSION_ACTIVE) {
+         ini_set('session.use_strict_mode', '1');
+         $isHttps = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
+@@ -11,47 +13,24 @@ function start_session(): void {
+ }
+ 
+ 
+-function csrf_token(): string {
+-    if (empty($_SESSION['csrf_token'])) {
+-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+-    }
+-    return $_SESSION['csrf_token'];
+-}
+-
+-
+-function csrf_field(): string {
+-    return '<input type="hidden" name="csrf_token" value="' . e(csrf_token()) . '">';
+-}
+-
+-
+-function valid_csrf(): bool {
+-    return ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' &&
+-        hash_equals(csrf_token(), (string)post('csrf_token'));
+-}
+-
+-
+-function require_post_csrf(): void {
+-    if (!valid_csrf()) {
+-        http_response_code(403);
+-        exit('Invalid request token. Reload the page and try again.');
+-    }
+-}
+-
+ // Check if logged in
+ 
+-function is_logged_in(): bool {
++function is_logged_in(): bool
++{
+     return !empty($_SESSION['user_id']);
+ }
+ 
+ // Check if admin
+ 
+-function is_admin(): bool {
++function is_admin(): bool
++{
+     return is_logged_in() && ($_SESSION['role'] ?? '') === 'admin';
+ }
+ 
+ // Require user login
+ 
+-function require_login(): void {
++function require_login(): void
++{
+     if (!is_logged_in()) {
+         redirect('index.php');
+     }
+@@ -59,36 +38,24 @@ function require_login(): void {
+ 
+ // Require admin
+ 
+-function require_admin(): void {
++function require_admin(): void
++{
+     if (!is_admin()) {
+         redirect('index.php');
+     }
+ }
+ 
+-// Set flash message
+-
+-function hash_password(string $password): string {
+-    return password_hash($password, PASSWORD_DEFAULT);
+-}
+-
+-// Verify password
+-
+-function verify_password(string $password, string $hash): bool {
+-    return password_verify($password, $hash);
+-}
+-
+ // Authenticate user
+ 
+-function authenticate(string $username, string $password): ?array {
++function authenticate(string $username, string $password): ?array
++{
+     $pdo = db();
+     $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ? LIMIT 1");
+     $stmt->execute([$username]);
+     $user = $stmt->fetch();
+ 
+-    if ($user && verify_password($password, $user['password'])) {
++    if ($user && password_verify($password, $user['password'])) {
+         return $user;
+     }
+     return null;
+ }
+-
+-// Create user
+diff --git a/app/bootstrap.php b/app/bootstrap.php
+deleted file mode 100644
+index 21d257d..0000000
+--- a/app/bootstrap.php
++++ /dev/null
+@@ -1,27 +0,0 @@
+-<?php
+-declare(strict_types=1);
+-
+-require_once __DIR__ . '/config.php';
+-require_once __DIR__ . '/helpers.php';
+-require_once __DIR__ . '/maintenance.php';
+-require_once __DIR__ . '/csv.php';
+-require_once __DIR__ . '/auth.php';
+-require_once __DIR__ . '/RiskAnalyzer.php';
+-require_once __DIR__ . '/assessment.php';
+-require_once __DIR__ . '/susceptibility.php';
+-require_once __DIR__ . '/awareness.php';
+-require_once __DIR__ . '/presentation.php';
+-require_once __DIR__ . '/repositories.php';
+-require_once __DIR__ . '/provider.php';
+-require_once __DIR__ . '/weather.php';
+-
+-// User-facing failures stay generic; details go only to the PHP error log.
+-set_exception_handler(static function (Throwable $error): void {
+-    error_log('SmartSlope: ' . $error->getMessage());
+-    http_response_code(500);
+-    if (PHP_SAPI === 'cli') {
+-        fwrite(STDERR, "SmartSlope operation failed; check the PHP error log.\n");
+-        exit(1);
+-    }
+-    echo 'SmartSlope could not complete this request. Please try again or check the server configuration.';
+-});
+diff --git a/app/config.php b/app/config.php
+index bd2866c..514c02b 100644
+--- a/app/config.php
++++ b/app/config.php
+@@ -1,9 +1,11 @@
+ <?php
++
+ declare(strict_types=1);
+ 
+ // Environment, application paths and lazy PDO connection.
+ 
+-function load_env_file(): void {
++function load_env_file(): void
++{
+     $envFile = __DIR__ . '/../.env';
+     if (!is_file($envFile)) {
+         return;
+@@ -25,7 +27,9 @@ function load_env_file(): void {
+ 
+         $value = trim($value, " \t\n\r\0\x0B\"'");
+ 
+-        if (getenv($name) !== false || array_key_exists($name, $_ENV)) continue;
++        if (getenv($name) !== false || array_key_exists($name, $_ENV)) {
++            continue;
++        }
+         if (!array_key_exists($name, $_ENV)) {
+             $_ENV[$name] = $value;
+         }
+@@ -36,7 +40,8 @@ function load_env_file(): void {
+     }
+ }
+ 
+-function env_value(string $name, string $default = ''): string {
++function env_value(string $name, string $default = ''): string
++{
+     $value = $_ENV[$name] ?? getenv($name);
+     return $value === false ? $default : (string)$value;
+ }
+@@ -71,7 +76,8 @@ define('APP_BASE_PATH', $config['base_path'] !== '' ? $config['base_path'] : (in
+ // ============================================================================
+ // DATABASE CONNECTION
+ // ============================================================================
+-function db(): PDO {
++function db(): PDO
++{
+     static $pdo = null;
+     if ($pdo === null) {
+         global $config;
+@@ -85,3 +91,16 @@ function db(): PDO {
+     }
+     return $pdo;
+ }
++
++// Keep database details out of browser error messages.
++function application_error(Throwable $error): void
++{
++    error_log('SmartSlope: ' . $error->getMessage());
++    http_response_code(500);
++    if (PHP_SAPI === 'cli') {
++        fwrite(STDERR, "SmartSlope operation failed; check the PHP error log.\n");
++        exit(1);
++    }
++    echo 'SmartSlope could not complete this request. Please try again or check the server configuration.';
++}
++set_exception_handler('application_error');
+diff --git a/app/csv.php b/app/csv.php
+index e3bc0a8..3d5b77e 100644
+--- a/app/csv.php
++++ b/app/csv.php
+@@ -1,40 +1,58 @@
+ <?php
++
+ declare(strict_types=1);
+ 
+-function csv_cell($value): string {
+-    $value=(string)($value ?? '');
+-    return preg_match("/^(?:'|[\s]*[=+\-@\t\r])/u",$value) ? "'".$value : $value;
+-}
+-function csv_rows(array $rows, bool $bom = true): string {
+-    $stream=fopen('php://temp','w+');
++function csv_rows(array $rows, bool $bom = true): string
++{
++    $stream = fopen('php://temp', 'w+');
+     try {
+-        if ($bom) fwrite($stream,"\xEF\xBB\xBF");
++        if ($bom) {
++            fwrite($stream, "\xEF\xBB\xBF");
++        }
+         foreach ($rows as $row) {
+-            if (fputcsv($stream,$row,',','"','',"\r\n")===false) throw new RuntimeException('CSV could not be written.');
++            if (fputcsv($stream, $row, ',', '"', '', "\r\n") === false) {
++                throw new RuntimeException('CSV could not be written.');
++            }
+         }
+-        rewind($stream); return (string)stream_get_contents($stream);
+-    } finally { fclose($stream); }
++        rewind($stream);
++        return (string)stream_get_contents($stream);
++    } finally {
++        fclose($stream);
++    }
++}
++function csv_date(?string $date): string
++{
++    $time = utc_timestamp($date);
++    return $time === null ? 'Not recorded' : (new DateTimeImmutable('@' . $time))->setTimezone(new DateTimeZone('Asia/Manila'))->format('Y-m-d H:i:s');
+ }
+-function csv_date(?string $date): string {
+-    $time=utc_timestamp($date);
+-    return $time===null ? 'Not recorded' : (new DateTimeImmutable('@'.$time))->setTimezone(new DateTimeZone('Asia/Manila'))->format('Y-m-d H:i:s');
++function csv_label(?string $value): string
++{
++    return ucwords(str_replace('_', ' ', $value ?? 'Not recorded'));
+ }
+-function csv_label(?string $value): string { return ucwords(str_replace('_',' ',$value ?? 'Not recorded')); }
+-function download_csv(string $filename, string $csv): void {
++function download_csv(string $filename, string $csv): void
++{
+     header('Content-Type: text/csv; charset=UTF-8');
+-    header('Content-Disposition: attachment; filename="'.$filename.'"');
+-    header('Cache-Control: no-store'); header('X-Content-Type-Options: nosniff');
+-    echo $csv; exit;
++    header('Content-Disposition: attachment; filename="' . $filename . '"');
++    header('Cache-Control: no-store');
++    header('X-Content-Type-Options: nosniff');
++    echo $csv;
++    exit;
+ }
+-function csv_adjustments(?string $json): string {
+-    $log=json_decode($json ?? '[]',true);
+-    if (!is_array($log) || !$log) return 'None recorded';
+-    $lines=[];
+-    foreach ($log as $edit) $lines[]=csv_date($edit['at']??null).' PHT; administrator #'.($edit['by']??'?').'; '.csv_label($edit['from']??null).' to '.csv_label($edit['to']??null).'; '.($edit['reason']??'');
+-    return implode("\n",$lines);
++function csv_adjustments(?string $json): string
++{
++    $log = json_decode($json ?? '[]', true);
++    if (!is_array($log) || !$log) {
++        return 'None recorded';
++    }
++    $lines = [];
++    foreach ($log as $edit) {
++        $lines[] = csv_date($edit['at'] ?? null) . ' PHT; administrator #' . ($edit['by'] ?? '?') . '; ' . csv_label($edit['from'] ?? null) . ' to ' . csv_label($edit['to'] ?? null) . '; ' . ($edit['reason'] ?? '');
++    }
++    return implode("\n", $lines);
+ }
+-function export_readings_csv(array $readings): string {
+-    $rows=[['Reading ID','Location','Stored category','Calculated rainfall category','Data status',
++function export_readings_csv(array $readings): string
++{
++    $rows = [['Reading ID','Location','Stored category','Calculated rainfall category','Data status',
+         'Rainfall - 1 hour (mm)','Rainfall - 24 hours (mm)','Rainfall - 72 hours (mm)',
+         'Provider valid time (PHT)','Rainfall window end (PHT)','Saved at (PHT)',
+         'Forecast rainfall - next 24 hours (mm)','Maximum hourly rain chance (%)',
+@@ -42,98 +60,107 @@ function export_readings_csv(array $readings): string {
+         'Modeled soil moisture - 9 to 27 cm (m3/m3)','Modeled soil moisture - 27 to 81 cm (m3/m3)',
+         'Data source','Rule version','Hourly inputs saved','Administrator adjusted','Adjustment history']];
+     foreach ($readings as $r) {
+-        $a=$r['assessment']??reading_assessment($r);
+-        $rows[]=[(int)$r['id'],csv_cell(ui_location_label($r)),csv_label($r['risk_level']??null),csv_label($a['calculated_category']),csv_label($a['data_status']),
+-            $r['rainfall_1h']??'', $r['rainfall_24h']??'', $r['rainfall_72h']??'',
+-            csv_date($r['observed_at']??null),csv_date($a['rainfall_window_end']??null),csv_date($r['created_at']??null),
+-            $r['rainfall_forecast_24h']??'', $r['precipitation_probability_24h']??'',
+-            $r['temperature']??'', $r['humidity']??'', $r['wind_speed']??'',
+-            $r['soil_moisture_9_27cm']??'', $r['soil_moisture_27_81cm']??'',
+-            csv_cell(ui_source($r['source']??null)),csv_cell($r['rule_version']??'Legacy - not recorded'),
+-            empty($r['provider_payload'])?'No':'Yes',$a['adjusted']?'Yes':'No',csv_cell(csv_adjustments($r['adjustment_log']??null))];
++        $a = $r['assessment'] ?? reading_assessment($r);
++        $rows[] = [(int)$r['id'],(string)(ui_location_label($r)),csv_label($r['risk_level'] ?? null),csv_label($a['calculated_category']),csv_label($a['data_status']),
++            $r['rainfall_1h'] ?? '', $r['rainfall_24h'] ?? '', $r['rainfall_72h'] ?? '',
++            csv_date($r['observed_at'] ?? null),csv_date($a['rainfall_window_end'] ?? null),csv_date($r['created_at'] ?? null),
++            $r['rainfall_forecast_24h'] ?? '', $r['precipitation_probability_24h'] ?? '',
++            $r['temperature'] ?? '', $r['humidity'] ?? '', $r['wind_speed'] ?? '',
++            $r['soil_moisture_9_27cm'] ?? '', $r['soil_moisture_27_81cm'] ?? '',
++            (string)(ui_source($r['source'] ?? null)),(string)($r['rule_version'] ?? 'Legacy - not recorded'),
++            empty($r['provider_payload']) ? 'No' : 'Yes',$a['adjusted'] ? 'Yes' : 'No',(string)(csv_adjustments($r['adjustment_log'] ?? null))];
+     }
+     return csv_rows($rows);
+ }
+-function export_reports_csv(array $reports): string {
+-    $rows=[['Report ID','Location','Landmark supplied by reporter','Observed condition','Full message','Status',
++function export_reports_csv(array $reports): string
++{
++    $rows = [['Report ID','Location','Landmark supplied by reporter','Observed condition','Full message','Status',
+         'Occurred at (PHT)','Submitted at (PHT)','Reporter','Contact phone','Contact email','Last reviewer ID','Last reviewed at (PHT)']];
+-    foreach ($reports as $r) $rows[]=[(int)$r['id'],csv_cell(ui_location_label($r)),csv_cell($r['house_landmark']??''),
+-        csv_cell(REPORT_TYPES[$r['report_type']??'']??'Not recorded'),csv_cell($r['message']),csv_label($r['status']),
+-        csv_date($r['occurred_at']??null),csv_date($r['created_at']??null),csv_cell($r['reporter_name']??'Not recorded'),
+-        csv_cell($r['contact_phone']??''),csv_cell($r['contact_email']??''),$r['reviewed_by']??'',csv_date($r['reviewed_at']??null)];
++    foreach ($reports as $r) {
++        $rows[] = [(int)$r['id'],(string)(ui_location_label($r)),(string)($r['house_landmark'] ?? ''),
++        (string)(REPORT_TYPES[$r['report_type'] ?? ''] ?? 'Not recorded'),(string)($r['message']),csv_label($r['status']),
++        csv_date($r['occurred_at'] ?? null),csv_date($r['created_at'] ?? null),(string)($r['reporter_name'] ?? 'Not recorded'),
++        (string)($r['contact_phone'] ?? ''),(string)($r['contact_email'] ?? ''),$r['reviewed_by'] ?? '',csv_date($r['reviewed_at'] ?? null)];
++    }
+     return csv_rows($rows);
+ }
+ 
+-/** Stable secret in the site's existing protected .env; never included in CSV. */
+-function csv_signing_key(): string {
+-    $key=env_value('CSV_SIGNING_KEY');
+-    if ($key!=='') {
+-        if (!preg_match('/^[a-f0-9]{64}$/i',$key)) throw new RuntimeException('CSV_SIGNING_KEY must contain 64 hexadecimal characters.');
+-        return $key;
++// Location CSVs use one header followed by ordinary, editable rows.
++const LOCATION_CSV_HEADERS = ['Location ID', 'Location name', 'Purok', 'Landmark', 'Latitude', 'Longitude', 'Status'];
++
++function export_locations_csv(array $locations): string
++{
++    $rows = [LOCATION_CSV_HEADERS];
++    foreach ($locations as $location) {
++        $rows[] = [
++            $location['id'], $location['name'], $location['purok'] ?? '',
++            $location['landmark'] ?? '', $location['lat'], $location['lng'],
++            $location['active'] ? 'Active' : 'Inactive'
++        ];
+     }
+-    $handle=@fopen(APP_ROOT.'/.env','c+');
+-    if (!$handle) throw new RuntimeException('Cannot create the CSV verification key. Make .env writable or set CSV_SIGNING_KEY to a 64-character hexadecimal secret.');
+-    try {
+-        if (!flock($handle,LOCK_EX)) throw new RuntimeException('Cannot lock CSV settings.');
+-        $text=(string)stream_get_contents($handle);
+-        if (preg_match('/^CSV_SIGNING_KEY=([a-f0-9]{64})\s*$/mi',$text,$matches)) return $matches[1];
+-        $key=bin2hex(random_bytes(32));
+-        fseek($handle,0,SEEK_END);
+-        if (fwrite($handle,"\nCSV_SIGNING_KEY=".$key."\n")===false || !fflush($handle)) throw new RuntimeException('Cannot save the CSV verification key.');
+-        @chmod(APP_ROOT.'/.env',0600);
+-        return $key;
+-    } finally { flock($handle,LOCK_UN); fclose($handle); }
+-}
+-const LOCATION_CSV_HEADERS=['Location ID','Location name','Purok','Landmark','Latitude','Longitude','Status'];
+-function export_locations_csv(array $locations, ?string $key = null): string {
+-    if (count($locations)>5000) throw new RuntimeException('Locations export exceeds the 5,000-location import limit.');
+-    $rows=[['SmartSlope locations export','Version 1'],['Exported at (PHT)',csv_date(gmdate('Y-m-d H:i:s'))],LOCATION_CSV_HEADERS];
+-    foreach ($locations as $l) $rows[]=[(int)$l['id'],csv_cell($l['name']),csv_cell($l['purok']??''),csv_cell($l['landmark']??''),
+-        $l['lat']??'', $l['lng']??'',(int)$l['active']===1?'Active':'Inactive'];
+-    $body=csv_rows($rows,false);
+-    return "\xEF\xBB\xBF".$body.csv_rows([['Verification code (do not edit)',hash_hmac('sha256',$body,$key??csv_signing_key())]],false);
++    return csv_rows($rows);
+ }
+-function parse_locations_csv(string $csv, ?string $key = null): array {
+-    $invalid='Invalid/not applicable CSV. Import an unchanged Locations CSV downloaded from this website.';
+-    if (strlen($csv)>5*1024*1024 || !preg_match('//u',$csv) || str_contains($csv,"\0")) throw new InvalidArgumentException($invalid);
+-    if (str_starts_with($csv,"\xEF\xBB\xBF")) $csv=substr($csv,3);
+-    $stream=fopen('php://temp','w+'); fwrite($stream,$csv); rewind($stream); $rows=[];
+-    try { while (($row=fgetcsv($stream,0,',','"',''))!==false) { $rows[]=$row; if(count($rows)>5004) throw new InvalidArgumentException('CSV exceeds the 5,000-location limit.'); } }
+-    finally { fclose($stream); }
+-    $signature=array_pop($rows);
+-    if (($rows[0]??[])!==['SmartSlope locations export','Version 1'] || ($rows[1][0]??'')!=='Exported at (PHT)' || count($rows[1]??[])!==2 || ($rows[2]??[])!==LOCATION_CSV_HEADERS ||
+-        count($signature??[])!==2 || ($signature[0]??'')!=='Verification code (do not edit)' ||
+-        !hash_equals(hash_hmac('sha256',csv_rows($rows,false),$key??csv_signing_key()),$signature[1]??'')) throw new InvalidArgumentException($invalid);
+-    $result=[]; $seenIds=[]; $seenPoints=[];
+-    foreach (array_slice($rows,3) as $row) {
+-        if(count($row)!==7) throw new InvalidArgumentException($invalid);
+-        [$id,$name,$purok,$landmark,$lat,$lng,$status]=$row;
+-        foreach (['name','purok','landmark'] as $field) if(str_starts_with($$field,"'")) $$field=substr($$field,1);
+-        $id=filter_var($id,FILTER_VALIDATE_INT); $latitude=finite_number($lat,-90,90); $longitude=finite_number($lng,-180,180);
+-        $point=$lat.','.$lng;
+-        if (!$id || $id<1 || isset($seenIds[$id]) || isset($seenPoints[$point]) || trim($name)==='' || strlen($name)>600 || strlen($purok)>400 || strlen($landmark)>1020 ||
+-            $latitude===null || $longitude===null || !is_in_irisan($latitude,$longitude) || !in_array($status,['Active','Inactive'],true)) throw new InvalidArgumentException($invalid.' A location is invalid or outside Irisan.');
+-        $seenIds[$id]=true; $seenPoints[$point]=true;
+-        $result[]=['id'=>$id,'name'=>$name,'purok'=>$purok,'landmark'=>$landmark,'lat'=>$latitude,'lng'=>$longitude,'active'=>$status==='Active'?1:0];
++
++function parse_locations_csv(string $csv): array
++{
++    if (str_starts_with($csv, "\xEF\xBB\xBF")) {
++        $csv = substr($csv, 3);
+     }
+-    return $result;
++    $stream = fopen('php://temp', 'w+');
++    fwrite($stream, $csv);
++    rewind($stream);
++    $headers = fgetcsv($stream, 0, ',', '"', '');
++    if ($headers !== LOCATION_CSV_HEADERS) {
++        fclose($stream);
++        throw new InvalidArgumentException('Choose a Locations CSV with the seven exported column headings.');
++    }
++    $locations = [];
++    while (($row = fgetcsv($stream, 0, ',', '"', '')) !== false) {
++        if ($row === [null]) {
++            continue;
++        }
++        if (count($row) !== 7) {
++            fclose($stream);
++            throw new InvalidArgumentException('Each location needs seven CSV columns.');
++        }
++        // The exported ID is informational; coordinates identify stored locations.
++        $locations[] = [
++            'name' => trim($row[1]), 'purok' => trim($row[2]), 'landmark' => trim($row[3]),
++            'lat' => $row[4], 'lng' => $row[5], 'active' => $row[6]
++        ];
++    }
++    fclose($stream);
++    return $locations;
+ }
+-function import_locations_csv(array $rows): array {
+-    $pdo=db(); $result=['added'=>0,'updated'=>0,'unchanged'=>0]; $pdo->beginTransaction();
+-    try {
+-        foreach ($rows as $r) {
+-            $find=$pdo->prepare('SELECT * FROM locations WHERE lat=? AND lng=? FOR UPDATE'); $find->execute([$r['lat'],$r['lng']]); $existing=$find->fetch();
+-            if ($existing) {
+-                $same=$existing['name']===$r['name'] && ($existing['purok']??'')===$r['purok'] && ($existing['landmark']??'')===$r['landmark'] && (int)$existing['active']===$r['active'];
+-                if ($same) { $result['unchanged']++; continue; }
+-                $stmt=$pdo->prepare('UPDATE locations SET name=?,purok=?,landmark=?,active=? WHERE id=?');
+-                $stmt->execute([$r['name'],$r['purok'],$r['landmark'],$r['active'],$existing['id']]); $result['updated']++;
+-            } else {
+-                // Match by coordinates, never repoint an existing ID or detach its history.
+-                $stmt=$pdo->prepare("INSERT INTO locations (name,purok,landmark,lat,lng,active,susceptibility) VALUES (?,?,?,?,?,?,'unknown')");
+-                $stmt->execute([$r['name'],$r['purok'],$r['landmark'],$r['lat'],$r['lng'],$r['active']]); $result['added']++;
+-            }
++
++function import_locations_csv(array $rows): array
++{
++    $pdo = db();
++    $result = ['added' => 0, 'updated' => 0, 'unchanged' => 0];
++    // The existing UNIQUE(lat, lng) key keeps readings/reports linked to the same ID.
++    $save = $pdo->prepare("INSERT INTO locations (name, purok, landmark, lat, lng, active, susceptibility)
++        VALUES (?, ?, NULLIF(?, ''), ?, ?, ?, 'unknown')
++        ON DUPLICATE KEY UPDATE name = VALUES(name), purok = VALUES(purok),
++            landmark = VALUES(landmark), active = VALUES(active)");
++    foreach ($rows as $row) {
++        // Only checks needed for the existing table and Irisan map are retained.
++        $lat = finite_number($row['lat'], -90, 90);
++        $lng = finite_number($row['lng'], -180, 180);
++        if (
++            $row['name'] === '' || strlen($row['name']) > 150 || strlen($row['purok']) > 100 ||
++            strlen($row['landmark']) > 255 || $lat === null || $lng === null ||
++            !is_in_irisan($lat, $lng) || !in_array($row['active'], ['Active', 'Inactive'], true)
++        ) {
++            throw new InvalidArgumentException('Invalid location details. Earlier rows may already be saved.');
+         }
+-        $pdo->commit(); return $result;
+-    } catch (Throwable $error) { if($pdo->inTransaction())$pdo->rollBack(); throw $error; }
++        $save->execute([$row['name'], $row['purok'], $row['landmark'], $lat, $lng, $row['active'] === 'Active' ? 1 : 0]);
++        if ($save->rowCount() === 1) {
++            $result['added']++;
++        } elseif ($save->rowCount() === 2) {
++            $result['updated']++;
++        } else {
++            $result['unchanged']++;
++        }
++    }
++    return $result;
+ }
+diff --git a/app/helpers.php b/app/helpers.php
+index 1970b0f..e0dad69 100644
+--- a/app/helpers.php
++++ b/app/helpers.php
+@@ -1,49 +1,59 @@
+ <?php
++
+ declare(strict_types=1);
+ 
+-function e($value): string {
++function e($value): string
++{
+     return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+ }
+ 
+ // Get POST value safely
+ 
+-function post(string $key, $default = '') {
++function post(string $key, $default = '')
++{
+     $value = $_POST[$key] ?? $default;
+     return is_scalar($value) ? $value : $default;
+ }
+ 
+ // Get GET value safely
+ 
+-function get(string $key, $default = '') {
++function get(string $key, $default = '')
++{
+     $value = $_GET[$key] ?? $default;
+     return is_scalar($value) ? $value : $default;
+ }
+ 
+ // Build URL
+ 
+-function url(string $path = ''): string {
++function url(string $path = ''): string
++{
+     $base = '/' . trim(APP_BASE_PATH, '/');
+     return rtrim($base, '/') . '/' . ltrim($path, '/');
+ }
+ 
+ // Redirect
+ 
+-function redirect(string $path): void {
++function redirect(string $path): void
++{
+     header("Location: " . url($path), true, 303);
+     exit;
+ }
+ 
+ // Display local datetime
+ 
+-function local_date(?string $value): string {
+-    if (!$value) return '';
++function local_date(?string $value): string
++{
++    if (!$value) {
++        return '';
++    }
+     $date = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $value, new DateTimeZone('UTC'));
+     return $date ? $date->setTimezone(new DateTimeZone('Asia/Manila'))->format('M j, Y g:i A') : $value;
+ }
+ 
+-// Start session
++// Store or retrieve a flash message
+ 
+-function flash(string $key, ?string $message = null): ?string {
++function flash(string $key, ?string $message = null): ?string
++{
+     if ($message !== null) {
+         $_SESSION['flash'][$key] = $message;
+         return null;
+@@ -53,15 +63,14 @@ function flash(string $key, ?string $message = null): ?string {
+     return is_string($value) ? $value : null;
+ }
+ 
+-// ============================================================================
+-// AUTHENTICATION FUNCTIONS
+-// ============================================================================
++// Test whether a coordinate is inside the Irisan polygon.
+ 
+-// Hash password
+-
+-function is_in_irisan(float $lat, float $lng): bool {
++function is_in_irisan(float $lat, float $lng): bool
++{
+     $geo = json_decode((string)file_get_contents(APP_ROOT . '/assets/map/irisan.geojson'), true);
+-    if (!is_array($geo)) return false;
++    if (!is_array($geo)) {
++        return false;
++    }
+     $geometry = $geo['type'] === 'FeatureCollection'
+         ? ($geo['features'][0]['geometry'] ?? null)
+         : ($geo['geometry'] ?? $geo);
+@@ -71,18 +80,24 @@ function is_in_irisan(float $lat, float $lng): bool {
+         foreach ($polygon as $ringIndex => $ring) {
+             $crosses = false;
+             for ($i = 0, $j = count($ring) - 1; $i < count($ring); $j = $i++) {
+-                [$x1, $y1] = $ring[$i]; [$x2, $y2] = $ring[$j];
+-                if (($y1 > $lat) !== ($y2 > $lat) &&
+-                    $lng < ($x2 - $x1) * ($lat - $y1) / ($y2 - $y1) + $x1) $crosses = !$crosses;
++                [$x1, $y1] = $ring[$i];
++                [$x2, $y2] = $ring[$j];
++                if (
++                    ($y1 > $lat) !== ($y2 > $lat) &&
++                    $lng < ($x2 - $x1) * ($lat - $y1) / ($y2 - $y1) + $x1
++                ) {
++                    $crosses = !$crosses;
++                }
+             }
+-            if ($ringIndex === 0) $inside = $crosses;
+-            elseif ($crosses) $inside = false;
++            if ($ringIndex === 0) {
++                $inside = $crosses;
++            } elseif ($crosses) {
++                $inside = false;
++            }
++        }
++        if ($inside) {
++            return true;
+         }
+-        if ($inside) return true;
+     }
+     return false;
+ }
+-
+-// ============================================================================
+-// CSV EXPORT
+-// ============================================================================
+diff --git a/app/presentation.php b/app/presentation.php
+index 06fc1dd..e7a5693 100644
+--- a/app/presentation.php
++++ b/app/presentation.php
+@@ -29,7 +29,7 @@ function ui_navigation(string $active): string {
+                         <a class="nav-link<?= $active === $key ? ' active' : '' ?>" href="<?= e(url($path)) ?>"<?= $active === $key ? ' aria-current="page"' : '' ?>><?= e($label) ?></a>
+                     <?php endforeach; ?>
+                     <form method="post" action="<?= e(url('logout.php')) ?>" class="nav-logout">
+-                        <?= csrf_field() ?><button class="nav-link btn btn-link" type="submit">Log out</button>
++                        <button class="nav-link btn btn-link" type="submit">Log out</button>
+                     </form>
+                 </div>
+             </div>
+@@ -45,8 +45,11 @@ function ui_current_category(array $assessment): ?string {
+ }
+ 
+ function ui_current_count(array $readings, string $category): int {
+-    return count(array_filter($readings, static fn(array $reading): bool =>
+-        ui_current_category($reading['assessment'] ?? []) === $category));
++    $count = 0;
++    foreach ($readings as $reading) {
++        if (ui_current_category($reading['assessment'] ?? []) === $category) $count++;
++    }
++    return $count;
+ }
+ 
+ function ui_number($value, string $unit = ''): string {
+@@ -58,11 +61,9 @@ function ui_time(?string $value): string {
+ }
+ 
+ function ui_source(?string $source): string {
+-    return match ($source) {
+-        'openmeteo' => 'Open-Meteo weather provider (modeled data)',
+-        'manual' => 'Manual entry',
+-        default => 'Source unavailable',
+-    };
++    if ($source === 'openmeteo') return 'Open-Meteo weather provider (modeled data)';
++    if ($source === 'manual') return 'Manual entry';
++    return 'Source unavailable';
+ }
+ 
+ function ui_location_label(array $location): string {
+diff --git a/app/provider.php b/app/provider.php
+deleted file mode 100644
+index 1573693..0000000
+--- a/app/provider.php
++++ /dev/null
+@@ -1,34 +0,0 @@
+-<?php
+-declare(strict_types=1);
+-final class ProviderRateLimit extends RuntimeException {}
+-
+-/** Shared local-host quotas and cache, protected by one OS lock per provider. */
+-function provider_cached(string $provider, string $key, callable $fetch, float $spacing, int $ttl, array $limits): array {
+-    $root=sys_get_temp_dir() . '/smartslope-' . substr(hash('sha256',APP_ROOT),0,16);
+-    if (!is_dir($root) && !mkdir($root,0700,true) && !is_dir($root)) throw new RuntimeException('Provider cache is unavailable.');
+-    $lock=fopen($root . '/' . $provider . '.lock','c');
+-    if (!$lock || !flock($lock,LOCK_EX)) throw new RuntimeException('Provider lock unavailable.');
+-    try {
+-        $file=$root . '/' . $provider . '.json';
+-        $state=is_file($file) ? json_decode((string)file_get_contents($file),true) : [];
+-        if (!is_array($state)) $state=[];
+-        $now=microtime(true); $cache=$state['cache'][$key] ?? null;
+-        if ($cache && $now-$cache['at']<$ttl) return $cache['value'];
+-        if ($now-($state['last']??0)<$spacing) throw new ProviderRateLimit('Please wait briefly before another provider request.');
+-        foreach ($limits as $seconds=>$limit) {
+-            $bucket=(int)floor($now/$seconds);
+-            $count=$state['counts'][(string)$seconds]??['bucket'=>$bucket,'count'=>0];
+-            if ($count['bucket']!==$bucket) $count=['bucket'=>$bucket,'count'=>0];
+-            if ($count['count'] >= $limit) throw new ProviderRateLimit('Provider request budget reached. Try later.');
+-            $count['count']++; $state['counts'][(string)$seconds]=$count;
+-        }
+-        $state['last']=$now;
+-        if (file_put_contents($file,json_encode($state,JSON_THROW_ON_ERROR))===false) throw new RuntimeException('Cannot persist request budget.');
+-        $value=$fetch();
+-        foreach ($state['cache']??[] as $k=>$entry) if ($now-$entry['at'] >= $ttl) unset($state['cache'][$k]);
+-        if (count($state['cache']??[])>=100) array_shift($state['cache']);
+-        $state['cache'][$key]=['at'=>microtime(true),'value'=>$value];
+-        if (file_put_contents($file,json_encode($state,JSON_THROW_ON_ERROR))===false) throw new RuntimeException('Cannot persist provider cache.');
+-        return $value;
+-    } finally { flock($lock,LOCK_UN); fclose($lock); }
+-}
+diff --git a/app/repositories.php b/app/repositories.php
+index 9ae8adf..1430dfe 100644
+--- a/app/repositories.php
++++ b/app/repositories.php
+@@ -1,13 +1,15 @@
+ <?php
++
+ declare(strict_types=1);
+ 
+-function create_user(string $fullName, string $username, string $email, string $phone, string $password): int {
++function create_user(string $fullName, string $username, string $email, string $phone, string $password): int
++{
+     $pdo = db();
+     $stmt = $pdo->prepare(
+         "INSERT INTO users (full_name, username, email, phone, password, role)
+          VALUES (?, ?, ?, ?, ?, 'user')"
+     );
+-    $stmt->execute([$fullName, $username, $email, $phone, hash_password($password)]);
++    $stmt->execute([$fullName, $username, $email, $phone, password_hash($password, PASSWORD_DEFAULT)]);
+     return (int)$pdo->lastInsertId();
+ }
+ 
+@@ -17,14 +19,16 @@ function create_user(string $fullName, string $username, string $email, string $
+ 
+ // Get all active locations
+ 
+-function get_locations(): array {
++function get_locations(): array
++{
+     $pdo = db();
+     return $pdo->query("SELECT * FROM locations WHERE active = 1 ORDER BY name")->fetchAll();
+ }
+ 
+ // Get location by ID
+ 
+-function get_location(int $id): ?array {
++function get_location(int $id): ?array
++{
+     $pdo = db();
+     $stmt = $pdo->prepare("SELECT * FROM locations WHERE id = ?");
+     $stmt->execute([$id]);
+@@ -33,7 +37,8 @@ function get_location(int $id): ?array {
+ 
+ // Deactivate location
+ 
+-function deactivate_location(int $id): bool {
++function deactivate_location(int $id): bool
++{
+     $pdo = db();
+     $stmt = $pdo->prepare("UPDATE locations SET active = 0 WHERE id = ?");
+     $stmt->execute([$id]);
+@@ -42,7 +47,8 @@ function deactivate_location(int $id): bool {
+ 
+ // Get latest reading for location
+ 
+-function get_latest_reading(int $locationId): ?array {
++function get_latest_reading(int $locationId): ?array
++{
+     $pdo = db();
+     $stmt = $pdo->prepare(
+         "SELECT * FROM events
+@@ -56,7 +62,8 @@ function get_latest_reading(int $locationId): ?array {
+ 
+ // Get readings for location
+ 
+-function get_readings(int $locationId, int $limit = 50): array {
++function get_readings(int $locationId, int $limit = 50): array
++{
+     $pdo = db();
+     $stmt = $pdo->prepare(
+         "SELECT * FROM events
+@@ -66,12 +73,17 @@ function get_readings(int $locationId, int $limit = 50): array {
+     $stmt->bindValue(1, $locationId, PDO::PARAM_INT);
+     $stmt->bindValue(2, max(1, $limit), PDO::PARAM_INT);
+     $stmt->execute();
+-    return array_map('assess_reading', $stmt->fetchAll());
++    $rows = $stmt->fetchAll();
++    foreach ($rows as $index => $row) {
++        $rows[$index] = assess_reading($row);
++    }
++    return $rows;
+ }
+ 
+ // Get all recent readings
+ 
+-function get_all_readings(int $limit = 100): array {
++function get_all_readings(int $limit = 100): array
++{
+     $pdo = db();
+     $rows = $pdo->query(
+         "SELECT e.*, l.name as location_name, l.purok, l.lat, l.lng
+@@ -81,12 +93,16 @@ function get_all_readings(int $limit = 100): array {
+          ORDER BY e.observed_at DESC, e.id DESC
+          LIMIT " . max(1, (int)$limit)
+     )->fetchAll();
+-    return array_map('assess_reading', $rows);
++    foreach ($rows as $index => $row) {
++        $rows[$index] = assess_reading($row);
++    }
++    return $rows;
+ }
+ 
+ // Create reading
+ 
+-function create_reading(array $data): int {
++function create_reading(array $data): int
++{
+     $pdo = db();
+     $stmt = $pdo->prepare(
+         "INSERT INTO events (
+@@ -119,9 +135,9 @@ function create_reading(array $data): int {
+     return (int)$pdo->lastInsertId();
+ }
+ 
+-// Calculate risk level
+ 
+-function get_reports(?string $status = null): array {
++function get_reports(?string $status = null): array
++{
+     $pdo = db();
+     $sql = "SELECT e.*, l.name as location_name, l.purok, l.landmark, l.lat, l.lng,
+                    l.susceptibility, u.full_name as reporter_name
+@@ -141,7 +157,9 @@ function get_reports(?string $status = null): array {
+     $assessments = [];
+     foreach ($reports as &$report) {
+         $id = (int)$report['location_id'];
+-        if (!isset($assessments[$id])) $assessments[$id] = reading_assessment(get_latest_reading($id), $report);
++        if (!isset($assessments[$id])) {
++            $assessments[$id] = reading_assessment(get_latest_reading($id), $report);
++        }
+         $report['location_assessment'] = $assessments[$id];
+         $report['location_risk_level'] = $assessments[$id]['current_category'] ?? 'unavailable';
+     }
+@@ -151,7 +169,8 @@ function get_reports(?string $status = null): array {
+ 
+ // Get pending report counts by location
+ 
+-function get_pending_counts(): array {
++function get_pending_counts(): array
++{
+     $pdo = db();
+     $stmt = $pdo->query(
+         "SELECT location_id, COUNT(*) as count
+@@ -168,7 +187,8 @@ function get_pending_counts(): array {
+ 
+ // Create report
+ 
+-function create_report(array $data): int {
++function create_report(array $data): int
++{
+     $pdo = db();
+     $stmt = $pdo->prepare(
+         "INSERT INTO events (
+@@ -190,10 +210,13 @@ function create_report(array $data): int {
+ 
+ // Update report status
+ 
+-function update_report(int $id, string $status, int $adminId): bool {
++function update_report(int $id, string $status, int $adminId): bool
++{
+     require_awareness_schema();
+     $pdo = db();
+-    if (!in_array($status, ['reviewed','resolved'], true)) throw new InvalidArgumentException('Invalid review status.');
++    if (!in_array($status, ['reviewed','resolved'], true)) {
++        throw new InvalidArgumentException('Invalid review status.');
++    }
+     $stmt = $pdo->prepare("UPDATE events SET status = ?, reviewed_by = ?, reviewed_at = UTC_TIMESTAMP() WHERE id = ? AND type = 'report' AND status = ?");
+     $stmt->execute([$status, $adminId, $id, $status === 'reviewed' ? 'pending' : 'reviewed']);
+     return $stmt->rowCount() === 1;
+@@ -201,7 +224,8 @@ function update_report(int $id, string $status, int $adminId): bool {
+ 
+ // Delete report
+ 
+-function delete_report(int $id): bool {
++function delete_report(int $id): bool
++{
+     $pdo = db();
+     $stmt = $pdo->prepare("DELETE FROM events WHERE id = ? AND type = 'report'");
+     $stmt->execute([$id]);
+@@ -210,7 +234,8 @@ function delete_report(int $id): bool {
+ 
+ // Archive reading
+ 
+-function archive_reading(int $id): bool {
++function archive_reading(int $id): bool
++{
+     $pdo = db();
+     $stmt = $pdo->prepare("UPDATE events SET archived = 1 WHERE id = ? AND type = 'reading' AND archived = 0");
+     $stmt->execute([$id]);
+@@ -218,29 +243,31 @@ function archive_reading(int $id): bool {
+ }
+ 
+ 
+-function update_reading_risk(int $readingId, string $risk, int $adminId, string $reason): void {
++function update_reading_risk(int $readingId, string $risk, int $adminId, string $reason): void
++{
+     require_awareness_schema();
+-    if (!in_array($risk, ['low','normal','medium','high'], true) || trim($reason)==='' || strlen($reason)>500) throw new InvalidArgumentException('Valid category and adjustment reason are required.');
+-    $pdo=db(); $pdo->beginTransaction();
+-    try {
+-        $stmt=$pdo->prepare("SELECT risk_level, adjustment_log FROM events WHERE id=? AND type='reading' AND archived=0 FOR UPDATE");
+-        $stmt->execute([$readingId]); $row=$stmt->fetch();
+-        if (!$row) throw new InvalidArgumentException('Reading not found.');
+-        $log=json_decode($row['adjustment_log'] ?? '[]',true);
+-        if (!is_array($log)) throw new RuntimeException('Invalid existing adjustment log.');
+-        $log[]=['by'=>$adminId,'at'=>gmdate('Y-m-d H:i:s'),'from'=>$row['risk_level'],'to'=>$risk,'reason'=>trim($reason)];
+-        $stmt=$pdo->prepare('UPDATE events SET risk_level=?, adjustment_log=? WHERE id=?');
+-        $stmt->execute([$risk,json_encode($log,JSON_THROW_ON_ERROR),$readingId]); $pdo->commit();
+-    } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
++    if (!in_array($risk, ['low','normal','medium','high'], true) || trim($reason) === '' || strlen($reason) > 500) {
++        throw new InvalidArgumentException('Valid category and adjustment reason are required.');
++    }
++    $pdo = db();
++    $stmt = $pdo->prepare("SELECT risk_level, adjustment_log FROM events WHERE id=? AND type='reading' AND archived=0");
++    $stmt->execute([$readingId]);
++    $row = $stmt->fetch();
++    if (!$row) {
++        throw new InvalidArgumentException('Reading not found.');
++    }
++    $log = json_decode($row['adjustment_log'] ?? '[]', true);
++    if (!is_array($log)) {
++        throw new RuntimeException('Invalid existing adjustment log.');
++    }
++    $log[] = ['by' => $adminId,'at' => gmdate('Y-m-d H:i:s'),'from' => $row['risk_level'],'to' => $risk,'reason' => trim($reason)];
++    $stmt = $pdo->prepare('UPDATE events SET risk_level=?, adjustment_log=? WHERE id=?');
++    $stmt->execute([$risk,json_encode($log, JSON_THROW_ON_ERROR),$readingId]);
+ }
+ 
+-// ============================================================================
+-// WEATHER API FUNCTIONS
+-// ============================================================================
+-
+-// Fetch weather from Open-Meteo
+ 
+-function get_or_create_location(float $lat, float $lng, ?string $landmark = null): array {
++function get_or_create_location(float $lat, float $lng, ?string $landmark = null): array
++{
+     if (!is_finite($lat) || !is_finite($lng) || !is_in_irisan($lat, $lng) || strlen((string)$landmark) > 255) {
+         throw new InvalidArgumentException('Invalid Irisan location or address.');
+     }
+@@ -273,15 +300,6 @@ function get_or_create_location(float $lat, float $lng, ?string $landmark = null
+          VALUES (?, 'Map point', ?, ?, ?, 'unknown', 1)"
+     );
+     $landmark = trim((string)$landmark);
+-    try {
+-        $stmt->execute([$name, $landmark !== '' ? $landmark : null, $lat, $lng]);
+-    } catch (PDOException $error) {
+-        if ($error->getCode() !== '23000') throw $error;
+-        $existing = $pdo->prepare('SELECT * FROM locations WHERE lat = ? AND lng = ?');
+-        $existing->execute([$lat, $lng]);
+-        $row = $existing->fetch();
+-        if (!$row || !$row['active']) throw $error;
+-        return $row;
+-    }
++    $stmt->execute([$name, $landmark !== '' ? $landmark : null, $lat, $lng]);
+     return get_location((int)$pdo->lastInsertId());
+ }
+diff --git a/app/weather.php b/app/weather.php
+index 64ee52f..0511184 100644
+--- a/app/weather.php
++++ b/app/weather.php
+@@ -1,14 +1,9 @@
+ <?php
+-declare(strict_types=1);
+ 
+-function fetch_weather(float $lat, float $lng): array {
+-    $weather=provider_cached('weather', sprintf('%.5f,%.5f',$lat,$lng),
+-        static fn()=>request_weather($lat,$lng), 2.0, 60, [60=>100,3600=>1000,86400=>5000]);
+-    validate_weather_payload($weather);
+-    return $weather;
+-}
++declare(strict_types=1);
+ 
+-function request_weather(float $lat, float $lng): array {
++function fetch_weather(float $lat, float $lng): array
++{
+     $url = "https://api.open-meteo.com/v1/forecast?";
+     $params = [
+         'latitude' => $lat,
+@@ -41,8 +36,10 @@ function request_weather(float $lat, float $lng): array {
+     }
+     $decoded['provider_retrieved_at_utc'] = gmdate('Y-m-d H:i:s');
+     $decoded['request_parameters'] = $params;
+-    foreach (['precipitation_probability'=>'%', 'soil_moisture_9_to_27cm'=>'m³/m³', 'soil_moisture_27_to_81cm'=>'m³/m³'] as $field=>$unit) {
+-        if (($decoded['hourly_units'][$field] ?? null)!==$unit) unset($decoded['hourly'][$field]);
++    foreach (['precipitation_probability' => '%', 'soil_moisture_9_to_27cm' => 'm³/m³', 'soil_moisture_27_to_81cm' => 'm³/m³'] as $field => $unit) {
++        if (($decoded['hourly_units'][$field] ?? null) !== $unit) {
++            unset($decoded['hourly'][$field]);
++        }
+     }
+     validate_weather_payload($decoded);
+     return $decoded;
+@@ -50,11 +47,30 @@ function request_weather(float $lat, float $lng): array {
+ 
+ // Calculate rainfall from hourly data
+ 
++function rainfall_total(array $samples, array $times): ?float
++{
++    $sum = 0.0;
++    foreach ($times as $timestamp) {
++        $value = $samples[$timestamp]['rain'] ?? null;
++        if ($value === null) {
++            return null;
++        }
++        $sum += $value;
++    }
++    if ($sum > 99999.99) {
++        return null;
++    }
++    return round($sum, 2);
++}
++
+ /** Hourly precipitation is the sum of the preceding hour, labelled by its end. */
+-function calculate_weather_indicators(array $hourly, string $currentTime): array {
++function calculate_weather_indicators(array $hourly, string $currentTime): array
++{
+     $end = utc_timestamp($currentTime);
+-    if ($end === null || !isset($hourly['time'], $hourly['precipitation']) ||
+-        !is_array($hourly['time']) || !is_array($hourly['precipitation'])) {
++    if (
++        $end === null || !isset($hourly['time'], $hourly['precipitation']) ||
++        !is_array($hourly['time']) || !is_array($hourly['precipitation'])
++    ) {
+         throw new RuntimeException('Missing hourly rainfall data.');
+     }
+     $end = intdiv($end, 3600) * 3600; // Last completed hourly interval.
+@@ -66,29 +82,27 @@ function calculate_weather_indicators(array $hourly, string $currentTime): array
+         }
+         $samples[$timestamp] = ['index' => $i, 'rain' => finite_number($hourly['precipitation'][$i] ?? null, 0, 99999.99)];
+     }
+-    $total = static function (array $times) use ($samples): ?float {
+-        $sum = 0.0;
+-        foreach ($times as $timestamp) {
+-            $value = $samples[$timestamp]['rain'] ?? null;
+-            if ($value === null) return null;
+-            $sum += $value;
+-        }
+-        return $sum <= 99999.99 ? round($sum, 2) : null;
+-    };
+     $result = [];
+     foreach ([1, 24, 72] as $hours) {
+         $times = [];
+-        for ($i = 0; $i < $hours; $i++) $times[] = $end - $i * 3600;
+-        $result['rainfall_' . $hours . 'h'] = $total($times);
++        for ($i = 0; $i < $hours; $i++) {
++            $times[] = $end - $i * 3600;
++        }
++        $result['rainfall_' . $hours . 'h'] = rainfall_total($samples, $times);
+     }
+     $future = [];
+-    for ($i = 1; $i <= 24; $i++) $future[] = $end + $i * 3600;
+-    $result['rainfall_forecast_24h'] = $total($future);
++    for ($i = 1; $i <= 24; $i++) {
++        $future[] = $end + $i * 3600;
++    }
++    $result['rainfall_forecast_24h'] = rainfall_total($samples, $future);
+     $probabilities = [];
+     foreach ($future as $timestamp) {
+         $index = $samples[$timestamp]['index'] ?? null;
+         $probability = $index === null ? null : finite_number($hourly['precipitation_probability'][$index] ?? null, 0, 100);
+-        if ($probability === null) { $probabilities = []; break; }
++        if ($probability === null) {
++            $probabilities = [];
++            break;
++        }
+         $probabilities[] = $probability;
+     }
+     $result['precipitation_probability_24h'] = count($probabilities) === 24 ? (int)round(max($probabilities)) : null;
+@@ -100,72 +114,76 @@ function calculate_weather_indicators(array $hourly, string $currentTime): array
+     return $result;
+ }
+ 
+-function validate_weather_payload(array $weather, ?int $now = null): void {
++function validate_weather_payload(array $weather, ?int $now = null): void
++{
+     global $config;
+     $current = $weather['current'] ?? null;
+-    if (!is_array($current) || !is_array($weather['hourly'] ?? null) ||
+-        !is_string($current['time'] ?? null)) throw new RuntimeException('Incomplete weather response.');
++    if (
++        !is_array($current) || !is_array($weather['hourly'] ?? null) ||
++        !is_string($current['time'] ?? null)
++    ) {
++        throw new RuntimeException('Incomplete weather response.');
++    }
+     $observed = utc_timestamp($current['time']);
+     $now = $now ?? time();
+-    if ($observed === null) throw new RuntimeException('Invalid provider observation time.');
+-    if ($observed > $now + ($config['future_tolerance_seconds'] ?? 300)) throw new RuntimeException('Provider observation is in the future.');
+-    if ($now - $observed > ($config['freshness_seconds'] ?? 10800)) throw new RuntimeException('Provider observation is outdated.');
+-    if (($weather['utc_offset_seconds'] ?? null) !== 0) throw new RuntimeException('Expected UTC provider timestamps.');
++    if ($observed === null) {
++        throw new RuntimeException('Invalid provider observation time.');
++    }
++    if ($observed > $now + ($config['future_tolerance_seconds'] ?? 300)) {
++        throw new RuntimeException('Provider observation is in the future.');
++    }
++    if ($now - $observed > ($config['freshness_seconds'] ?? 10800)) {
++        throw new RuntimeException('Provider observation is outdated.');
++    }
++    if (($weather['utc_offset_seconds'] ?? null) !== 0) {
++        throw new RuntimeException('Expected UTC provider timestamps.');
++    }
+     foreach (['precipitation' => 'mm'] as $field => $unit) {
+-        if (($weather['hourly_units'][$field] ?? null) !== $unit) throw new RuntimeException('Unexpected hourly units.');
++        if (($weather['hourly_units'][$field] ?? null) !== $unit) {
++            throw new RuntimeException('Unexpected hourly units.');
++        }
+     }
+     foreach (['temperature_2m' => '°C', 'relative_humidity_2m' => '%', 'wind_speed_10m' => 'km/h', 'precipitation' => 'mm', 'weather_code' => 'wmo code'] as $field => $unit) {
+-        if (($weather['current_units'][$field] ?? null) !== $unit) throw new RuntimeException('Unexpected current units.');
++        if (($weather['current_units'][$field] ?? null) !== $unit) {
++            throw new RuntimeException('Unexpected current units.');
++        }
+     }
+-    foreach (['temperature_2m' => [-100, 100], 'relative_humidity_2m' => [0, 100],
+-              'wind_speed_10m' => [0, 9999.99], 'weather_code' => [0, 99], 'precipitation' => [0, 99999.99]] as $field => $range) {
+-        if (finite_number($current[$field] ?? null, $range[0], $range[1]) === null) throw new RuntimeException('Invalid current weather value.');
++    foreach (
++        ['temperature_2m' => [-100, 100], 'relative_humidity_2m' => [0, 100],
++              'wind_speed_10m' => [0, 9999.99], 'weather_code' => [0, 99], 'precipitation' => [0, 99999.99]] as $field => $range
++    ) {
++        if (finite_number($current[$field] ?? null, $range[0], $range[1]) === null) {
++            throw new RuntimeException('Invalid current weather value.');
++        }
+     }
+ }
+ 
+-function refresh_location(int $locationId): array {
++function refresh_location(int $locationId): array
++{
+     $location = get_location($locationId);
+-    if (!$location || !$location['active'] || !$location['lat'] || !$location['lng'] ||
+-        !is_in_irisan((float)$location['lat'], (float)$location['lng'])) {
++    if (
++        !$location || !$location['active'] || !$location['lat'] || !$location['lng'] ||
++        !is_in_irisan((float)$location['lat'], (float)$location['lng'])
++    ) {
+         throw new InvalidArgumentException('Select an active Irisan location.');
+     }
+     $weather = fetch_weather((float)$location['lat'], (float)$location['lng']);
+-    validate_weather_payload($weather);
+     $current = $weather['current'];
+     $indicators = calculate_weather_indicators($weather['hourly'] ?? [], $current['time']);
+     $risk = calculate_risk($indicators['rainfall_1h'], $indicators['rainfall_24h'], $indicators['rainfall_72h']);
+     $observed = utc_timestamp($current['time']);
+-    $pdo = db();
+-    $pdo->beginTransaction();
+-    try {
+-        // Lock the location so concurrent administrator removal cannot create an orphaned active reading.
+-        $lock = $pdo->prepare('SELECT active FROM locations WHERE id = ? FOR UPDATE');
+-        $lock->execute([$locationId]);
+-        if (!(int)$lock->fetchColumn()) throw new RuntimeException('Location is no longer active.');
+-        $id = create_reading(array_merge($indicators, [
+-            'location_id' => $locationId, 'risk_level' => $risk,
+-            'temperature' => $current['temperature_2m'] ?? null,
+-            'humidity' => $current['relative_humidity_2m'] ?? null,
+-            'wind_speed' => $current['wind_speed_10m'] ?? null,
+-            'weather_code' => $current['weather_code'] ?? null,
+-             'observed_at' => gmdate('Y-m-d H:i:s', $observed),
+-            'rule_version' => RiskAnalyzer::VERSION,
+-            'rainfall_window_end' => gmdate('Y-m-d H:i:s', intdiv($observed,3600)*3600),
+-            'provider_payload' => json_encode(['classification'=>'API','request_coordinates'=>[$location['lat'],$location['lng']],
+-                'request_policy'=>'73 past hours, 25 forecast hours, UTC; optional arrays discarded if units differ',
+-                'response'=>$weather], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+-        ]));
+-        $saved = get_latest_reading($locationId);
+-        $pdo->commit();
+-        return $saved;
+-    } catch (Throwable $error) {
+-        if ($pdo->inTransaction()) $pdo->rollBack();
+-        throw $error;
+-    }
++    create_reading(array_merge($indicators, [
++        'location_id' => $locationId, 'risk_level' => $risk,
++        'temperature' => $current['temperature_2m'] ?? null,
++        'humidity' => $current['relative_humidity_2m'] ?? null,
++        'wind_speed' => $current['wind_speed_10m'] ?? null,
++        'weather_code' => $current['weather_code'] ?? null,
++         'observed_at' => gmdate('Y-m-d H:i:s', $observed),
++        'rule_version' => RiskAnalyzer::VERSION,
++        'rainfall_window_end' => gmdate('Y-m-d H:i:s', intdiv($observed, 3600) * 3600),
++        'provider_payload' => json_encode(['classification' => 'API','request_coordinates' => [$location['lat'],$location['lng']],
++            'request_policy' => '73 past hours, 25 forecast hours, UTC; optional arrays discarded if units differ',
++            'response' => $weather], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
++    ]));
++    return get_latest_reading($locationId);
+ }
+-
+-// ============================================================================
+-// MAP BOUNDARY CHECK
+-// ============================================================================
+-
+-// Simple bounds check for Barangay Irisan
+diff --git a/assets/js/dashboard.js b/assets/js/dashboard.js
+index aa3153d..b4d8c25 100644
+--- a/assets/js/dashboard.js
++++ b/assets/js/dashboard.js
+@@ -14,7 +14,7 @@
+         $('#risk-content').attr('aria-busy', 'true');
+         feedback.addClass('d-none').text('');
+         $.ajax({url:settings.apiUrl, method:'POST', dataType:'json', timeout:45000,
+-            data:{location_id:settings.locationId, csrf_token:settings.csrf}})
++            data:{location_id:settings.locationId}})
+             .done(function (data) {
+                 // Fragments come only from our authenticated API and escape every data value.
+                 if (!data.view || typeof data.view.assessment !== 'string' || typeof data.view.readings !== 'string') {
+diff --git a/database/migrate-awareness.php b/database/migrate-awareness.php
+index 2123616..3da919c 100644
+--- a/database/migrate-awareness.php
++++ b/database/migrate-awareness.php
+@@ -1,6 +1,7 @@
+ <?php
+ declare(strict_types=1);
+ if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+-require_once __DIR__ . '/../app/bootstrap.php';
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/maintenance.php';
+ migrate_awareness_schema();
+ echo "Awareness migration complete. Existing data retained.\n";
+diff --git a/docs/admin-csv-fixes.md b/docs/admin-csv-fixes.md
+index 844f230..4dbaab5 100644
+--- a/docs/admin-csv-fixes.md
++++ b/docs/admin-csv-fixes.md
+@@ -1,5 +1,7 @@
+ # Admin and CSV fixes (su2)
+ 
++Historical implementation notes: [sf2 simplification](simplification-sf2.md) supersedes the bootstrap, CSRF, CSV signing, caching and rollback behavior described below.
++
+ Baseline: `cebdad7590bb8ad9ce0915b8221f1c7dfa0d656b`.
+ 
+ ## Install
+diff --git a/docs/api.md b/docs/api.md
+index 4a24696..ca10d1c 100644
+--- a/docs/api.md
++++ b/docs/api.md
+@@ -18,10 +18,10 @@ Reads the saved latest reading, assessment, baseline lookup, notices, report cou
+ POST /api/readings.php
+ Content-Type: application/x-www-form-urlencoded
+ 
+-location_id=1&csrf_token=<session-token>
++location_id=1
+ ```
+ 
+-The dashboard obtains the token from the page and includes it with the request. The server fetches and validates current provider data, computes rainfall totals and category, and appends one `events` reading row. Repeated provider timestamps still produce separate snapshots.
++The server fetches and validates current provider data, computes rainfall totals and category, and appends one `events` reading row. Repeated provider timestamps still produce separate snapshots.
+ 
+ ### Successful response
+ 
+@@ -44,15 +44,15 @@ Do not use `view` as a general public HTML API; it exists for this application c
+ | --- | --- |
+ | 200 | Read succeeded or refresh was saved. |
+ | 401 | No signed-in session. |
+-| 403 | POST CSRF token is invalid or missing. |
+ | 404 | Location is absent or inactive. |
+ | 405 | Method other than GET/POST. `Allow: GET, POST` is returned. |
+ | 422 | Missing or invalid positive `location_id`. |
+-| 429 | Provider request budget/rate limit reached; `Retry-After: 2`. |
+ | 503 | Provider, database, or save operation failed; previous rows remain available. |
+ 
+ For an unrecognized rule version, invalid timestamp, stale observation, or incomplete rainfall, the request does not claim a current assessment. Details stay in the PHP log; the response contains a generic explanation.
+ 
+ ## `api/address.php`
+ 
+-The optional server-side reverse-geocoding aid is disabled by default. It is used only when `NOMINATIM_ENABLED=1`. It applies input bounds, cache/spacing limits and a timeout, and the UI keeps its coordinate or landmark fallback when the lookup fails. Read [data sources](data-sources.md) and the Nominatim usage policy before enabling it.
++The optional server-side reverse-geocoding aid is disabled by default. It is used only when `NOMINATIM_ENABLED=1`. It applies input bounds, a timeout but no local cache or request budget, and the UI keeps its coordinate or landmark fallback when the lookup fails. Read [data sources](data-sources.md) and the Nominatim usage policy before enabling it.
++
++POST refresh requires a login session; no CSRF token is sent or checked in this branch.
+diff --git a/docs/architecture.md b/docs/architecture.md
+index 2834cbf..2ee9a39 100644
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -7,8 +7,8 @@ SmartSlope uses a small PHP application with browser pages, shared application c
+ | Layer | Repository paths | Responsibility |
+ | --- | --- | --- |
+ | Browser routes and templates | `index.php`, `dashboard.php`, `admin.php`, `report.php`, `readings.php`, `pages/` | Render login, dashboard, report and admin views. |
+-| Actions and API | `actions/`, `api/readings.php`, `api/address.php` | Validate requests, check session/role/CSRF, return JSON or redirect. |
+-| Shared application logic | `app/bootstrap.php`, `auth.php`, `helpers.php`, `repositories.php`, `weather.php`, `assessment.php`, `RiskAnalyzer.php`, `awareness.php` | Load dependencies, apply domain rules, query data and create view models. |
++| Actions and API | `actions/`, `api/readings.php`, `api/address.php` | Validate requests, check session/role, return JSON or redirect. |
++| Shared application logic | direct includes of `app/config.php`, `auth.php`, `helpers.php`, `repositories.php`, `weather.php`, `assessment.php`, `RiskAnalyzer.php`, `awareness.php` | Load dependencies, apply domain rules, query data and create view models. |
+ | Storage | `database/schema.sql`, `database/migrate-awareness.php`, MySQL | Persist users, locations and reading/report events. |
+ | Browser assets | `assets/js/`, `assets/css/`, `assets/vendor/`, `assets/map/`, `assets/map-tiles/` | Local Bootstrap, Leaflet, jQuery, map boundary, AJAX, styling and tiles. |
+ 
+@@ -17,10 +17,10 @@ Each PHP entry point loads the explicit shared bootstrap using `__DIR__`. Config
+ ## Reading refresh flow
+ 
+ 1. A signed-in user chooses an active point inside the Irisan polygon and presses Refresh.
+-2. `assets/js/dashboard.js` sends a CSRF-protected POST to `api/readings.php`.
++2. `assets/js/dashboard.js` sends a session-authenticated POST to `api/readings.php`.
+ 3. The endpoint checks the session, method, token and positive location ID.
+ 4. `app/weather.php` validates the active point, calls Open-Meteo through the provider helper, validates units/timestamps/ranges, and totals complete 1/24/72 hour windows.
+-5. `RiskAnalyzer` assigns the highest reached prototype rainfall category; `refresh_location()` stores a new `events` snapshot in a transaction.
++5. `RiskAnalyzer` assigns the highest reached prototype rainfall category; `refresh_location()` stores a new `events` snapshot with a prepared INSERT.
+ 6. The endpoint recomputes freshness and explanatory assessment, then returns JSON and rendered fragments for the dashboard.
+ 
+ On provider failure the endpoint returns an error and keeps earlier snapshots. GET returns saved data only and does not refresh the provider.
+diff --git a/docs/awareness-upgrade.md b/docs/awareness-upgrade.md
+index f5ea15c..fb6b54f 100644
+--- a/docs/awareness-upgrade.md
++++ b/docs/awareness-upgrade.md
+@@ -1,5 +1,7 @@
+ # SmartSlope awareness upgrade
+ 
++Historical implementation notes: [sf2 simplification](simplification-sf2.md) supersedes the bootstrap, CSRF, CSV signing, caching and rollback behavior described below.
++
+ Baseline: su1 a8ae411204c785e18c0159c94b395c8a437e4f38.
+ Sensors and AI are excluded. Manual weather refresh remains. Three tables remain:
+ users, locations, events. No alert/sensor table or background task is introduced.
+diff --git a/docs/backend-test-checklist.md b/docs/backend-test-checklist.md
+index 5333127..79b9f0c 100644
+--- a/docs/backend-test-checklist.md
++++ b/docs/backend-test-checklist.md
+@@ -21,14 +21,14 @@ node tests/map-boundary.test.cjs
+ Test both `/` on Herd and `/smartslope/` on XAMPP. Verify PHP PDO MySQL and cURL are enabled. Use separate browser profiles or normal/private windows for resident/admin sessions.
+ 
+ 1. Register a unique resident; check missing/overlength fields, invalid phone/email, short password and duplicate username/email/phone. Confirm server-assigned resident role.
+-2. Login/logout; ensure resident requests to admin mutations cannot change data. Invalid/missing CSRF must return 403.
++2. Login/logout; ensure resident requests to admin mutations cannot change data. Session-authenticated submissions do not require a CSRF token in this branch.
+ 3. Select an Irisan point. Confirm a successful API response creates one snapshot and updates the selected list/marker. A second successful refresh appends another snapshot, even if observation time is unchanged.
+ 4. Disconnect internet. Map tiles/boundary should remain available. Weather refresh fails visibly and preserves stored rows. Optional reverse geocoding times out after four seconds.
+ 5. Set an observation time older than three hours in a disposable test database. Reload dashboard, admin, readings and report view. They must show outdated/last-known data and no current colored risk marker.
+ 6. In a test database, set rainfall or risk to null. Pages and AJAX must remain usable and display incomplete/unavailable.
+ 7. Submit reports with required phone, optional email and a map location. Review/resolve the report as admin. Open multiple report maps and confirm correct coordinates. Reporter identity must not change.
+ 8. Edit a reading category. Weather/location/time must remain unchanged. A differing category shows administrator-adjusted. Archive rows and remove locations; ensure historical rows are retained in the database. Existing active-list filtering excludes inactive locations.
+-9. Test bulk removal, empty selection and malformed IDs. Database failures roll back the selected bulk transaction.
++9. Test bulk removal, empty selection and malformed IDs. A later failure may leave earlier bulk changes saved.
+ 10. Export reports/readings CSV; check contacts, UTC columns, freshness, adjusted status, and formula-like report text.
+ 11. API: logged-out GET returns JSON 401; invalid POST token 403; malformed ID 422; inactive/missing location 404; unsupported method 405; provider failure 503. GET must not insert rows.
+ 12. Direct HTTP access to `.env`, `database/schema.sql`, `app/config.php` and `tests/risk.php` must be denied. Check server logs for errors.
+diff --git a/docs/changed-files.md b/docs/changed-files.md
+index 50849fc..f959446 100644
+--- a/docs/changed-files.md
++++ b/docs/changed-files.md
+@@ -1,5 +1,7 @@
+ # Backend patch file changes
+ 
++Historical implementation notes: [sf2 simplification](simplification-sf2.md) supersedes the bootstrap, CSRF, CSV signing, caching and rollback behavior described below.
++
+ Base: s4 f8e7c50.
+ 
+ | Action | Path |
+diff --git a/docs/data-sources.md b/docs/data-sources.md
+index 7789a78..6c72ecd 100644
+--- a/docs/data-sources.md
++++ b/docs/data-sources.md
+@@ -22,7 +22,7 @@ No verified Irisan susceptibility subset or historical event catalog is bundled.
+ 
+ ## Optional reverse geocoding
+ 
+-Nominatim is disabled by default. If enabled, the server sends selected coordinates to OpenStreetMap Foundation's public Nominatim service. The current policy caps use at one request per second and imposes additional requirements; the app implements spacing and caching for its limited optional aid. Review the [Nominatim Usage Policy](https://operations.osmfoundation.org/policies/nominatim/) before enabling. Landmark/coordinate labels work without geocoding.
++Nominatim is disabled by default. If enabled, the server sends selected coordinates to OpenStreetMap Foundation's public Nominatim service. The current policy caps use at one request per second and imposes additional requirements; this simplified branch does not implement spacing or caching. Review the [Nominatim Usage Policy](https://operations.osmfoundation.org/policies/nominatim/) before enabling. Landmark/coordinate labels work without geocoding.
+ 
+ ## What SmartSlope does not consume
+ 
+diff --git a/docs/defense-questions.md b/docs/defense-questions.md
+index 12d1d8a..84fb598 100644
+--- a/docs/defense-questions.md
++++ b/docs/defense-questions.md
+@@ -44,7 +44,7 @@ No verified Irisan susceptibility polygons are bundled. Unknown remains unknown.
+ 
+ ### How do you prevent common web attacks?
+ 
+-We use prepared PDO statements, server-side role checks, password hashing, session ID regeneration, CSRF tokens for changes, output escaping, input validation and server access rules. We still need to test the server rules on the actual host, especially because Nginx ignores `.htaccess`.
++We use prepared PDO statements, server-side role checks, password hashing, session ID regeneration, output escaping and basic input checks and server access rules. This simplified branch removes CSRF protection. We still need to test the server rules on the actual host, especially because Nginx ignores `.htaccess`.
+ 
+ ### How do you know the model is accurate?
+ 
+diff --git a/docs/presentation-and-demo.md b/docs/presentation-and-demo.md
+index b7c7ee1..dbd7af0 100644
+--- a/docs/presentation-and-demo.md
++++ b/docs/presentation-and-demo.md
+@@ -11,7 +11,7 @@ Use this guide for an 8 to 10 minute class presentation. Replace the founder pla
+ 5. **How data moves**. User selects a point; PHP requests Open-Meteo; validated values are saved; rules create a category; the dashboard displays it.
+ 6. **Database design**. Show the three tables and why readings/reports share `events` with a `type` field.
+ 7. **Risk categories and limits**. Explain the rainfall windows and state that thresholds are uncalibrated and not official alerts.
+-8. **Security and testing**. Summarize sessions/roles, CSRF, PDO, output escaping and automated/local checks.
++8. **Security and testing**. Summarize sessions/roles, PDO, output escaping and automated/local checks.
+ 9. **Progress, business proposal and ask**. Working prototype; no traction or revenue claim. Ask for a pilot adviser, data access guidance and mentorship.
+ 10. **Next validation steps**. Verify local datasets and terms, test with users, evaluate false alarms/missed events, then decide whether sensors or a wider area are justified.
+ 
+diff --git a/docs/security.md b/docs/security.md
+index c767841..1d8c9d4 100644
+--- a/docs/security.md
++++ b/docs/security.md
+@@ -4,12 +4,12 @@ The project uses several application-level controls. These reduce common web ris
+ 
+ ## Implemented controls
+ 
+-- Registration validates fields, applies uniqueness constraints and creates resident accounts with `password_hash()`; login checks with `password_verify()`.
++- Registration checks required fields and column lengths, uses database uniqueness constraints and creates resident accounts with `password_hash()`; login checks with `password_verify()`.
+ - Session cookies use `HttpOnly`, `SameSite=Lax`, and `Secure` when HTTPS is detected. Login regenerates the session ID.
+ - The role comes from the authenticated database account. Admin routes/actions check the session role on the server.
+-- Mutating forms and the JSON refresh POST require a session-bound CSRF token. Mutations use POST.
++- CSRF tokens/checks are removed as requested. Forms and JSON refresh use POST, but sessions and HTTP methods alone do not provide CSRF protection.
+ - PDO uses prepared statements, exception mode and native prepares. User-provided names, report messages, reasons and API text are escaped in HTML; dashboard data is rendered through escaped templates.
+-- The readings endpoint returns JSON 401/403 and does not expose the stored raw provider payload or adjustment log.
++- The readings endpoint returns JSON 401 for unsigned users and does not expose the stored raw provider payload or adjustment log.
+ - Weather input is validated for units, numeric ranges, complete hourly intervals, timestamps, and freshness. Coordinates are restricted to the Irisan polygon on the server.
+ - Generic user-facing errors are logged server-side rather than exposing SQL/provider internals. Apache rules block internal paths and dotfiles.
+ - The admin creation tool is CLI-only and prompts for a password; `.env` is ignored by Git.
+@@ -23,4 +23,6 @@ The project uses several application-level controls. These reduce common web ris
+ 5. Keep PHP/MySQL updated, use a least-privilege DB account for deployment, restrict access to backups and exports, and rotate credentials kept in `.env`.
+ 6. Treat report contact details and CSV exports as personal information. Keep only what the project needs and restrict administrator access.
+ 
+-Security testing should include resident attempts to perform administrator actions, missing/invalid CSRF, injection-like text in reports, formula-like CSV values, direct access to internal paths, and provider failure. The automated suite does not constitute a professional penetration test. See [testing](testing.md).
++Security testing should include resident attempts to perform administrator actions, session-only requests, injection-like text in reports, literal formula-like CSV values, direct access to internal paths, and provider failure. The automated suite does not constitute a professional penetration test. See [testing](testing.md).
++
++CSV formula escaping, signatures, provider cache/rate budgets and transaction rollback are removed. See [sf2 changes](simplification-sf2.md) for the resulting limitations.
+diff --git a/docs/simplification-sf2.md b/docs/simplification-sf2.md
+new file mode 100644
+index 0000000..5e82c9c
+--- /dev/null
++++ b/docs/simplification-sf2.md
+@@ -0,0 +1,80 @@
++# sf2 procedural simplification
++
++Base: `8c92d4d36624019a1d30091b13123ad5b0b60812` on `sf2`.
++
++Pages, actions, APIs and CLI scripts include their PHP dependencies directly with
++`require_once __DIR__`. There is no bootstrap loader. `app/config.php` retains
++settings, environment loading, URL base detection and one shared PDO connection.
++`__DIR__` resolves files, while `url()` preserves root and subdirectory installs.
++
++The implementation follows the reference project's direct includes, session
++login and ordinary function calls. It does not copy its UI or mix mysqli/PDO.
++`RiskAnalyzer` stays as the small OOP example; other application modules use
++functions, loops and conditionals. The database schema, rainfall thresholds,
++map assets, CSS and page layouts are retained.
++
++## Deliberate behavior changes
++
++- Login sessions and server-side roles remain. CSRF tokens and their rejection
++  checks are removed. A login session alone does not prevent forged requests.
++- Password hashes, session ID regeneration, cookie settings, prepared SQL and
++  HTML escaping remain. Registration/report validation is reduced to basic
++  required fields and column limits. Database uniqueness still applies.
++- Location exports use a seven-column header and editable rows. Signing keys,
++  signature verification, formula escaping and duplicate-row tracking are gone.
++  Old signed exports are not the new format: download a fresh Locations CSV.
++  Spreadsheet applications may interpret formula-like text as formulas.
++- Locations are saved with a single PDO insert/update statement per row. The
++  existing unique coordinate key identifies the stored location, preserving
++  its ID and history. Repeated coordinates are processed in file order; the
++  last row wins. The CSV ID column is informational. Changing coordinates
++  creates another location instead of moving the original location's history.
++- Imports and bulk actions do not use transactions or rollback. A later error
++  can leave earlier changes saved. Reading edits also no longer lock the row;
++  simultaneous edits can overwrite each other's audit-history updates.
++- Weather and address requests no longer use local caches, locks or rate
++  budgets. Provider limits still apply externally, so repeated refreshes can
++  fail or be throttled by the service. Optional Nominatim remains off by default;
++  enabling it requires a deployment that meets its service policy.
++
++Basic format, coordinate, database-size and weather-value checks remain because
++removing them would allow invalid map points, SQL errors or misleading rainfall
++results. The existing server access rules remain. These changes preserve normal
++page workflows, but are not an assertion of identical security or error behavior.
++
++## Applying
++
++From a clean checkout of the exact base above:
++
++```sh
++git switch sf2
++git rev-parse HEAD
++git apply --check smartslope-sf2-simplify.patch
++git apply smartslope-sf2-simplify.patch
++```
++
++The patch does not contain your `.env` or require a schema reset. Never reimport
++`schema.sql` over existing project data to apply this code-only change.
++
++## Testing
++
++Run the PHP tests listed in `docs/testing.md`, then test the site on the actual
++Herd/XAMPP installation. Existing historical docs describe older behavior;
++this document and the updated security/API/testing guides describe this patch.
++
++## Verification performed for this patch
++
++- Clean base: six PHP suites and 16 database integration checks passed.
++- Simplified code: PHP syntax checks; six PHP suites (risk, weather, assessment,
++  presentation, awareness and CSV); JavaScript syntax and two map checks passed.
++- Disposable MariaDB: 16 existing workflow checks, five CSV import checks and
++  seven fixture-provider refresh checks passed.
++- PHP development server: 51 HTTP/HTML checks passed, including registration,
++  session login/logout, role restrictions, reports, review/resolve, reading edits,
++  bulk actions, CSV downloads and uploads. Baseline page HTML matched after
++  excluding removed hidden tokens, asset version timestamps and CSV help copy.
++- Weather calculation and database persistence passed with fixture data. The
++  full live Open-Meteo request failed in this environment, so successful live
++  refresh and Nominatim lookup are not certified by these checks.
++- Desktop/mobile browser rendering and the user's Herd/XAMPP server settings
++  were not exercised here. CSS, map tiles and other visual assets are unchanged.
+diff --git a/docs/testing.md b/docs/testing.md
+index c8dacfd..e083dff 100644
+--- a/docs/testing.md
++++ b/docs/testing.md
+@@ -11,12 +11,13 @@ php tests/weather.php
+ php tests/assessment.php
+ php tests/presentation.php
+ php tests/awareness.php
++php tests/csv.php
+ node --check assets/js/dashboard.js
+ node --check assets/js/location-address.js
+ node tests/map-boundary.test.cjs
+ ```
+ 
+-`tests/csv.php` checks CSV encoding, formula protection and invalid input handling. `tests/integration-awareness.php` exercises database-backed reads/writes and must use a disposable database whose name ends in `_test`. The integration test changes rows and should not run on a user's real database.
++`tests/csv.php` checks CSV encoding, literal text, editable rows and invalid column handling. `tests/integration-awareness.php` exercises database-backed reads/writes and must use a disposable database whose name ends in `_test`. The integration test changes rows and should not run on a user's real database.
+ 
+ ## What the checks cover
+ 
+@@ -25,7 +26,7 @@ node tests/map-boundary.test.cjs
+ - Assessment status for current, old, future, incomplete and adjusted readings.
+ - Escaping, displayed status, map/address labels, admin-only controls and modal content.
+ - Irisan polygon boundary acceptance/rejection in JavaScript.
+-- Awareness notices, unverified susceptibility behavior, report-time conversion, caching and request limits.
++- Awareness notices, unverified susceptibility behavior, report-time conversion.
+ - Database-backed report review, risk edit audit, history, location CSV import/export and archive behavior in a disposable database.
+ 
+ These tests check application behavior; they do not establish real-world landslide accuracy.
+@@ -36,7 +37,7 @@ On 2026-10-03, the student reported that the website's components and features h
+ 
+ ## Before a final classroom demonstration
+ 
+-- Confirm which exact `f1` commit will be presented and run the commands above on that checkout.
++- Confirm which exact `sf2` commit will be presented and run the commands above on that checkout.
+ - Verify the project on the intended Herd/XAMPP instance, with the migration applied to a disposable copy first.
+ - Demonstrate resident report submission and admin review, refresh failure preserving history, risk edit reason/audit, and CSV export.
+ - Check internal-file denial on the actual web server. `.htaccess` does not apply to Nginx.
+@@ -44,3 +45,26 @@ On 2026-10-03, the student reported that the website's components and features h
+ - State clearly that no field validation or predictive accuracy study has been completed.
+ 
+ For detailed edge cases, see `docs/backend-test-checklist.md` and `docs/verification.md`.
++
++For the current simplification, verify editable CSV round trips, a later invalid row leaving earlier rows saved, login/role checks without tokens, and provider failure fallback. No cache/quota or CSRF rejection is expected. See [behavior differences](simplification-sf2.md).
++
++## Database checks for this patch
++
++Use a fresh disposable database ending in `_test`, populated from `database/schema.sql`.
++Configure DB_DATABASE and the other DB environment variables for that database.
++
++```sh
++php tests/integration-awareness.php
++php tests/csv-import.php
++```
++
++`tests/refresh.php` replaces the cURL functions with a deterministic weather
++fixture, while using real PDO/MySQL. Run it with cURL disabled, for example on
++Linux with shared extensions:
++
++```sh
++php -n -d extension=pdo -d extension=mysqlnd -d extension=pdo_mysql tests/refresh.php
++```
++
++Extension names/loading differ on Herd and XAMPP. The fixture test must run
++without the real cURL extension; it does not prove live provider availability.
+diff --git a/logout.php b/logout.php
+index 26d88b5..24c7099 100644
+--- a/logout.php
++++ b/logout.php
+@@ -1,8 +1,9 @@
+ <?php
+-require_once __DIR__ . '/app/bootstrap.php';
++require_once __DIR__ . '/app/config.php';
++require_once __DIR__ . '/app/helpers.php';
++require_once __DIR__ . '/app/auth.php';
+ start_session();
+ 
+-require_post_csrf();
+ $_SESSION = [];
+ session_destroy();
+ redirect('index.php');
+diff --git a/methodology.php b/methodology.php
+index 7632522..8770540 100644
+--- a/methodology.php
++++ b/methodology.php
+@@ -1,13 +1,17 @@
+ <?php
+ declare(strict_types=1);
+-require_once __DIR__ . '/app/bootstrap.php';
++require_once __DIR__ . '/app/config.php';
++require_once __DIR__ . '/app/helpers.php';
++require_once __DIR__ . '/app/auth.php';
++require_once __DIR__ . '/app/RiskAnalyzer.php';
++require_once __DIR__ . '/app/presentation.php';
+ start_session(); require_login();
+ ?>
+ <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmartSlope sources and methodology</title><link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>"><link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>"></head>
+ <body><?= ui_navigation('methodology') ?>
+ <main class="container py-4 methodology-page"><header class="page-heading mb-4"><h1 class="h2 mb-1">Sources and methodology</h1><p class="page-subtitle mb-0">How the SmartSlope prototype uses and explains data.</p></header>
+ <p>An API-based landslide awareness and alert prototype for Barangay Irisan. No physical sensors or AI are used. Categories are uncalibrated rainfall screening, not official warnings, landslide probabilities, or assurances of safety.</p>
+-<div class="alert alert-info">Refresh weather manually to fetch data and save a snapshot. No background monitoring runs while the website is unattended. Cached provider responses may be reused for 60 seconds; their original valid time stays unchanged.</div>
++<div class="alert alert-info">Refresh weather manually to fetch data and save a snapshot. No background monitoring runs while the website is unattended. Each refresh requests provider data; no local provider cache is used.</div>
+ <h2 class="h4">Inputs → processing → output</h2>
+ <ol><li><strong>Inputs:</strong> Open-Meteo modeled hourly precipitation (API); reviewed MGB polygons if installed (VERIFIED); resident reports (USER-SUBMITTED).</li>
+ <li><strong>Processing:</strong> Require valid units, timestamps and all 72 consecutive rainfall samples; calculate 1h, 24h and 72h sums ending at the last completed UTC hour; apply the highest prototype threshold reached.</li>
+@@ -19,9 +23,9 @@ start_session(); require_login();
+ <p>Prototype notices use the calculated category. Administrator adjustments remain separate and require a reason. New edits retain actor, UTC time and previous/new categories; legacy edits cannot be reconstructed.</p>
+ <h2 class="h4">Data sources</h2>
+ <div class="table-responsive"><table class="table"><thead><tr><th>Source</th><th>Role and reliability</th><th>Coverage and resolution</th><th>Access and storage</th></tr></thead><tbody>
+-<tr><th><a href="https://open-meteo.com/en/docs">Open-Meteo</a><br>API</th><td>Modeled precipitation supplies rainfall screening. Forecast, temperature, humidity, wind and modeled moisture are context. Local accuracy has not been validated.</td><td>Global model coverage including the Philippines. Model-dependent spatial grid; no house-level accuracy claim. Hourly precipitation; current conditions based on 15-minute model data. Requested and returned grid coordinates are retained.</td><td>Free noncommercial API. Published limits: fewer than 600/min, 5,000/hour, 10,000/day; plan table 300,000/month. This application uses lower local budgets, caching and a shared lock. Provider inputs and calculated snapshots are stored.</td></tr>
++<tr><th><a href="https://open-meteo.com/en/docs">Open-Meteo</a><br>API</th><td>Modeled precipitation supplies rainfall screening. Forecast, temperature, humidity, wind and modeled moisture are context. Local accuracy has not been validated.</td><td>Global model coverage including the Philippines. Model-dependent spatial grid; no house-level accuracy claim. Hourly precipitation; current conditions based on 15-minute model data. Requested and returned grid coordinates are retained.</td><td>Free noncommercial API. Published limits: fewer than 600/min, 5,000/hour, 10,000/day; plan table 300,000/month. This simplified application does not enforce provider budgets or cache responses. Provider inputs and calculated snapshots are stored.</td></tr>
+ <tr><th><a href="https://controlmap.mgb.gov.ph/arcgis/rest/services/GeospatialDataInventory_Public/GDI_Detailed_Rain_induced_Landslide_Susceptibility_Public/MapServer/0">MGB polygons</a><br>VERIFIED only after source review</th><td>Authoritative susceptibility mapping; separate baseline, never an automatic rainfall multiplier. No dataset is bundled as verified.</td><td>National service; Irisan coverage, edition and specific scale must be reviewed before import. Static polygons with approximate boundaries; no live temporal resolution or property-level assurance.</td><td>Public metadata; reuse conditions and request-rate quota not established. Inspected service response cap: 2,000 records, with pagination. Store a reviewed WGS84 local subset and provenance; never request live for every click.</td></tr>
+-<tr><th><a href="https://operations.osmfoundation.org/policies/nominatim/">OSM / Nominatim</a></th><td>Optional address aid; community mapping with variable completeness. Does not verify a property or change screening.</td><td>Global mapped objects, uneven local detail; no uniform grid or guaranteed update interval.</td><td>Disabled by default. If deliberately enabled: one request/second maximum across the application, identification, ODbL attribution, caching and switchability required. Server cache lasts 24h. User-entered landmarks remain available.</td></tr>
++<tr><th><a href="https://operations.osmfoundation.org/policies/nominatim/">OSM / Nominatim</a></th><td>Optional address aid; community mapping with variable completeness. Does not verify a property or change screening.</td><td>Global mapped objects, uneven local detail; no uniform grid or guaranteed update interval.</td><td>Disabled by default. Provider policy still applies when enabled. This simplified branch has no shared throttle or address cache. User-entered landmarks remain available.</td></tr>
+ <tr><th>Resident reports<br>USER-SUBMITTED</th><td>Descriptions, type and occurrence time support administrator review. Review/resolution is not scientific verification.</td><td>User-selected Irisan point; unknown positional accuracy; submitted as observations occur.</td><td>No external quota or API fee. Store in events, with contact data accessible to administrators. Public location summaries contain counts only.</td></tr>
+ <tr><th>Bundled Irisan boundary</th><td>Study-area inclusion check; not a hazard layer. Original provenance remains to be documented.</td><td>Irisan polygon; authoritative edition, scale and positional accuracy not established here.</td><td>Local file with no API calls. Source/license review needed before asserting VERIFIED status.</td></tr>
+ </tbody></table></div>
+diff --git a/pages/dashboard.php b/pages/dashboard.php
+index d9fd905..29acd97 100644
+--- a/pages/dashboard.php
++++ b/pages/dashboard.php
+@@ -1,5 +1,13 @@
+ <?php
+-require_once __DIR__ . '/../app/bootstrap.php';
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/auth.php';
++require_once __DIR__ . '/../app/RiskAnalyzer.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/susceptibility.php';
++require_once __DIR__ . '/../app/awareness.php';
++require_once __DIR__ . '/../app/presentation.php';
++require_once __DIR__ . '/../app/repositories.php';
+ start_session();
+ require_login();
+ 
+@@ -243,7 +251,7 @@ if ($selectedLocId) {
+                 <div class="d-flex flex-wrap gap-2">
+                     <?php if ($isAdmin): ?>
+                         <form id="bulkDashboardReadingsForm" method="post" action="<?= e(url('admin.php')) ?>" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="m-0">
+-                            <?= csrf_field() ?><input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="dashboard.php">
++                            <input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="dashboard.php">
+                             <button class="btn btn-sm btn-outline-danger">Remove selected</button>
+                         </form>
+                     <?php endif; ?>
+@@ -318,7 +326,7 @@ if ($selectedLocId) {
+                                 </td>
+                                 <td><?= local_date($r['created_at']) ?></td>
+                                 <td>
+-                                    <form method="post" action="<?= e(url('admin.php')) ?>"><?= csrf_field() ?><input type="hidden" name="action" value="review"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-primary">Review</button></form>
++                                    <form method="post" action="<?= e(url('admin.php')) ?>"><input type="hidden" name="action" value="review"><input type="hidden" name="id" value="<?= (int)$r['id'] ?>"><button class="btn btn-sm btn-primary">Review</button></form>
+                                 </td>
+                             </tr>
+                             <?php endforeach; ?>
+@@ -337,9 +345,9 @@ if ($selectedLocId) {
+ 
+     <?= ui_weather_modal() ?>
+     <form id="map-selection-form" method="post" action="<?= e(url('actions/save_location.php')) ?>" hidden>
+-        <?= csrf_field() ?><input type="hidden" name="location_id"><input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="address">
++        <input type="hidden" name="location_id"><input type="hidden" name="lat"><input type="hidden" name="lng"><input type="hidden" name="address">
+     </form>
+-    <script>window.SmartSlope = <?= json_encode(['locationId'=>$selectedLocId,'apiUrl'=>url('api/readings.php'),'csrf'=>csrf_token(),'isAdmin'=>$isAdmin,'editUrl'=>url('actions/save_reading.php?reading_id=')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
++    <script>window.SmartSlope = <?= json_encode(['locationId'=>$selectedLocId,'apiUrl'=>url('api/readings.php'),'isAdmin'=>$isAdmin,'editUrl'=>url('actions/save_reading.php?reading_id=')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
+     <script src="<?= e(url('assets/js/vendor/jquery.min.js')) ?>"></script>
+     <script src="<?= e(url('assets/js/dashboard.js')) ?>"></script>
+     <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
+diff --git a/pages/login.php b/pages/login.php
+index c5a3496..8308898 100644
+--- a/pages/login.php
++++ b/pages/login.php
+@@ -1,5 +1,9 @@
+ <?php
+-require_once __DIR__ . '/../app/bootstrap.php';
++
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/auth.php';
++require_once __DIR__ . '/../app/repositories.php';
+ start_session();
+ 
+ // If already logged in, redirect to dashboard
+@@ -9,7 +13,6 @@ if (is_logged_in()) {
+ 
+ // Handle login
+ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
+-    require_post_csrf();
+     $username = trim(post('username'));
+     $password = post('password');
+ 
+@@ -32,25 +35,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
+ 
+ // Handle registration
+ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
+-    require_post_csrf();
+     $fullName = trim(post('full_name'));
+     $username = trim(post('username'));
+     $email = trim(post('email'));
+     $phone = trim(post('phone'));
+     $password = post('password');
+ 
+-    if ($fullName === '' || strlen($fullName) > 100 || strlen($email) > 254 || strlen($phone) > 20 || strlen($password) > 72 || !preg_match('/^[a-zA-Z0-9_]{3,50}$/', $username) ||
+-        !filter_var($email, FILTER_VALIDATE_EMAIL) || !preg_match('/^\+?[0-9]{10,15}$/', $phone) ||
+-        strlen($password) < 8) {
+-        flash('error', 'Enter a valid username, email, phone and password (8-72 bytes).');
+-        redirect('index.php');
+-    }
+-
+-    $pdo = db();
+-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE username = ? OR email = ? OR phone = ?");
+-    $stmt->execute([$username, $email, $phone]);
+-    if ($stmt->fetchColumn() > 0) {
+-        flash('error', 'Username, email, or phone already exists');
++    if (
++        $fullName === '' || $username === '' || $email === '' || $phone === '' || $password === '' ||
++        strlen($fullName) > 100 || strlen($username) > 50 || strlen($email) > 254 ||
++        strlen($phone) > 20 || strlen($password) > 72
++    ) {
++        flash('error', 'Fill all fields and keep them within the form limits.');
+         redirect('index.php');
+     }
+ 
+@@ -92,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
+                     <h2 id="login-title" class="h4 mb-2">Log in</h2>
+                     <p class="page-subtitle mb-3">Continue to the Irisan dashboard.</p>
+                     <form method="post">
+-                        <?= csrf_field() ?>
++
+                         <input type="hidden" name="login" value="1">
+                         <div class="form-floating mb-3">
+                             <input type="text" name="username" id="login_username" class="form-control" placeholder="Username" autocomplete="username" required autofocus>
+@@ -109,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
+                     <h2 id="register-title" class="h4 mb-2">Create an account</h2>
+                     <p class="page-subtitle mb-3">Register as a resident to submit observations.</p>
+                     <form method="post">
+-                        <?= csrf_field() ?>
++
+                         <input type="hidden" name="register" value="1">
+                         <div class="d-flex flex-column gap-3">
+                             <div class="form-floating">
+diff --git a/pages/report.php b/pages/report.php
+index a5425a1..b284c69 100644
+--- a/pages/report.php
++++ b/pages/report.php
+@@ -1,18 +1,29 @@
+ <?php
+-require_once __DIR__ . '/../app/bootstrap.php';
++
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/auth.php';
++require_once __DIR__ . '/../app/RiskAnalyzer.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/susceptibility.php';
++require_once __DIR__ . '/../app/awareness.php';
++require_once __DIR__ . '/../app/presentation.php';
++require_once __DIR__ . '/../app/repositories.php';
+ start_session();
+ require_login();
+ 
+ $locations = get_locations();
+ 
+ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+-    require_post_csrf();
+     $reportType = (string)post('report_type', 'other');
+     try {
+-        if (!isset(REPORT_TYPES[$reportType])) throw new InvalidArgumentException('Choose a valid report type.');
++        if (!isset(REPORT_TYPES[$reportType])) {
++            throw new InvalidArgumentException('Choose a valid report type.');
++        }
+         $occurredAt = report_occurrence((string)post('occurred_at'));
+     } catch (InvalidArgumentException $error) {
+-        flash('error', $error->getMessage()); redirect('report.php');
++        flash('error', $error->getMessage());
++        redirect('report.php');
+     }
+     $locationId = filter_var(post('location_id'), FILTER_VALIDATE_INT);
+     $reportLat = post('report_lat');
+@@ -24,11 +35,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+     $houseLandmark = post('house_landmark');
+     $reportAddress = strlen((string)$reportAddress) <= 255 ? $reportAddress : '';
+ 
+-    if (trim((string)$message) === '' || strlen((string)$message) > 65535 ||
++    if (
++        trim((string)$message) === '' || strlen((string)$message) > 65535 ||
+         strlen((string)$contactEmail) > 254 || strlen((string)$contactPhone) > 20 ||
+-        !preg_match('/^\+?[0-9]{10,15}$/', trim((string)$contactPhone)) ||
+-        ($contactEmail !== '' && !filter_var($contactEmail, FILTER_VALIDATE_EMAIL)) ||
+-        trim((string)$houseLandmark) === '' || strlen((string)$houseLandmark) > 255) {
++        trim((string)$contactPhone) === '' ||
++        trim((string)$houseLandmark) === '' || strlen((string)$houseLandmark) > 255
++    ) {
+         flash('error', 'Please fill all required fields');
+         redirect('report.php');
+     }
+@@ -53,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+     }
+ 
+     try {
+-    create_report([
++        create_report([
+         'location_id' => $location['id'],
+         'user_id' => $_SESSION['user_id'],
+         'message' => $message,
+@@ -61,8 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+         'contact_email' => $contactEmail,
+         'house_landmark' => $houseLandmark,
+         'report_type' => $reportType, 'occurred_at' => $occurredAt
+-    ]);
+-
++        ]);
+     } catch (PDOException $error) {
+         error_log('Report submission failed: ' . $error->getMessage());
+         flash('error', 'Your report could not be saved. Please try again.');
+@@ -214,7 +225,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                             </div>
+                             <div class="mb-3"><label for="occurred_at" class="form-label">When did you observe it? (Philippine time)</label>
+                             <input type="datetime-local" id="occurred_at" name="occurred_at" class="form-control"><small class="text-muted">Leave blank if unknown.</small></div>
+-                            <?= csrf_field() ?>
++
+                             <div class="mb-3">
+                                 <div class="form-floating">
+                                     <select name="location_id" id="locationSelect" class="form-select" required aria-describedby="locationHelp selectedAddress">
+diff --git a/readings.php b/readings.php
+index 8394625..2a623d9 100644
+--- a/readings.php
++++ b/readings.php
+@@ -1,5 +1,13 @@
+ <?php
+-require_once __DIR__ . '/app/bootstrap.php';
++require_once __DIR__ . '/app/config.php';
++require_once __DIR__ . '/app/helpers.php';
++require_once __DIR__ . '/app/auth.php';
++require_once __DIR__ . '/app/RiskAnalyzer.php';
++require_once __DIR__ . '/app/assessment.php';
++require_once __DIR__ . '/app/susceptibility.php';
++require_once __DIR__ . '/app/awareness.php';
++require_once __DIR__ . '/app/presentation.php';
++require_once __DIR__ . '/app/repositories.php';
+ start_session();
+ require_login();
+ 
+@@ -35,7 +43,7 @@ if (get('action') === 'export') {
+             <div>
+                 <?php if ($isAdmin): ?>
+                     <form id="bulkReadingsPageForm" method="post" action="<?= e(url('admin.php')) ?>" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="d-inline">
+-                        <?= csrf_field() ?><input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="readings.php">
++                        <input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="readings.php">
+                         <button class="btn btn-outline-danger">Remove selected</button>
+                     </form>
+                     <a href="<?= url('readings.php?action=export') ?>" class="btn btn-outline-success">Export CSV</a>
+diff --git a/scripts/create_admin.php b/scripts/create_admin.php
+index 79c9946..ee79905 100644
+--- a/scripts/create_admin.php
++++ b/scripts/create_admin.php
+@@ -4,7 +4,10 @@ if (PHP_SAPI !== 'cli') {
+     http_response_code(404);
+     exit;
+ }
+-require_once __DIR__ . '/../app/bootstrap.php';
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/auth.php';
++require_once __DIR__ . '/../app/repositories.php';
+ 
+ if ($argc !== 4 || !preg_match('/^[a-zA-Z0-9_]{3,50}$/', $argv[1]) ||
+     strlen($argv[2]) > 254 || !filter_var($argv[2], FILTER_VALIDATE_EMAIL) || !preg_match('/^\+?[0-9]{10,15}$/', $argv[3])) {
+diff --git a/scripts/import-susceptibility.php b/scripts/import-susceptibility.php
+index 1b4b21a..dadc935 100644
+--- a/scripts/import-susceptibility.php
++++ b/scripts/import-susceptibility.php
+@@ -1,7 +1,10 @@
+ <?php
+ declare(strict_types=1);
+ if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+-require_once __DIR__ . '/../app/bootstrap.php';
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/susceptibility.php';
+ $path=$argv[1] ?? '';
+ if ($path==='' || !is_file($path) || filesize($path)>20*1024*1024) throw new InvalidArgumentException('Supply a reviewed GeoJSON file smaller than 20 MiB.');
+ $raw=(string)file_get_contents($path); $data=json_decode($raw,true,512,JSON_THROW_ON_ERROR);
+diff --git a/tests/assessment.php b/tests/assessment.php
+index 08e8d40..535f8fb 100644
+--- a/tests/assessment.php
++++ b/tests/assessment.php
+@@ -1,6 +1,8 @@
+ <?php
+ declare(strict_types=1);
+-require_once __DIR__ . '/../app/bootstrap.php';
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/RiskAnalyzer.php';
++require_once __DIR__ . '/../app/assessment.php';
+ $config['freshness_seconds'] = 10800;
+ $config['future_tolerance_seconds'] = 300;
+ $now = utc_timestamp('2026-10-02 06:00:00');
+diff --git a/tests/awareness.php b/tests/awareness.php
+index c61ecfd..72b44ac 100644
+--- a/tests/awareness.php
++++ b/tests/awareness.php
+@@ -1,6 +1,17 @@
+ <?php
+ declare(strict_types=1);
+-require_once __DIR__ . '/../app/bootstrap.php';
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/auth.php';
++require_once __DIR__ . '/../app/RiskAnalyzer.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/susceptibility.php';
++require_once __DIR__ . '/../app/awareness.php';
++require_once __DIR__ . '/../app/presentation.php';
++require_once __DIR__ . '/../app/repositories.php';
++require_once __DIR__ . '/../app/maintenance.php';
++require_once __DIR__ . '/../app/csv.php';
++require_once __DIR__ . '/../app/weather.php';
+ $checks=0;
+ function expect(bool $ok, string $message): void { global $checks; if (!$ok) throw new RuntimeException($message); $checks++; }
+ $now=time();
+@@ -44,12 +55,4 @@ $html=ui_assessment_panel($r,[], $hostile);
+ expect(!str_contains($html,'<script>') && str_contains($html,'&lt;script&gt;'),'Notice/reasons escaped.');
+ expect(str_contains(ui_report_summary(['pending'=>2],true),'Review pending reports'),'Admin queue notice.');
+ expect(!str_contains(ui_report_summary(['pending'=>2],false),'Review pending reports'),'Resident summary has no admin action.');
+-$id='test-' . bin2hex(random_bytes(5)); $calls=0;
+-$fetch=static function() use (&$calls): array { $calls++; return ['value'=>1]; };
+-provider_cached($id,'one',$fetch,0,60,[60=>1]); provider_cached($id,'one',$fetch,0,60,[60=>1]);
+-expect($calls===1,'Cache must avoid repeated upstream calls.');
+-try { provider_cached($id,'two',$fetch,0,60,[60=>1]); throw new LogicException('Quota exceeded.'); }
+-catch (ProviderRateLimit $e) { expect(true,'Shared request budget enforced.'); }
+-$root=sys_get_temp_dir() . '/smartslope-' . substr(hash('sha256',APP_ROOT),0,16);
+-unlink($root.'/'.$id.'.json'); unlink($root.'/'.$id.'.lock');
+ echo "$checks awareness checks passed.\n";
+diff --git a/tests/csv-import.php b/tests/csv-import.php
+new file mode 100644
+index 0000000..30bd64f
+--- /dev/null
++++ b/tests/csv-import.php
+@@ -0,0 +1,45 @@
++<?php
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/csv.php';
++
++if (!str_ends_with($config['db_name'], '_test')) {
++    throw new RuntimeException('Use a disposable *_test database.');
++}
++$pdo = db();
++$checks = 0;
++function check_import(bool $ok, string $message): void {
++    global $checks;
++    if (!$ok) throw new RuntimeException($message);
++    $checks++;
++}
++$location = $pdo->query('SELECT * FROM locations ORDER BY id LIMIT 1')->fetch();
++$original = parse_locations_csv(export_locations_csv([$location]));
++$row = $original[0];
++try {
++    check_import(import_locations_csv([$row])['unchanged'] === 1, 'Unchanged export imports without a new location.');
++    $first = $row;
++    $first['name'] = "First ' location";
++    $second = $row;
++    $second['name'] = 'Last duplicate';
++    import_locations_csv([$first, $second]);
++    $find = $pdo->prepare('SELECT name FROM locations WHERE id = ?');
++    $find->execute([$location['id']]);
++    check_import($find->fetchColumn() === 'Last duplicate', 'Repeated coordinates save in file order on the same ID.');
++    $first['name'] = '=Literal CSV text';
++    $bad = $row;
++    $bad['lat'] = 'not a coordinate';
++    try {
++        import_locations_csv([$first, $bad]);
++        throw new RuntimeException('Invalid coordinate accepted.');
++    } catch (InvalidArgumentException $error) {
++        check_import(str_contains($error->getMessage(), 'Earlier rows'), 'Partial-save message is explicit.');
++    }
++    $find->execute([$location['id']]);
++    check_import($find->fetchColumn() === '=Literal CSV text', 'Earlier rows remain saved without rollback.');
++    check_import(import_locations_csv($original)['updated'] === 1, 'Original export restores location details.');
++} finally {
++    import_locations_csv($original);
++}
++echo "$checks CSV import checks passed.\n";
+diff --git a/tests/csv.php b/tests/csv.php
+index e05288d..5872ce4 100644
+--- a/tests/csv.php
++++ b/tests/csv.php
+@@ -1,20 +1,26 @@
+ <?php
+ declare(strict_types=1);
+-require_once __DIR__.'/../app/bootstrap.php';
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/RiskAnalyzer.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/presentation.php';
++require_once __DIR__ . '/../app/csv.php';
+ set_error_handler(static function(int $severity,string $message): never { throw new ErrorException($message,0,$severity); });
+ $checks=0;
+ function check_csv(bool $ok,string $message): void { global $checks; if(!$ok)throw new RuntimeException($message); $checks++; }
+-$key=str_repeat('a',64);
+-$rows=[['id'=>7,'name'=>"=Special, \"name\"\nñ",'purok'=>"'Purok",'landmark'=>'+Landmark','lat'=>'16.42100','lng'=>'120.55950','active'=>1]];
+-$csv=export_locations_csv($rows,$key);
+-$parsed=parse_locations_csv($csv,$key);
+-check_csv($parsed[0]['name']===$rows[0]['name'] && $parsed[0]['purok']===$rows[0]['purok'] && $parsed[0]['landmark']===$rows[0]['landmark'],'Unicode, quotes, newlines, formula protection round trip.');
+-check_csv(str_starts_with($csv,"\xEF\xBB\xBF") && str_contains($csv,"\r\n"),'Excel UTF-8 BOM and standard line endings.');
+-foreach ([$csv.'extra',str_replace('Special','Changed',$csv),"name,lat,lng\nTest,16.42,120.56\n",substr($csv,0,-40),export_locations_csv($rows,str_repeat('b',64)),export_reports_csv([]),"\0".$csv] as $invalid) {
+-    try { parse_locations_csv($invalid,$key); throw new RuntimeException('Invalid CSV accepted.'); }
+-    catch(InvalidArgumentException $e) { check_csv(str_contains($e->getMessage(),'Invalid/not applicable'),'Clear invalid-file message.'); }
++$rows = [['id'=>7, 'name'=>"=Special, \"name\"\nñ", 'purok'=>"'Purok", 'landmark'=>'+Landmark', 'lat'=>'16.42100', 'lng'=>'120.55950', 'active'=>1]];
++$csv = export_locations_csv($rows);
++$parsed = parse_locations_csv($csv);
++check_csv($parsed[0]['name'] === $rows[0]['name'] && $parsed[0]['purok'] === $rows[0]['purok'] && $parsed[0]['landmark'] === $rows[0]['landmark'], 'CSV text round trip.');
++check_csv(str_starts_with($csv, "\xEF\xBB\xBF") && str_contains($csv, "\r\n"), 'UTF-8 BOM and CRLF.');
++check_csv(parse_locations_csv(str_replace('Special', 'Changed', $csv))[0]['name'] !== $rows[0]['name'], 'Editable CSV accepted.');
++check_csv(count(parse_locations_csv($csv . "\r\n")) === 1, 'Blank trailing row ignored.');
++foreach (["name,lat,lng\nTest,16.42,120.56\n", export_reports_csv([]), $csv . "one,two\r\n"] as $invalid) {
++    try { parse_locations_csv($invalid); throw new RuntimeException('Wrong format accepted.'); }
++    catch (InvalidArgumentException $error) { check_csv(true, 'Wrong columns rejected.'); }
+ }
+-check_csv(csv_date('2026-01-01 00:00:00')==='2026-01-01 08:00:00','PHT export time.');
+-check_csv(csv_cell('=HYPERLINK("bad")')[0]==="'",'Formula protection.');
+-check_csv(!str_contains(export_readings_csv([]),'<br'),'No HTML in export.');
++check_csv(csv_date('2026-01-01 00:00:00') === '2026-01-01 08:00:00', 'PHT export time.');
++check_csv(str_contains($csv, '=Special'), 'Formula-like text exported literally.');
++check_csv(!str_contains(export_readings_csv([]), '<br'), 'No HTML in export.');
+ echo "$checks CSV checks passed.\n";
+diff --git a/tests/integration-awareness.php b/tests/integration-awareness.php
+index 35170f3..4a53533 100644
+--- a/tests/integration-awareness.php
++++ b/tests/integration-awareness.php
+@@ -1,6 +1,17 @@
+ <?php
+ declare(strict_types=1);
+-require_once __DIR__ . '/../app/bootstrap.php';
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/auth.php';
++require_once __DIR__ . '/../app/RiskAnalyzer.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/susceptibility.php';
++require_once __DIR__ . '/../app/awareness.php';
++require_once __DIR__ . '/../app/presentation.php';
++require_once __DIR__ . '/../app/repositories.php';
++require_once __DIR__ . '/../app/maintenance.php';
++require_once __DIR__ . '/../app/csv.php';
++require_once __DIR__ . '/../app/weather.php';
+ if (!str_ends_with($config['db_name'],'_test')) throw new RuntimeException('Use a disposable *_test database.');
+ $pdo=db();
+ $checks=0;
+@@ -33,8 +44,8 @@ integration_check(archive_reading($id),'Archive original reading.');
+ $bad=$base; $bad['rainfall_24h']=10; create_reading($bad);
+ integration_check(get_latest_reading((int)$location['id'])['assessment']['current_category']===null,'Invalid saved windows unavailable.');
+ integration_check(!update_report($report,'reviewed',1),'Repeated review reports no change.');
+-$export=export_locations_csv(get_locations(),str_repeat('a',64));
+-$import=parse_locations_csv($export,str_repeat('a',64));
++$export=export_locations_csv(get_locations());
++$import=parse_locations_csv($export);
+ integration_check(import_locations_csv($import)['unchanged']===count($import),'Unchanged location import is idempotent.');
+ deactivate_location((int)$location['id']);
+ integration_check(import_locations_csv($import)['updated']===1,'Import restores inactive location.');
+diff --git a/tests/presentation.php b/tests/presentation.php
+index 4952216..dc38575 100644
+--- a/tests/presentation.php
++++ b/tests/presentation.php
+@@ -1,6 +1,13 @@
+ <?php
+ declare(strict_types=1);
+-require_once __DIR__ . '/../app/bootstrap.php';
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/auth.php';
++require_once __DIR__ . '/../app/RiskAnalyzer.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/susceptibility.php';
++require_once __DIR__ . '/../app/awareness.php';
++require_once __DIR__ . '/../app/presentation.php';
+ $checks = 0;
+ function check_ui(bool $condition, string $message): void {
+     global $checks;
+diff --git a/tests/refresh.php b/tests/refresh.php
+new file mode 100644
+index 0000000..a5724b4
+--- /dev/null
++++ b/tests/refresh.php
+@@ -0,0 +1,68 @@
++<?php
++// Run with PDO/MySQL enabled and cURL disabled; HTTP is replaced by a fixture.
++if (PHP_SAPI !== 'cli') exit;
++if (extension_loaded('curl')) {
++    fwrite(STDERR, "Run this test with php -n and PDO/MySQL extensions, without cURL.\n");
++    exit(1);
++}
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/RiskAnalyzer.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/repositories.php';
++require_once __DIR__ . '/../app/weather.php';
++if (!str_ends_with($config['db_name'], '_test')) throw new RuntimeException('Use a disposable *_test database.');
++
++foreach (['CURLOPT_RETURNTRANSFER', 'CURLOPT_TIMEOUT', 'CURLOPT_CONNECTTIMEOUT', 'CURLOPT_SSL_VERIFYPEER', 'CURLOPT_SSL_VERIFYHOST', 'CURLINFO_HTTP_CODE'] as $index => $name) {
++    define($name, $index + 1);
++}
++$requests = 0;
++$providerStatus = 200;
++if (!extension_loaded('curl')) {
++    function curl_init($url) { global $requestedUrl; $requestedUrl = $url; return 1; }
++    function curl_setopt($handle, $option, $value) { return true; }
++    function curl_exec($handle) { global $fixture, $requests; $requests++; return json_encode($fixture); }
++    function curl_getinfo($handle, $option) { global $providerStatus; return $providerStatus; }
++    function curl_close($handle) {}
++}
++
++$end = intdiv(time(), 3600) * 3600;
++$hourly = ['time'=>[], 'precipitation'=>[], 'precipitation_probability'=>[], 'soil_moisture_9_to_27cm'=>[], 'soil_moisture_27_to_81cm'=>[]];
++for ($hour = -72; $hour <= 24; $hour++) {
++    $hourly['time'][] = gmdate('Y-m-d\TH:i', $end + $hour * 3600);
++    $hourly['precipitation'][] = 1;
++    $hourly['precipitation_probability'][] = 60;
++    $hourly['soil_moisture_9_to_27cm'][] = 0.3;
++    $hourly['soil_moisture_27_to_81cm'][] = 0.4;
++}
++$fixture = [
++    'current'=>['time'=>gmdate('Y-m-d\TH:i', $end), 'temperature_2m'=>20, 'relative_humidity_2m'=>80, 'wind_speed_10m'=>5, 'precipitation'=>1, 'weather_code'=>3],
++    'hourly'=>$hourly, 'utc_offset_seconds'=>0,
++    'current_units'=>['temperature_2m'=>'°C', 'relative_humidity_2m'=>'%', 'wind_speed_10m'=>'km/h', 'precipitation'=>'mm', 'weather_code'=>'wmo code'],
++    'hourly_units'=>['precipitation'=>'mm', 'precipitation_probability'=>'%', 'soil_moisture_9_to_27cm'=>'m³/m³', 'soil_moisture_27_to_81cm'=>'m³/m³'],
++];
++$checks = 0;
++function check_refresh($ok, $message) {
++    global $checks;
++    if (!$ok) throw new RuntimeException($message);
++    $checks++;
++}
++$location = get_locations()[0];
++$before = (int)db()->query("SELECT COUNT(*) FROM events WHERE type='reading'")->fetchColumn();
++$first = refresh_location((int)$location['id']);
++$second = refresh_location((int)$location['id']);
++check_refresh($requests === 2 && $first['id'] !== $second['id'], 'Two refreshes request twice and save separate snapshots.');
++check_refresh((float)$second['rainfall_24h'] === 24.0 && (float)$second['rainfall_72h'] === 72.0, 'Rainfall windows saved.');
++check_refresh($second['assessment']['current_category'] === 'normal', 'Same risk threshold applied.');
++check_refresh(json_decode($second['provider_payload'], true)['response']['hourly'] === $hourly, 'Provider inputs saved.');
++check_refresh(str_contains($requestedUrl, 'past_hours=73') && str_contains($requestedUrl, 'forecast_hours=25'), 'Provider request windows unchanged.');
++$providerStatus = 503;
++try {
++    refresh_location((int)$location['id']);
++    throw new LogicException('Provider failure accepted.');
++} catch (RuntimeException $error) {
++    check_refresh($error->getMessage() === 'Weather provider is unavailable.', 'Provider failure handled.');
++}
++check_refresh((int)db()->query("SELECT COUNT(*) FROM events WHERE type='reading'")->fetchColumn() === $before + 2, 'Failed provider call saves nothing and preserves history.');
++db()->prepare('DELETE FROM events WHERE id IN (?, ?)')->execute([$first['id'], $second['id']]);
++echo "$checks refresh checks passed (fixture provider, real database).\n";
+diff --git a/tests/weather.php b/tests/weather.php
+index 148e372..646dd04 100644
+--- a/tests/weather.php
++++ b/tests/weather.php
+@@ -1,6 +1,10 @@
+ <?php
+ declare(strict_types=1);
+-require_once __DIR__ . '/../app/bootstrap.php';
++require_once __DIR__ . '/../app/config.php';
++require_once __DIR__ . '/../app/helpers.php';
++require_once __DIR__ . '/../app/RiskAnalyzer.php';
++require_once __DIR__ . '/../app/assessment.php';
++require_once __DIR__ . '/../app/weather.php';
+ $end = utc_timestamp('2026-10-02T06:00');
+ $hourly = ['time'=>[], 'precipitation'=>[], 'precipitation_probability'=>[],
+     'soil_moisture_9_to_27cm'=>[], 'soil_moisture_27_to_81cm'=>[]];

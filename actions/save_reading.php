@@ -1,9 +1,19 @@
 <?php
-require_once __DIR__ . '/../app/bootstrap.php';
+
+require_once __DIR__ . '/../app/config.php';
+require_once __DIR__ . '/../app/helpers.php';
+require_once __DIR__ . '/../app/auth.php';
+require_once __DIR__ . '/../app/RiskAnalyzer.php';
+require_once __DIR__ . '/../app/assessment.php';
+require_once __DIR__ . '/../app/susceptibility.php';
+require_once __DIR__ . '/../app/awareness.php';
+require_once __DIR__ . '/../app/presentation.php';
+require_once __DIR__ . '/../app/repositories.php';
+require_once __DIR__ . '/../app/maintenance.php';
 start_session();
 require_admin();
 
-$readingId = (int)(($_SERVER['REQUEST_METHOD']??'GET')==='POST' ? post('reading_id',get('reading_id',0)) : get('reading_id',0));
+$readingId = (int)(($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' ? post('reading_id', get('reading_id', 0)) : get('reading_id', 0));
 $error = '';
 $missingColumns = missing_awareness_columns();
 
@@ -16,23 +26,25 @@ $pdo = db();
 $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND type = 'reading' AND archived = 0");
 $stmt->execute([$readingId]);
 $reading = $stmt->fetch();
-if ($reading) $reading = assess_reading($reading);
+if ($reading) {
+    $reading = assess_reading($reading);
+}
 
 if (!$reading) {
     flash('error', 'Reading not found');
     redirect('admin.php');
 }
 
-// CSRF is checked even when form fields are malformed.
-if (($_SERVER['REQUEST_METHOD']??'GET') === 'POST') {
-    require_post_csrf();
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     try {
-        $riskLevel=(string)post('risk_level'); $reason=trim((string)post('adjustment_reason'));
-        update_reading_risk($readingId,$riskLevel,(int)$_SESSION['user_id'],$reason);
-        flash('success','Reading category updated. Rainfall values are unchanged.'); redirect('admin.php');
+        $riskLevel = (string)post('risk_level');
+        $reason = trim((string)post('adjustment_reason'));
+        update_reading_risk($readingId, $riskLevel, (int)$_SESSION['user_id'], $reason);
+        flash('success', 'Reading category updated. Rainfall values are unchanged.');
+        redirect('admin.php');
     } catch (Throwable $exception) {
-        error_log('Reading edit failed: '.$exception->getMessage());
-        $error=$exception instanceof PDOException ? 'The update could not be saved. Complete database setup in Admin Panel if needed, then try again.' : $exception->getMessage();
+        error_log('Reading edit failed: ' . $exception->getMessage());
+        $error = $exception instanceof PDOException ? 'The update could not be saved. Complete database setup in Admin Panel if needed, then try again.' : $exception->getMessage();
         http_response_code($exception instanceof InvalidArgumentException ? 422 : 503);
     }
 }
@@ -64,7 +76,7 @@ $loc = get_location($reading['location_id']);
                         <?php if ($missingColumns): ?><div class="alert alert-warning">Database setup is incomplete. <a href="<?= e(url('admin.php')) ?>">Open Admin Panel to complete setup.</a></div><?php endif; ?>
                         <form method="post" action="<?= e(url('actions/save_reading.php?reading_id='.$readingId)) ?>">
                             <input type="hidden" name="reading_id" value="<?= $readingId ?>">
-                            <?= csrf_field() ?>
+
                             <input type="hidden" name="update_reading" value="1">
                             <div class="form-floating mb-3">
                                 <textarea name="adjustment_reason" id="adjustment_reason" class="form-control" placeholder="Adjustment reason" style="height: 7rem" maxlength="500" required><?= e(post('adjustment_reason')) ?></textarea>

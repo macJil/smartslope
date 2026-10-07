@@ -11,12 +11,13 @@ php tests/weather.php
 php tests/assessment.php
 php tests/presentation.php
 php tests/awareness.php
+php tests/csv.php
 node --check assets/js/dashboard.js
 node --check assets/js/location-address.js
 node tests/map-boundary.test.cjs
 ```
 
-`tests/csv.php` checks CSV encoding, formula protection and invalid input handling. `tests/integration-awareness.php` exercises database-backed reads/writes and must use a disposable database whose name ends in `_test`. The integration test changes rows and should not run on a user's real database.
+`tests/csv.php` checks CSV encoding, literal text, editable rows and invalid column handling. `tests/integration-awareness.php` exercises database-backed reads/writes and must use a disposable database whose name ends in `_test`. The integration test changes rows and should not run on a user's real database.
 
 ## What the checks cover
 
@@ -25,7 +26,7 @@ node tests/map-boundary.test.cjs
 - Assessment status for current, old, future, incomplete and adjusted readings.
 - Escaping, displayed status, map/address labels, admin-only controls and modal content.
 - Irisan polygon boundary acceptance/rejection in JavaScript.
-- Awareness notices, unverified susceptibility behavior, report-time conversion, caching and request limits.
+- Awareness notices, unverified susceptibility behavior, report-time conversion.
 - Database-backed report review, risk edit audit, history, location CSV import/export and archive behavior in a disposable database.
 
 These tests check application behavior; they do not establish real-world landslide accuracy.
@@ -36,7 +37,7 @@ On 2026-10-03, the student reported that the website's components and features h
 
 ## Before a final classroom demonstration
 
-- Confirm which exact `f1` commit will be presented and run the commands above on that checkout.
+- Confirm which exact `sf2` commit will be presented and run the commands above on that checkout.
 - Verify the project on the intended Herd/XAMPP instance, with the migration applied to a disposable copy first.
 - Demonstrate resident report submission and admin review, refresh failure preserving history, risk edit reason/audit, and CSV export.
 - Check internal-file denial on the actual web server. `.htaccess` does not apply to Nginx.
@@ -44,3 +45,26 @@ On 2026-10-03, the student reported that the website's components and features h
 - State clearly that no field validation or predictive accuracy study has been completed.
 
 For detailed edge cases, see `docs/backend-test-checklist.md` and `docs/verification.md`.
+
+For the current simplification, verify editable CSV round trips, a later invalid row leaving earlier rows saved, login/role checks without tokens, and provider failure fallback. No cache/quota or CSRF rejection is expected. See [behavior differences](simplification-sf2.md).
+
+## Database checks for this patch
+
+Use a fresh disposable database ending in `_test`, populated from `database/schema.sql`.
+Configure DB_DATABASE and the other DB environment variables for that database.
+
+```sh
+php tests/integration-awareness.php
+php tests/csv-import.php
+```
+
+`tests/refresh.php` replaces the cURL functions with a deterministic weather
+fixture, while using real PDO/MySQL. Run it with cURL disabled, for example on
+Linux with shared extensions:
+
+```sh
+php -n -d extension=pdo -d extension=mysqlnd -d extension=pdo_mysql tests/refresh.php
+```
+
+Extension names/loading differ on Herd and XAMPP. The fixture test must run
+without the real cURL extension; it does not prove live provider availability.
