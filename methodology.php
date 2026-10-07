@@ -1,35 +1,50 @@
 <?php
-declare(strict_types=1);
-require_once __DIR__ . '/app/bootstrap.php';
-start_session(); require_login();
+require_once __DIR__ . '/functions.php';
+start_session();
+require_login();
 ?>
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmartSlope sources and methodology</title><link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>"><link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>"></head>
-<body><?= ui_navigation('methodology') ?>
-<main class="container my-4 methodology-page"><header class="page-heading mb-4"><h1 class="h2 mb-1">Sources and methodology</h1><p class="page-subtitle mb-0">How the SmartSlope prototype uses and explains data.</p></header>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>SmartSlope sources and methodology</title>
+    <link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>">
+    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>">
+</head>
+<body>
+<?php require_once __DIR__ . '/partials/navbar.php'; ?>
+
+<main class="container my-4 methodology-page">
+<header class="page-heading mb-4">
+    <h1 class="h2 mb-1">Sources and methodology</h1>
+    <p class="page-subtitle mb-0">How the SmartSlope prototype uses and explains data.</p>
+</header>
+
 <p>An API-based landslide awareness and alert prototype for Barangay Irisan. No physical sensors or AI are used. Categories are uncalibrated rainfall screening, not official warnings, landslide probabilities, or assurances of safety.</p>
-<div class="alert alert-info">Refresh weather manually to fetch data and save a snapshot. No background monitoring runs while the website is unattended. Cached provider responses may be reused for 60 seconds; their original valid time stays unchanged.</div>
-<h2 class="h4">Inputs → processing → output</h2>
-<ol><li><strong>Inputs:</strong> Open-Meteo modeled hourly precipitation (API); reviewed MGB polygons if installed (VERIFIED); resident reports (USER-SUBMITTED).</li>
-<li><strong>Processing:</strong> Require valid units, timestamps and all 72 consecutive rainfall samples; calculate 1h, 24h and 72h sums ending at the last completed UTC hour; apply the highest prototype threshold reached.</li>
-<li><strong>Output:</strong> CALCULATED rainfall category and explanation, data status, separate susceptibility, and report counts. These are three distinct findings.</li></ol>
-<table class="table"><caption>prototype-1 thresholds; not calibrated for Irisan</caption><thead><tr><th>Category</th><th>1h mm</th><th>24h mm</th><th>72h mm</th></tr></thead><tbody>
-<?php foreach (RiskAnalyzer::THRESHOLDS as $level=>$limits): ?><tr><th><?= e(ucfirst($level)) ?></th><?php foreach ($limits as $limit): ?><td>≥<?= (int)$limit ?></td><?php endforeach; ?></tr><?php endforeach; ?>
-<tr><th>Low</th><td colspan="3">Below every threshold; low/normal do not establish safety.</td></tr></tbody></table>
-<p>Rainfall totals must satisfy 1h ≤ 24h ≤ 72h. Missing, invalid, inconsistent, future or outdated data never silently becomes low. Freshness defaults to three hours, an application policy, not a scientific warning criterion. An open page must be refreshed/reloaded to update its displayed data status.</p>
-<p>Prototype notices use the calculated category. Administrator adjustments remain separate and require a reason. New edits retain actor, UTC time and previous/new categories; legacy edits cannot be reconstructed.</p>
-<h2 class="h4">Data sources</h2>
-<div class="table-responsive"><table class="table"><thead><tr><th>Source</th><th>Role and reliability</th><th>Coverage and resolution</th><th>Access and storage</th></tr></thead><tbody>
-<tr><th><a href="https://open-meteo.com/en/docs">Open-Meteo</a><br>API</th><td>Modeled precipitation supplies rainfall screening. Forecast, temperature, humidity, wind and modeled moisture are context. Local accuracy has not been validated.</td><td>Global model coverage including the Philippines. Model-dependent spatial grid; no house-level accuracy claim. Hourly precipitation; current conditions based on 15-minute model data. Requested and returned grid coordinates are retained.</td><td>Free noncommercial API. Published limits: fewer than 600/min, 5,000/hour, 10,000/day; plan table 300,000/month. This application uses lower local budgets, caching and a shared lock. Provider inputs and calculated snapshots are stored.</td></tr>
-<tr><th><a href="https://controlmap.mgb.gov.ph/arcgis/rest/services/GeospatialDataInventory_Public/GDI_Detailed_Rain_induced_Landslide_Susceptibility_Public/MapServer/0">MGB polygons</a><br>VERIFIED only after source review</th><td>Authoritative susceptibility mapping; separate baseline, never an automatic rainfall multiplier. No dataset is bundled as verified.</td><td>National service; Irisan coverage, edition and specific scale must be reviewed before import. Static polygons with approximate boundaries; no live temporal resolution or property-level assurance.</td><td>Public metadata; reuse conditions and request-rate quota not established. Inspected service response cap: 2,000 records, with pagination. Store a reviewed WGS84 local subset and provenance; never request live for every click.</td></tr>
-<tr><th><a href="https://operations.osmfoundation.org/policies/nominatim/">OSM / Nominatim</a></th><td>Optional address aid; community mapping with variable completeness. Does not verify a property or change screening.</td><td>Global mapped objects, uneven local detail; no uniform grid or guaranteed update interval.</td><td>Disabled by default. If deliberately enabled: one request/second maximum across the application, identification, ODbL attribution, caching and switchability required. Server cache lasts 24h. User-entered landmarks remain available.</td></tr>
-<tr><th>Resident reports<br>USER-SUBMITTED</th><td>Descriptions, type and occurrence time support administrator review. Review/resolution is not scientific verification.</td><td>User-selected Irisan point; unknown positional accuracy; submitted as observations occur.</td><td>No external quota or API fee. Shared event/location data is stored in events and report details in reports; contact data is accessible to administrators. Public location summaries contain counts only.</td></tr>
-<tr><th>Bundled Irisan boundary</th><td>Study-area inclusion check; not a hazard layer. Original provenance remains to be documented.</td><td>Irisan polygon; authoritative edition, scale and positional accuracy not established here.</td><td>Local file with no API calls. Source/license review needed before asserting VERIFIED status.</td></tr>
-</tbody></table></div>
-<h2 class="h4">Interpret results</h2>
-<p>Forecast accumulation covers the next 24 complete hourly intervals from the historical window endpoint. Maximum hourly rain chance is not the probability of any rain over the entire day and is never a landslide probability. Soil moisture uses modeled volumetric content (m³/m³), not saturation percent.</p>
-<p>History shows saved accumulated snapshots, collapsing repeated provider times for display. Differences between 24h totals are not rainfall during the intervening period. Never sum accumulated snapshots.</p>
-<h2 class="h4">Official information</h2><p>These links open publisher websites; SmartSlope does not claim to have imported a current advisory:</p>
-<ul><li><a href="https://www.pagasa.dost.gov.ph/">DOST-PAGASA weather information</a></li><li><a href="https://mgb.gov.ph/">Mines and Geosciences Bureau</a></li></ul>
-<h2 class="h4">Validation still required</h2><p>Compare screening against documented local landslide events and non-event periods using comparable rainfall records. Record missed events and false alarms, and evaluate revised thresholds on separate periods. Software tests do not establish prediction accuracy. TEST/DEMO fixtures must never be presented as real environmental evidence.</p>
-<p class="small">References: <a href="https://www.usgs.gov/publications/developing-hydro-meteorological-thresholds-shallow-landslide-initiation-and-early">USGS threshold development</a>; <a href="https://open-meteo.com/en/terms">Open-Meteo terms</a>.</p>
-</main><footer class="container pb-4 small site-footer">Weather: Open-Meteo, CC BY 4.0. Map/address data where used: © OpenStreetMap contributors, ODbL.</footer><script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script></body></html>
+
+<div class="alert alert-info">
+    Refresh weather manually to fetch data and save a snapshot. No background monitoring runs while the website is unattended. Cached provider responses may be reused for 60 seconds; their original valid time stays unchanged.
+</div>
+
+<h2 class="h4 mt-4">Open-Meteo Weather API</h2>
+<p>The prototype uses the <a href="https://open-meteo.com/">Open-Meteo Weather API</a> for weather data including rainfall, temperature, humidity, and wind speed. This is a free, open-source weather API that provides global weather data.</p>
+
+<h2 class="h4 mt-4">Risk Assessment</h2>
+<p>The risk levels are calculated based on rainfall thresholds and other environmental factors. These are screening tools only and not official warnings.</p>
+
+<h2 class="h4 mt-4">Data Sources</h2>
+<ul>
+    <li><strong>Weather Data:</strong> Open-Meteo API</li>
+    <li><strong>Location Data:</strong> User-submitted coordinates within Barangay Irisan</li>
+    <li><strong>Report Data:</strong> User observations and reports</li>
+</ul>
+
+<h2 class="h4 mt-4">Limitations</h2>
+<p>This is an academic prototype. For official landslide warnings and information, please consult local authorities and official government sources.</p>
+
+</main>
+
+<script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
+</body>
+</html>

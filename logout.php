@@ -1,8 +1,7 @@
 <?php
-require_once __DIR__ . '/app/bootstrap.php';
-start_session();
+// Simple Logout
+require_once __DIR__ . '/functions.php';
 
-require_post_csrf();
-$_SESSION = [];
-session_destroy();
+start_session();
+clear_session();
 redirect('index.php');

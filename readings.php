@@ -1,67 +1,118 @@
 <?php
-require_once __DIR__ . '/app/bootstrap.php';
+// Simple Readings Page
+require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/Database.php';
+require_once __DIR__ . '/Reading.php';
+require_once __DIR__ . '/Location.php';
+
 start_session();
 require_login();
 
-$readings = get_all_readings(100);
+// Initialize database and models
+$database = new Database();
+$pdo = $database->connect();
+
+$reading = new Reading($pdo);
+$location = new Location($pdo);
+
+$readings = $reading->getAllRecent(100);
 $isAdmin = is_admin();
-$uiLocations = array_column(get_locations(), null, 'id');
+$locations = $location->getAllActive();
+$uiLocations = array_column($locations, null, 'id');
 
 // Export CSV
-if (get('action') === 'export') {
-    require_admin();
-    download_csv('smartslope_readings_'.gmdate('Y-m-d').'.csv', export_readings_csv(get_all_readings(PHP_INT_MAX)));
+if (isset($_GET['export']) && $isAdmin) {
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="readings-' . date('Y-m-d') . '.csv"');
+    
+    $output = fopen('php://output', 'w');
+    fputcsv($output, ['ID', 'Location', 'Risk Level', 'Rainfall 1h', 'Rainfall 24h', 'Temperature', 'Humidity', 'Observed At']);
+    
+    foreach ($readings as $r) {
+        $locName = $uiLocations[$r['location_id']]['name'] ?? 'Unknown';
+        fputcsv($output, [
+            $r['id'],
+            $locName,
+            $r['risk_level'] ?? '',
+            $r['rainfall_1h'] ?? '',
+            $r['rainfall_24h'] ?? '',
+            $r['temperature'] ?? '',
+            $r['humidity'] ?? '',
+            $r['observed_at'] ?? ''
+        ]);
+    }
+    
+    fclose($output);
+    exit;
 }
 
+// UI helper function
+function ui_location_label($loc) {
+    $parts = [];
+    if (!empty($loc['purok'])) $parts[] = e($loc['purok']);
+    if (!empty($loc['landmark'])) $parts[] = e($loc['landmark']);
+    return implode(' - ', $parts);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>All Readings - SmartSlope</title>
-    <link rel="stylesheet" href="<?= url('assets/css/bootstrap.min.css') ?>">
-    <style>
-        .badge-risk { font-size: 0.85em; }
-    </style>
-    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>">
+    <title>Readings - SmartSlope</title>
+    <link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>">
 </head>
 <body>
-    <?= ui_navigation('readings') ?>
-
-    <div class="container my-4">
+    <?php require_once __DIR__ . '/partials/navbar.php'; ?>
+    
+    <main class="container py-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <div class="page-heading"><h1 class="h2 mb-1">Weather readings</h1><p class="page-subtitle mb-0">Saved observations for Barangay Irisan.</p></div>
-            <div>
-                <?php if ($isAdmin): ?>
-                    <form id="bulkReadingsPageForm" method="post" action="<?= e(url('admin.php')) ?>" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="d-inline">
-                        <?= csrf_field() ?><input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="readings.php">
-                        <button class="btn btn-outline-danger">Remove selected</button>
-                    </form>
-                    <a href="<?= url('readings.php?action=export') ?>" class="btn btn-outline-success">Export CSV</a>
-                <?php endif; ?>
-            </div>
+            <h1 class="h2 mb-0">All Readings</h1>
+            <?php if ($isAdmin): ?>
+            <a href="?export=1" class="btn btn-outline-primary">Export CSV</a>
+            <?php endif; ?>
         </div>
-
-        <p class="small text-muted">Latest 100 saved readings across active locations. Current means observed within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours. SmartSlope is an academic prototype, not an official warning service. Scroll the table or open a details dialog for more weather information.</p>
+        
         <div class="card">
-            <div class="card-body p-0">
-                <div class="table-responsive" tabindex="0" role="region" aria-label="Scrollable records table">
-                    <table class="table table-hover table-striped mb-0">
-                        <?= ui_readings_head($isAdmin, 'page-readings') ?>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Location</th>
+                                <th>Risk Level</th>
+                                <th>Rainfall (1h)</th>
+                                <th>Rainfall (24h)</th>
+                                <th>Temperature</th>
+                                <th>Humidity</th>
+                                <th>Observed At</th>
+                            </tr>
+                        </thead>
                         <tbody>
-                            <?= ui_readings_rows($readings, $isAdmin, 'page-readings', 'bulkReadingsPageForm', $uiLocations) ?>
+                            <?php foreach ($readings as $r): 
+                                $loc = $uiLocations[$r['location_id']] ?? [];
+                            ?>
+                            <tr>
+                                <td><?= e($loc['name'] ?? 'Unknown') ?></td>
+                                <td>
+                                    <span class="badge bg-<?= e($r['risk_level'] ?? 'unknown') ?>">
+                                        <?= e(ucfirst($r['risk_level'] ?? 'Unknown')) ?>
+                                    </span>
+                                </td>
+                                <td><?= e($r['rainfall_1h'] ?? 'N/A') ?> mm</td>
+                                <td><?= e($r['rainfall_24h'] ?? 'N/A') ?> mm</td>
+                                <td><?= e($r['temperature'] ?? 'N/A') ?>°C</td>
+                                <td><?= e($r['humidity'] ?? 'N/A') ?>%</td>
+                                <td><?= e(local_date($r['observed_at'] ?? '')) ?></td>
+                            </tr>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
             </div>
         </div>
-    </div>
-
-    <?= ui_weather_modal() ?>
-    <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
-    <script src="<?= e(url('assets/js/reading-modal.js')) ?>"></script>
-    <?php if ($isAdmin): ?><script src="<?= e(url('assets/js/bulk-select.js')) ?>"></script><?php endif; ?>
-<footer class="container py-3 small site-footer">Weather data: <a href="https://open-meteo.com/" rel="noopener noreferrer">Open-Meteo</a> (CC BY 4.0). Map/address data where used: <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>. Manual updates; academic prototype.</footer>
+    </main>
+    
+    <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
 </body>
 </html>
