@@ -21,6 +21,10 @@ php tests/api-readings.php
 php tests/csv.php
 node --test tests/map-boundary.test.cjs
 DB_DATABASE=smartslope_test php tests/integration.php
+DB_DATABASE=smartslope_test php tests/migration.php
+DB_DATABASE=smartslope_test php tests/csv-import.php
 ```
 
 The integration script checks the effective app configuration and exits unless its DB name ends in `_test`. The migration test verifies an already-normalized test schema; full legacy backfill rehearsal uses a separate disposable copy and must compare detail values before/after. Never override a production `.env` casually: this app loads `.env` and process environment, and shell startup configuration can affect which value wins.
+
+`csv-import.php` checks signed location round trips, updates, duplicate avoidance, ID preservation and transaction rollback. It requires a disposable database and removes its test point afterwards.

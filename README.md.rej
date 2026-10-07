@@ -1,0 +1,28 @@
+diff a/README.md b/README.md	(rejected hunks)
+@@ -13,6 +13,26 @@ SmartSlope is a PHP/MySQL academic prototype for rainfall screening and resident
+ 
+ No JavaScript framework or build process is required. PHP routes live in the project root and `pages/`; `actions/` handles forms, `api/` handles JSON, and `app/` holds authentication, database access, weather processing and analysis.
+ 
++## Simple PHP and PDO organization
++
++The code uses the course pattern: a constructor receives one PDO connection, and each class has ordinary methods with prepared SQL statements.
++
++| File | Purpose |
++| --- | --- |
++| `app/config.php` | Small settings array and shared `db()` connection helper |
++| `app/Database.php` | `Database::connect()` opens and reuses PDO |
++| `app/environment.php` | Loads existing private `.env` settings |
++| `app/paths.php` | Local root and browser URL base, including Herd/XAMPP detection |
++| `app/classes/User.php` | Create resident accounts |
++| `app/classes/Location.php` | Find, create and deactivate locations |
++| `app/classes/Reading.php` | Read, save, archive and correct readings |
++| `app/classes/Report.php` | Submit, list, review and delete reports |
++| `app/repositories.php` | Short compatibility functions called by existing pages |
++| `app/geography.php` | Checks whether coordinates are inside Irisan |
++| `app/csv.php` | CSV downloads, verification, parsing and transactional location import |
++
++PHP includes use `__DIR__`; links, assets and form actions use `url()`. Keep your existing `.env`: no database migration or setting changes are needed for this refactor. Keep `.htaccess` for Apache protection. Location imports still require an unchanged signed Locations export from the same installation; reading and report CSVs are downloads only.
++
+ ## Main features
+ 
+ - Resident registration/login, an Irisan map, saved reading history and a manually triggered weather refresh.

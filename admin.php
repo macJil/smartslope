@@ -31,10 +31,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $bulkAction = $bulkActions[$action];
         $selectedIds = $_POST[$bulkAction['field']] ?? [];
         if (!is_array($selectedIds)) $selectedIds = [];
-        $selectedIds = array_unique(array_filter(array_map(
-            static fn($value) => filter_var($value, FILTER_VALIDATE_INT),
-            $selectedIds
-        ), static fn($id) => $id !== false && $id > 0));
+        $validIds = [];
+        foreach ($selectedIds as $value) {
+            $selectedId = filter_var($value, FILTER_VALIDATE_INT);
+            if ($selectedId !== false && $selectedId > 0) {
+                $validIds[$selectedId] = $selectedId;
+            }
+        }
+        $selectedIds = array_values($validIds);
         if (!$selectedIds) {
             flash('error', 'Select at least one item first.');
             $returnTo = post('return_to', 'admin.php');
@@ -46,11 +50,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->beginTransaction();
         try {
         foreach ($selectedIds as $selectedId) {
-            $changed += match ($bulkAction['operation']) {
-                'delete_report' => delete_report((int)$selectedId),
-                'archive_reading' => archive_reading((int)$selectedId),
-                'deactivate_location' => deactivate_location((int)$selectedId),
-            } ? 1 : 0;
+            $didChange = false;
+            switch ($bulkAction['operation']) {
+                case 'delete_report':
+                    $didChange = delete_report((int)$selectedId);
+                    break;
+                case 'archive_reading':
+                    $didChange = archive_reading((int)$selectedId);
+                    break;
+                case 'deactivate_location':
+                    $didChange = deactivate_location((int)$selectedId);
+                    break;
+            }
+            if ($didChange) {
+                $changed++;
+            }
         }
         $pdo->commit();
         } catch (Throwable $error) {
@@ -100,12 +114,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $exportAction=(string)get('action');
 if (in_array($exportAction,['export','export_reports','export_locations'],true)) {
     try {
-        $csv=match($exportAction) {
-            'export_reports'=>export_reports_csv(get_reports($reportFilter)),
-            'export_locations'=>export_locations_csv(get_locations()),
-            default=>export_readings_csv(get_all_readings(PHP_INT_MAX)),
-        };
-        $kind=match($exportAction) {'export_reports'=>'reports','export_locations'=>'locations',default=>'readings'};
+        switch ($exportAction) {
+            case 'export_reports':
+                $csv = export_reports_csv(get_reports($reportFilter));
+                $kind = 'reports';
+                break;
+            case 'export_locations':
+                $csv = export_locations_csv(get_locations());
+                $kind = 'locations';
+                break;
+            default:
+                $csv = export_readings_csv(get_all_readings(PHP_INT_MAX));
+                $kind = 'readings';
+        }
         download_csv('smartslope_'.$kind.'_'.gmdate('Y-m-d').'.csv',$csv);
     } catch (Throwable $error) {
         error_log('CSV export failed: '.$error->getMessage());

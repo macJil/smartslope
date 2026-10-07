@@ -12,4 +12,24 @@ try { parse_locations_csv(str_replace('Special','Changed',$csv),$key); test_chec
 catch (InvalidArgumentException) { test_check(true,'Tampered location CSV rejected.'); }
 test_check(!str_contains(export_readings_csv([]),'<br'),'Reading export contains CSV, not HTML.');
 test_check(str_contains(export_reports_csv([]),'Contact phone'),'Report export documents contact columns.');
+
+
+// Exercise the same signed format after simplifying parser control flow.
+try {
+    parse_locations_csv($csv, str_repeat('b',64));
+    test_check(false, 'A different installation key must be rejected.');
+} catch (InvalidArgumentException $error) {
+    test_check(true, 'A different installation key is rejected.');
+}
+$multiline = $locations;
+$multiline[0]['landmark'] = "House 1, Street A\nNear the school";
+$restored = parse_locations_csv(export_locations_csv($multiline, $key), $key);
+test_check($restored[0]['landmark'] === $multiline[0]['landmark'], 'Quoted CSV preserves commas and newlines.');
+try {
+    parse_locations_csv("Wrong,columns\n1,2\n", $key);
+    test_check(false, 'Unrelated CSV must be rejected.');
+} catch (InvalidArgumentException $error) {
+    test_check(true, 'Unrelated CSV is rejected.');
+}
+
 echo "$testChecks CSV checks passed.\n";
