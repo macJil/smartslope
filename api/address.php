@@ -2,7 +2,9 @@
 declare(strict_types=1);
 require_once __DIR__ . '/../app/bootstrap.php';
 start_session(); header('Content-Type: application/json; charset=UTF-8'); header('Cache-Control: no-store');
-function address_json(int $status, array $body): void { http_response_code($status); echo json_encode($body,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE); exit; }
+function address_json(int $status, array $body): void {
+    json_response($status, $body);
+}
 if (!is_logged_in()) address_json(401,['error'=>'Sign in required.']);
 if (($_SERVER['REQUEST_METHOD']??'GET')!=='GET') { header('Allow: GET'); address_json(405,['error'=>'Method not allowed.']); }
 if (env_value('NOMINATIM_ENABLED','1')!=='1') address_json(200,['address'=>'']);

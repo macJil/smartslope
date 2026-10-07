@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/http.php';
 require_once __DIR__ . '/maintenance.php';
 require_once __DIR__ . '/csv.php';
 require_once __DIR__ . '/auth.php';

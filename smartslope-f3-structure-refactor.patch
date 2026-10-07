@@ -1,0 +1,1175 @@
+diff --git a/README.md b/README.md
+index 905f9f6..2dd87a6 100644
+--- a/README.md
++++ b/README.md
+@@ -13,6 +13,15 @@ SmartSlope is a PHP/MySQL academic prototype for rainfall screening and resident
+ 
+ No JavaScript framework or build process is required. PHP routes live in the project root and `pages/`; `actions/` handles forms, `api/` handles JSON, and `app/` holds authentication, database access, weather processing and analysis.
+ 
++## Code organization
++
++- `app/bootstrap.php` loads the shared application code.
++- `app/repositories.php` loads four function-based modules in `app/repositories/`: users, locations, readings and reports. Existing function names and SQL are retained.
++- `app/helpers.php` provides form, URL, escaping and date helpers; `app/geography.php` checks the Irisan boundary.
++- `app/http.php` provides the shared JSON response function.
++- `app/maintenance.php` loads `app/schema.php` (schema checks) and `app/migration.php` (legacy migration).
++- `app/RiskAnalyzer.php` remains the rainfall screening class. Pages, routes, database structure and interface assets retain their existing roles.
++
+ ## Main features
+ 
+ - Resident registration/login, an Irisan map, saved reading history and a manually triggered weather refresh.
+diff --git a/api/address.php b/api/address.php
+index 50b592c..d9d05e3 100644
+--- a/api/address.php
++++ b/api/address.php
+@@ -2,7 +2,9 @@
+ declare(strict_types=1);
+ require_once __DIR__ . '/../app/bootstrap.php';
+ start_session(); header('Content-Type: application/json; charset=UTF-8'); header('Cache-Control: no-store');
+-function address_json(int $status, array $body): void { http_response_code($status); echo json_encode($body,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE); exit; }
++function address_json(int $status, array $body): void {
++    json_response($status, $body);
++}
+ if (!is_logged_in()) address_json(401,['error'=>'Sign in required.']);
+ if (($_SERVER['REQUEST_METHOD']??'GET')!=='GET') { header('Allow: GET'); address_json(405,['error'=>'Method not allowed.']); }
+ if (env_value('NOMINATIM_ENABLED','1')!=='1') address_json(200,['address'=>'']);
+diff --git a/api/readings.php b/api/readings.php
+index be103a4..5328b1c 100644
+--- a/api/readings.php
++++ b/api/readings.php
+@@ -7,9 +7,7 @@ header('Cache-Control: no-store');
+ header('X-Content-Type-Options: nosniff');
+ 
+ function reading_json(int $status, array $body): void {
+-    http_response_code($status);
+-    echo json_encode($body, JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
+-    exit;
++    json_response($status, $body);
+ }
+ if (!is_logged_in()) reading_json(401, ['error' => 'Please sign in again.']);
+ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+diff --git a/app/bootstrap.php b/app/bootstrap.php
+index 21d257d..9c8531c 100644
+--- a/app/bootstrap.php
++++ b/app/bootstrap.php
+@@ -3,6 +3,7 @@ declare(strict_types=1);
+ 
+ require_once __DIR__ . '/config.php';
+ require_once __DIR__ . '/helpers.php';
++require_once __DIR__ . '/http.php';
+ require_once __DIR__ . '/maintenance.php';
+ require_once __DIR__ . '/csv.php';
+ require_once __DIR__ . '/auth.php';
+diff --git a/app/geography.php b/app/geography.php
+new file mode 100644
+index 0000000..e9773ab
+--- /dev/null
++++ b/app/geography.php
+@@ -0,0 +1,28 @@
++<?php
++declare(strict_types=1);
++
++// Check coordinates against the bundled Irisan boundary.
++
++function is_in_irisan(float $lat, float $lng): bool {
++    $geo = json_decode((string)file_get_contents(APP_ROOT . '/assets/map/irisan.geojson'), true);
++    if (!is_array($geo)) return false;
++    $geometry = $geo['type'] === 'FeatureCollection'
++        ? ($geo['features'][0]['geometry'] ?? null)
++        : ($geo['geometry'] ?? $geo);
++    $rings = $geometry['type'] === 'Polygon' ? [$geometry['coordinates']] : ($geometry['coordinates'] ?? []);
++    foreach ($rings as $polygon) {
++        $inside = false;
++        foreach ($polygon as $ringIndex => $ring) {
++            $crosses = false;
++            for ($i = 0, $j = count($ring) - 1; $i < count($ring); $j = $i++) {
++                [$x1, $y1] = $ring[$i]; [$x2, $y2] = $ring[$j];
++                if (($y1 > $lat) !== ($y2 > $lat) &&
++                    $lng < ($x2 - $x1) * ($lat - $y1) / ($y2 - $y1) + $x1) $crosses = !$crosses;
++            }
++            if ($ringIndex === 0) $inside = $crosses;
++            elseif ($crosses) $inside = false;
++        }
++        if ($inside) return true;
++    }
++    return false;
++}
+diff --git a/app/helpers.php b/app/helpers.php
+index 1970b0f..fe002e7 100644
+--- a/app/helpers.php
++++ b/app/helpers.php
+@@ -1,48 +1,38 @@
+ <?php
+ declare(strict_types=1);
+ 
++require_once __DIR__ . '/geography.php';
++
+ function e($value): string {
+     return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+ }
+ 
+-// Get POST value safely
+-
+ function post(string $key, $default = '') {
+     $value = $_POST[$key] ?? $default;
+     return is_scalar($value) ? $value : $default;
+ }
+ 
+-// Get GET value safely
+-
+ function get(string $key, $default = '') {
+     $value = $_GET[$key] ?? $default;
+     return is_scalar($value) ? $value : $default;
+ }
+ 
+-// Build URL
+-
+ function url(string $path = ''): string {
+     $base = '/' . trim(APP_BASE_PATH, '/');
+     return rtrim($base, '/') . '/' . ltrim($path, '/');
+ }
+ 
+-// Redirect
+-
+ function redirect(string $path): void {
+     header("Location: " . url($path), true, 303);
+     exit;
+ }
+ 
+-// Display local datetime
+-
+ function local_date(?string $value): string {
+     if (!$value) return '';
+     $date = DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $value, new DateTimeZone('UTC'));
+     return $date ? $date->setTimezone(new DateTimeZone('Asia/Manila'))->format('M j, Y g:i A') : $value;
+ }
+ 
+-// Start session
+-
+ function flash(string $key, ?string $message = null): ?string {
+     if ($message !== null) {
+         $_SESSION['flash'][$key] = $message;
+@@ -52,37 +42,3 @@ function flash(string $key, ?string $message = null): ?string {
+     unset($_SESSION['flash'][$key]);
+     return is_string($value) ? $value : null;
+ }
+-
+-// ============================================================================
+-// AUTHENTICATION FUNCTIONS
+-// ============================================================================
+-
+-// Hash password
+-
+-function is_in_irisan(float $lat, float $lng): bool {
+-    $geo = json_decode((string)file_get_contents(APP_ROOT . '/assets/map/irisan.geojson'), true);
+-    if (!is_array($geo)) return false;
+-    $geometry = $geo['type'] === 'FeatureCollection'
+-        ? ($geo['features'][0]['geometry'] ?? null)
+-        : ($geo['geometry'] ?? $geo);
+-    $rings = $geometry['type'] === 'Polygon' ? [$geometry['coordinates']] : ($geometry['coordinates'] ?? []);
+-    foreach ($rings as $polygon) {
+-        $inside = false;
+-        foreach ($polygon as $ringIndex => $ring) {
+-            $crosses = false;
+-            for ($i = 0, $j = count($ring) - 1; $i < count($ring); $j = $i++) {
+-                [$x1, $y1] = $ring[$i]; [$x2, $y2] = $ring[$j];
+-                if (($y1 > $lat) !== ($y2 > $lat) &&
+-                    $lng < ($x2 - $x1) * ($lat - $y1) / ($y2 - $y1) + $x1) $crosses = !$crosses;
+-            }
+-            if ($ringIndex === 0) $inside = $crosses;
+-            elseif ($crosses) $inside = false;
+-        }
+-        if ($inside) return true;
+-    }
+-    return false;
+-}
+-
+-// ============================================================================
+-// CSV EXPORT
+-// ============================================================================
+diff --git a/app/http.php b/app/http.php
+new file mode 100644
+index 0000000..fabf8ce
+--- /dev/null
++++ b/app/http.php
+@@ -0,0 +1,9 @@
++<?php
++declare(strict_types=1);
++
++// End a JSON response using the same encoding options as both API endpoints.
++function json_response(int $status, array $body): void {
++    http_response_code($status);
++    echo json_encode($body, JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
++    exit;
++}
+diff --git a/app/maintenance.php b/app/maintenance.php
+index 69eff61..ee5c018 100644
+--- a/app/maintenance.php
++++ b/app/maintenance.php
+@@ -1,154 +1,6 @@
+ <?php
+ declare(strict_types=1);
+ 
+-const LEGACY_READING_COLUMNS = [
+-    'rainfall_1h','rainfall_24h','rainfall_72h','rainfall_forecast_24h',
+-    'precipitation_probability_24h','soil_moisture_9_27cm','soil_moisture_27_81cm',
+-    'risk_level','temperature','humidity','wind_speed','weather_code','observed_at','source',
+-    'rule_version','rainfall_window_end','provider_payload','adjustment_log','archived','stale'
+-];
+-const LEGACY_REPORT_COLUMNS = [
+-    'message','contact_phone','contact_email','house_landmark','status','report_type',
+-    'occurred_at','reviewed_by','reviewed_at'
+-];
+-const READING_AWARENESS_COLUMNS = ['rule_version','rainfall_window_end','provider_payload','adjustment_log'];
+-const REPORT_AWARENESS_COLUMNS = ['report_type','occurred_at','reviewed_by','reviewed_at'];
+-
+-function schema_table_exists(string $table): bool {
+-    $stmt = db()->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?');
+-    $stmt->execute([$table]);
+-    return (int)$stmt->fetchColumn() > 0;
+-}
+-
+-function schema_table_columns(string $table): array {
+-    if (!preg_match('/^[a-z_]+$/', $table) || !schema_table_exists($table)) return [];
+-    return array_column(db()->query('SHOW COLUMNS FROM `' . $table . '`')->fetchAll(), 'Field');
+-}
+-
+-function schema_ensure_index(PDO $pdo, string $table, string $name, string $definition): void {
+-    $indexes = array_column($pdo->query('SHOW INDEX FROM `' . $table . '`')->fetchAll(), 'Key_name');
+-    if (!in_array($name, $indexes, true)) $pdo->exec('ALTER TABLE `' . $table . '` ADD ' . $definition);
+-}
+-
+-function missing_awareness_columns(): array {
+-    $required = ['readings'=>READING_AWARENESS_COLUMNS, 'reports'=>REPORT_AWARENESS_COLUMNS];
+-    $missing = [];
+-    foreach ($required as $table => $columns) {
+-        $existing = schema_table_columns($table);
+-        if (!$existing) {
+-            $missing[] = $table;
+-            continue;
+-        }
+-        foreach (array_diff($columns, $existing) as $column) $missing[] = $table . '.' . $column;
+-    }
+-    return $missing;
+-}
+-
+-function require_awareness_schema(): void {
+-    if (missing_awareness_columns()) throw new RuntimeException('Database setup is incomplete. Run php database/migrate-awareness.php before serving the updated application.');
+-}
+-
+-function migrate_awareness_schema(): void {
+-    $pdo = db();
+-    if (!schema_table_exists('events')) throw new RuntimeException('The events table does not exist. Import database/schema.sql first.');
+-
+-    $eventColumns = schema_table_columns('events');
+-    $hasLegacyData = in_array('rainfall_1h', $eventColumns, true) && in_array('message', $eventColumns, true);
+-
+-    // Earlier awareness deployments stored these fields directly on events.
+-    if ($hasLegacyData) {
+-        $legacyAwareness = [
+-            'rule_version'=>'VARCHAR(40) NULL', 'rainfall_window_end'=>'DATETIME NULL',
+-            'provider_payload'=>'LONGTEXT NULL', 'adjustment_log'=>'LONGTEXT NULL',
+-            'report_type'=>'VARCHAR(30) NULL', 'occurred_at'=>'DATETIME NULL',
+-            'reviewed_by'=>'INT UNSIGNED NULL', 'reviewed_at'=>'DATETIME NULL'
+-        ];
+-        foreach ($legacyAwareness as $name => $definition) {
+-            if (!in_array($name, $eventColumns, true)) $pdo->exec('ALTER TABLE events ADD COLUMN `' . $name . '` ' . $definition);
+-        }
+-    }
+-
+-    $pdo->exec("CREATE TABLE IF NOT EXISTS readings (
+-        event_id INT UNSIGNED NOT NULL,
+-        rainfall_1h DECIMAL(7,2) NULL,
+-        rainfall_24h DECIMAL(7,2) NULL,
+-        rainfall_72h DECIMAL(7,2) NULL,
+-        rainfall_forecast_24h DECIMAL(7,2) NULL,
+-        precipitation_probability_24h TINYINT UNSIGNED NULL,
+-        soil_moisture_9_27cm DECIMAL(6,4) NULL,
+-        soil_moisture_27_81cm DECIMAL(6,4) NULL,
+-        risk_level ENUM('low','normal','medium','high') NULL,
+-        temperature DECIMAL(5,2) NULL,
+-        humidity DECIMAL(5,2) NULL,
+-        wind_speed DECIMAL(6,2) NULL,
+-        weather_code INT NULL,
+-        observed_at DATETIME NULL,
+-        source ENUM('openmeteo','manual') DEFAULT 'openmeteo',
+-        rule_version VARCHAR(40) NULL,
+-        rainfall_window_end DATETIME NULL,
+-        provider_payload LONGTEXT NULL,
+-        adjustment_log LONGTEXT NULL,
+-        archived TINYINT(1) NOT NULL DEFAULT 0,
+-        stale TINYINT(1) NOT NULL DEFAULT 0,
+-        PRIMARY KEY (event_id),
+-        KEY reading_history (archived, observed_at, event_id),
+-        CONSTRAINT readings_event_fk FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+-    $pdo->exec("CREATE TABLE IF NOT EXISTS reports (
+-        event_id INT UNSIGNED NOT NULL,
+-        message TEXT NULL,
+-        contact_phone VARCHAR(20) NULL,
+-        contact_email VARCHAR(254) NULL,
+-        house_landmark VARCHAR(255) NULL,
+-        status ENUM('pending','reviewed','resolved') DEFAULT 'pending',
+-        report_type VARCHAR(30) NULL,
+-        occurred_at DATETIME NULL,
+-        reviewed_by INT UNSIGNED NULL,
+-        reviewed_at DATETIME NULL,
+-        PRIMARY KEY (event_id),
+-        KEY report_status (status, event_id),
+-        CONSTRAINT reports_event_fk FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+-        CONSTRAINT reports_reviewer_fk FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+-
+-    schema_ensure_index($pdo, 'events', 'event_location_type', 'INDEX event_location_type (location_id, type)');
+-    schema_ensure_index($pdo, 'events', 'event_type_created', 'INDEX event_type_created (type, created_at)');
+-    schema_ensure_index($pdo, 'readings', 'reading_history', 'INDEX reading_history (archived, observed_at, event_id)');
+-    schema_ensure_index($pdo, 'reports', 'report_status', 'INDEX report_status (status, event_id)');
+-
+-    // Copy only while all legacy source columns are still present. INSERT IGNORE
+-    // makes an interrupted migration restartable without overwriting new details.
+-    $eventColumns = schema_table_columns('events');
+-    if (in_array('rainfall_1h', $eventColumns, true) && in_array('message', $eventColumns, true)) {
+-        $pdo->exec("INSERT IGNORE INTO readings (
+-            event_id, rainfall_1h, rainfall_24h, rainfall_72h, rainfall_forecast_24h,
+-            precipitation_probability_24h, soil_moisture_9_27cm, soil_moisture_27_81cm,
+-            risk_level, temperature, humidity, wind_speed, weather_code, observed_at, source,
+-            rule_version, rainfall_window_end, provider_payload, adjustment_log, archived, stale
+-        ) SELECT id, rainfall_1h, rainfall_24h, rainfall_72h, rainfall_forecast_24h,
+-            precipitation_probability_24h, soil_moisture_9_27cm, soil_moisture_27_81cm,
+-            risk_level, temperature, humidity, wind_speed, weather_code, observed_at, source,
+-            rule_version, rainfall_window_end, provider_payload, adjustment_log, archived, stale
+-          FROM events WHERE type = 'reading'");
+-        $pdo->exec("INSERT IGNORE INTO reports (
+-            event_id, message, contact_phone, contact_email, house_landmark, status,
+-            report_type, occurred_at, reviewed_by, reviewed_at
+-        ) SELECT e.id, e.message, e.contact_phone, e.contact_email, e.house_landmark, e.status,
+-            e.report_type, e.occurred_at,
+-            CASE WHEN reviewer.id IS NULL THEN NULL ELSE e.reviewed_by END, e.reviewed_at
+-          FROM events e LEFT JOIN users reviewer ON reviewer.id = e.reviewed_by
+-          WHERE e.type = 'report'");
+-    }
+-
+-    $invalid = (int)$pdo->query("SELECT COUNT(*) FROM events e LEFT JOIN readings r ON r.event_id=e.id WHERE e.type='reading' AND r.event_id IS NULL")->fetchColumn()
+-        + (int)$pdo->query("SELECT COUNT(*) FROM events e LEFT JOIN reports r ON r.event_id=e.id WHERE e.type='report' AND r.event_id IS NULL")->fetchColumn()
+-        + (int)$pdo->query("SELECT COUNT(*) FROM readings r JOIN events e ON e.id=r.event_id WHERE e.type<>'reading'")->fetchColumn()
+-        + (int)$pdo->query("SELECT COUNT(*) FROM reports r JOIN events e ON e.id=r.event_id WHERE e.type<>'report'")->fetchColumn();
+-    if ($invalid !== 0) throw new RuntimeException('Event detail migration verification failed. Legacy columns were retained; restore from backup or inspect detail-table rows before retrying.');
+-
+-    $dropColumns = array_values(array_intersect(array_merge(LEGACY_READING_COLUMNS, LEGACY_REPORT_COLUMNS), schema_table_columns('events')));
+-    if ($dropColumns) {
+-        $clauses = array_map(static fn(string $column): string => 'DROP COLUMN `' . $column . '`', $dropColumns);
+-        $pdo->exec('ALTER TABLE events ' . implode(', ', $clauses));
+-    }
+-}
++// Compatibility entry point for schema checks and legacy migration.
++require_once __DIR__ . '/schema.php';
++require_once __DIR__ . '/migration.php';
+diff --git a/app/migration.php b/app/migration.php
+new file mode 100644
+index 0000000..56f056c
+--- /dev/null
++++ b/app/migration.php
+@@ -0,0 +1,109 @@
++<?php
++declare(strict_types=1);
++
++require_once __DIR__ . '/schema.php';
++
++function migrate_awareness_schema(): void {
++    $pdo = db();
++    if (!schema_table_exists('events')) throw new RuntimeException('The events table does not exist. Import database/schema.sql first.');
++
++    $eventColumns = schema_table_columns('events');
++    $hasLegacyData = in_array('rainfall_1h', $eventColumns, true) && in_array('message', $eventColumns, true);
++
++    // Earlier awareness deployments stored these fields directly on events.
++    if ($hasLegacyData) {
++        $legacyAwareness = [
++            'rule_version'=>'VARCHAR(40) NULL', 'rainfall_window_end'=>'DATETIME NULL',
++            'provider_payload'=>'LONGTEXT NULL', 'adjustment_log'=>'LONGTEXT NULL',
++            'report_type'=>'VARCHAR(30) NULL', 'occurred_at'=>'DATETIME NULL',
++            'reviewed_by'=>'INT UNSIGNED NULL', 'reviewed_at'=>'DATETIME NULL'
++        ];
++        foreach ($legacyAwareness as $name => $definition) {
++            if (!in_array($name, $eventColumns, true)) $pdo->exec('ALTER TABLE events ADD COLUMN `' . $name . '` ' . $definition);
++        }
++    }
++
++    $pdo->exec("CREATE TABLE IF NOT EXISTS readings (
++        event_id INT UNSIGNED NOT NULL,
++        rainfall_1h DECIMAL(7,2) NULL,
++        rainfall_24h DECIMAL(7,2) NULL,
++        rainfall_72h DECIMAL(7,2) NULL,
++        rainfall_forecast_24h DECIMAL(7,2) NULL,
++        precipitation_probability_24h TINYINT UNSIGNED NULL,
++        soil_moisture_9_27cm DECIMAL(6,4) NULL,
++        soil_moisture_27_81cm DECIMAL(6,4) NULL,
++        risk_level ENUM('low','normal','medium','high') NULL,
++        temperature DECIMAL(5,2) NULL,
++        humidity DECIMAL(5,2) NULL,
++        wind_speed DECIMAL(6,2) NULL,
++        weather_code INT NULL,
++        observed_at DATETIME NULL,
++        source ENUM('openmeteo','manual') DEFAULT 'openmeteo',
++        rule_version VARCHAR(40) NULL,
++        rainfall_window_end DATETIME NULL,
++        provider_payload LONGTEXT NULL,
++        adjustment_log LONGTEXT NULL,
++        archived TINYINT(1) NOT NULL DEFAULT 0,
++        stale TINYINT(1) NOT NULL DEFAULT 0,
++        PRIMARY KEY (event_id),
++        KEY reading_history (archived, observed_at, event_id),
++        CONSTRAINT readings_event_fk FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
++    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
++    $pdo->exec("CREATE TABLE IF NOT EXISTS reports (
++        event_id INT UNSIGNED NOT NULL,
++        message TEXT NULL,
++        contact_phone VARCHAR(20) NULL,
++        contact_email VARCHAR(254) NULL,
++        house_landmark VARCHAR(255) NULL,
++        status ENUM('pending','reviewed','resolved') DEFAULT 'pending',
++        report_type VARCHAR(30) NULL,
++        occurred_at DATETIME NULL,
++        reviewed_by INT UNSIGNED NULL,
++        reviewed_at DATETIME NULL,
++        PRIMARY KEY (event_id),
++        KEY report_status (status, event_id),
++        CONSTRAINT reports_event_fk FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
++        CONSTRAINT reports_reviewer_fk FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
++    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
++
++    schema_ensure_index($pdo, 'events', 'event_location_type', 'INDEX event_location_type (location_id, type)');
++    schema_ensure_index($pdo, 'events', 'event_type_created', 'INDEX event_type_created (type, created_at)');
++    schema_ensure_index($pdo, 'readings', 'reading_history', 'INDEX reading_history (archived, observed_at, event_id)');
++    schema_ensure_index($pdo, 'reports', 'report_status', 'INDEX report_status (status, event_id)');
++
++    // Copy only while all legacy source columns are still present. INSERT IGNORE
++    // makes an interrupted migration restartable without overwriting new details.
++    $eventColumns = schema_table_columns('events');
++    if (in_array('rainfall_1h', $eventColumns, true) && in_array('message', $eventColumns, true)) {
++        $pdo->exec("INSERT IGNORE INTO readings (
++            event_id, rainfall_1h, rainfall_24h, rainfall_72h, rainfall_forecast_24h,
++            precipitation_probability_24h, soil_moisture_9_27cm, soil_moisture_27_81cm,
++            risk_level, temperature, humidity, wind_speed, weather_code, observed_at, source,
++            rule_version, rainfall_window_end, provider_payload, adjustment_log, archived, stale
++        ) SELECT id, rainfall_1h, rainfall_24h, rainfall_72h, rainfall_forecast_24h,
++            precipitation_probability_24h, soil_moisture_9_27cm, soil_moisture_27_81cm,
++            risk_level, temperature, humidity, wind_speed, weather_code, observed_at, source,
++            rule_version, rainfall_window_end, provider_payload, adjustment_log, archived, stale
++          FROM events WHERE type = 'reading'");
++        $pdo->exec("INSERT IGNORE INTO reports (
++            event_id, message, contact_phone, contact_email, house_landmark, status,
++            report_type, occurred_at, reviewed_by, reviewed_at
++        ) SELECT e.id, e.message, e.contact_phone, e.contact_email, e.house_landmark, e.status,
++            e.report_type, e.occurred_at,
++            CASE WHEN reviewer.id IS NULL THEN NULL ELSE e.reviewed_by END, e.reviewed_at
++          FROM events e LEFT JOIN users reviewer ON reviewer.id = e.reviewed_by
++          WHERE e.type = 'report'");
++    }
++
++    $invalid = (int)$pdo->query("SELECT COUNT(*) FROM events e LEFT JOIN readings r ON r.event_id=e.id WHERE e.type='reading' AND r.event_id IS NULL")->fetchColumn()
++        + (int)$pdo->query("SELECT COUNT(*) FROM events e LEFT JOIN reports r ON r.event_id=e.id WHERE e.type='report' AND r.event_id IS NULL")->fetchColumn()
++        + (int)$pdo->query("SELECT COUNT(*) FROM readings r JOIN events e ON e.id=r.event_id WHERE e.type<>'reading'")->fetchColumn()
++        + (int)$pdo->query("SELECT COUNT(*) FROM reports r JOIN events e ON e.id=r.event_id WHERE e.type<>'report'")->fetchColumn();
++    if ($invalid !== 0) throw new RuntimeException('Event detail migration verification failed. Legacy columns were retained; restore from backup or inspect detail-table rows before retrying.');
++
++    $dropColumns = array_values(array_intersect(array_merge(LEGACY_READING_COLUMNS, LEGACY_REPORT_COLUMNS), schema_table_columns('events')));
++    if ($dropColumns) {
++        $clauses = array_map(static fn(string $column): string => 'DROP COLUMN `' . $column . '`', $dropColumns);
++        $pdo->exec('ALTER TABLE events ' . implode(', ', $clauses));
++    }
++}
+diff --git a/app/repositories.php b/app/repositories.php
+index a300dcc..b8076f6 100644
+--- a/app/repositories.php
++++ b/app/repositories.php
+@@ -1,307 +1,8 @@
+ <?php
+ declare(strict_types=1);
+ 
+-function create_user(string $fullName, string $username, string $email, string $phone, string $password): int {
+-    $pdo = db();
+-    $stmt = $pdo->prepare(
+-        "INSERT INTO users (full_name, username, email, phone, password, role)
+-         VALUES (?, ?, ?, ?, ?, 'user')"
+-    );
+-    $stmt->execute([$fullName, $username, $email, $phone, hash_password($password)]);
+-    return (int)$pdo->lastInsertId();
+-}
+-
+-// ============================================================================
+-// DATA ACCESS FUNCTIONS
+-// ============================================================================
+-
+-// Get all active locations
+-
+-function get_locations(): array {
+-    $pdo = db();
+-    return $pdo->query("SELECT * FROM locations WHERE active = 1 ORDER BY name")->fetchAll();
+-}
+-
+-// Get location by ID
+-
+-function get_location(int $id): ?array {
+-    $pdo = db();
+-    $stmt = $pdo->prepare("SELECT * FROM locations WHERE id = ?");
+-    $stmt->execute([$id]);
+-    return $stmt->fetch() ?: null;
+-}
+-
+-// Deactivate location
+-
+-function deactivate_location(int $id): bool {
+-    $pdo = db();
+-    $stmt = $pdo->prepare("UPDATE locations SET active = 0 WHERE id = ?");
+-    $stmt->execute([$id]);
+-    return $stmt->rowCount() === 1;
+-}
+-
+-// Get latest reading for location
+-
+-function get_latest_reading(int $locationId): ?array {
+-    $pdo = db();
+-    $stmt = $pdo->prepare(
+-        "SELECT e.id, e.location_id, e.user_id, e.type, e.created_at, r.*
+-         FROM events e JOIN readings r ON r.event_id = e.id
+-         WHERE e.location_id = ? AND e.type = 'reading' AND r.archived = 0
+-         ORDER BY r.observed_at DESC, e.id DESC LIMIT 1"
+-    );
+-    $stmt->execute([$locationId]);
+-    $row = $stmt->fetch();
+-    return $row ? assess_reading($row) : null;
+-}
+-
+-// Get readings for location
+-
+-function get_readings(int $locationId, int $limit = 50): array {
+-    $pdo = db();
+-    $stmt = $pdo->prepare(
+-        "SELECT e.id, e.location_id, e.user_id, e.type, e.created_at, r.*
+-         FROM events e JOIN readings r ON r.event_id = e.id
+-         WHERE e.location_id = ? AND e.type = 'reading' AND r.archived = 0
+-         ORDER BY r.observed_at DESC, e.id DESC LIMIT ?"
+-    );
+-    $stmt->bindValue(1, $locationId, PDO::PARAM_INT);
+-    $stmt->bindValue(2, max(1, $limit), PDO::PARAM_INT);
+-    $stmt->execute();
+-    return array_map('assess_reading', $stmt->fetchAll());
+-}
+-
+-// Get all recent readings
+-
+-function get_all_readings(int $limit = 100): array {
+-    $pdo = db();
+-    $rows = $pdo->query(
+-                "SELECT e.id, e.location_id, e.user_id, e.type, e.created_at, r.*,
+-                                l.name as location_name, l.purok, l.lat, l.lng
+-         FROM events e
+-                 JOIN readings r ON r.event_id = e.id
+-         JOIN locations l ON l.id = e.location_id
+-                 WHERE e.type = 'reading' AND r.archived = 0 AND l.active = 1
+-                 ORDER BY r.observed_at DESC, e.id DESC
+-         LIMIT " . max(1, (int)$limit)
+-    )->fetchAll();
+-    return array_map('assess_reading', $rows);
+-}
+-
+-// Create reading
+-
+-function create_reading(array $data): int {
+-    $pdo = db();
+-    $ownsTransaction = !$pdo->inTransaction();
+-    if ($ownsTransaction) $pdo->beginTransaction();
+-    try {
+-        $event = $pdo->prepare("INSERT INTO events (location_id, user_id, type) VALUES (?, ?, 'reading')");
+-        $event->execute([$data['location_id'], $data['user_id'] ?? null]);
+-        $id = (int)$pdo->lastInsertId();
+-        $reading = $pdo->prepare(
+-            'INSERT INTO readings (event_id, rainfall_1h, rainfall_24h, rainfall_72h, risk_level,
+-                rainfall_forecast_24h, precipitation_probability_24h, soil_moisture_9_27cm,
+-                soil_moisture_27_81cm, temperature, humidity, wind_speed, weather_code, observed_at,
+-                source, rule_version, rainfall_window_end, provider_payload)
+-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+-        );
+-        $reading->execute([
+-            $id, $data['rainfall_1h'] ?? null, $data['rainfall_24h'] ?? null,
+-            $data['rainfall_72h'] ?? null, $data['risk_level'] ?? null,
+-            $data['rainfall_forecast_24h'] ?? null, $data['precipitation_probability_24h'] ?? null,
+-            $data['soil_moisture_9_27cm'] ?? null, $data['soil_moisture_27_81cm'] ?? null,
+-            $data['temperature'] ?? null, $data['humidity'] ?? null, $data['wind_speed'] ?? null,
+-            $data['weather_code'] ?? null, $data['observed_at'], $data['source'] ?? 'openmeteo',
+-            $data['rule_version'] ?? RiskAnalyzer::VERSION, $data['rainfall_window_end'] ?? null,
+-            $data['provider_payload'] ?? null
+-        ]);
+-        if ($ownsTransaction) $pdo->commit();
+-        return $id;
+-    } catch (Throwable $error) {
+-        if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
+-        throw $error;
+-    }
+-}
+-
+-// Calculate risk level
+-
+-function get_reports(?string $status = null): array {
+-    $pdo = db();
+-        $sql = "SELECT e.id, e.location_id, e.user_id, e.type, e.created_at, r.*,
+-                                     l.name as location_name, l.purok, l.landmark, l.lat, l.lng,
+-                   l.susceptibility, u.full_name as reporter_name
+-            FROM events e
+-                        JOIN reports r ON r.event_id = e.id
+-            JOIN locations l ON l.id = e.location_id
+-            LEFT JOIN users u ON u.id = e.user_id
+-            WHERE e.type = 'report'";
+-    $params = [];
+-    if ($status) {
+-        $sql .= " AND r.status = ?";
+-        $params[] = $status;
+-    }
+-    $sql .= " ORDER BY e.created_at DESC, e.id DESC";
+-    $stmt = $pdo->prepare($sql);
+-    $stmt->execute($params);
+-    $reports = $stmt->fetchAll();
+-    $assessments = [];
+-    foreach ($reports as &$report) {
+-        $id = (int)$report['location_id'];
+-        if (!isset($assessments[$id])) $assessments[$id] = reading_assessment(get_latest_reading($id), $report);
+-        $report['location_assessment'] = $assessments[$id];
+-        // Reports should retain the last saved location risk after a later login.
+-        $report['location_risk_level'] = $assessments[$id]['category'] ?? 'unavailable';
+-    }
+-    unset($report);
+-    return $reports;
+-}
+-
+-// Get pending report counts by location
+-
+-function get_pending_counts(): array {
+-    $pdo = db();
+-    $stmt = $pdo->query(
+-        "SELECT e.location_id, COUNT(*) as count
+-         FROM events e JOIN reports r ON r.event_id = e.id
+-         WHERE e.type = 'report' AND r.status = 'pending'
+-         GROUP BY e.location_id"
+-    );
+-    $counts = [];
+-    foreach ($stmt->fetchAll() as $row) {
+-        $counts[(int)$row['location_id']] = (int)$row['count'];
+-    }
+-    return $counts;
+-}
+-
+-// Create report
+-
+-function create_report(array $data): int {
+-    $pdo = db();
+-    $ownsTransaction = !$pdo->inTransaction();
+-    if ($ownsTransaction) $pdo->beginTransaction();
+-    try {
+-        $event = $pdo->prepare("INSERT INTO events (location_id, user_id, type) VALUES (?, ?, 'report')");
+-        $event->execute([$data['location_id'], $data['user_id'] ?? null]);
+-        $id = (int)$pdo->lastInsertId();
+-        $report = $pdo->prepare(
+-            "INSERT INTO reports (event_id, message, contact_phone, contact_email, house_landmark, status, report_type, occurred_at)
+-             VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)"
+-        );
+-        $report->execute([
+-            $id, $data['message'], $data['contact_phone'], $data['contact_email'] ?? null,
+-            $data['house_landmark'] ?? null, $data['report_type'] ?? 'other', $data['occurred_at'] ?? null
+-        ]);
+-        if ($ownsTransaction) $pdo->commit();
+-        return $id;
+-    } catch (Throwable $error) {
+-        if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
+-        throw $error;
+-    }
+-}
+-
+-// Update report status
+-
+-function update_report(int $id, string $status, int $adminId): bool {
+-    require_awareness_schema();
+-    $pdo = db();
+-    if (!in_array($status, ['reviewed','resolved'], true)) throw new InvalidArgumentException('Invalid review status.');
+-    $stmt = $pdo->prepare("UPDATE reports r JOIN events e ON e.id = r.event_id
+-        SET r.status = ?, r.reviewed_by = ?, r.reviewed_at = UTC_TIMESTAMP()
+-        WHERE e.id = ? AND e.type = 'report' AND r.status = ?");
+-    $stmt->execute([$status, $adminId, $id, $status === 'reviewed' ? 'pending' : 'reviewed']);
+-    return $stmt->rowCount() === 1;
+-}
+-
+-// Delete report
+-
+-function delete_report(int $id): bool {
+-    $pdo = db();
+-    $stmt = $pdo->prepare("DELETE FROM events WHERE id = ? AND type = 'report'");
+-    $stmt->execute([$id]);
+-    return $stmt->rowCount() === 1;
+-}
+-
+-// Archive reading
+-
+-function archive_reading(int $id): bool {
+-    $pdo = db();
+-    $stmt = $pdo->prepare("UPDATE readings r JOIN events e ON e.id = r.event_id
+-        SET r.archived = 1 WHERE e.id = ? AND e.type = 'reading' AND r.archived = 0");
+-    $stmt->execute([$id]);
+-    return $stmt->rowCount() === 1;
+-}
+-
+-
+-function update_reading_risk(int $readingId, string $risk, int $adminId, string $reason): void {
+-    require_awareness_schema();
+-    if (!in_array($risk, ['low','normal','medium','high'], true) || trim($reason)==='' || strlen($reason)>500) throw new InvalidArgumentException('Valid category and adjustment reason are required.');
+-    $pdo=db(); $pdo->beginTransaction();
+-    try {
+-        $stmt=$pdo->prepare("SELECT r.risk_level, r.adjustment_log FROM readings r
+-            JOIN events e ON e.id=r.event_id
+-            WHERE e.id=? AND e.type='reading' AND r.archived=0 FOR UPDATE");
+-        $stmt->execute([$readingId]); $row=$stmt->fetch();
+-        if (!$row) throw new InvalidArgumentException('Reading not found.');
+-        $log=json_decode($row['adjustment_log'] ?? '[]',true);
+-        if (!is_array($log)) throw new RuntimeException('Invalid existing adjustment log.');
+-        $log[]=['by'=>$adminId,'at'=>gmdate('Y-m-d H:i:s'),'from'=>$row['risk_level'],'to'=>$risk,'reason'=>trim($reason)];
+-        $stmt=$pdo->prepare('UPDATE readings SET risk_level=?, adjustment_log=? WHERE event_id=?');
+-        $stmt->execute([$risk,json_encode($log,JSON_THROW_ON_ERROR),$readingId]); $pdo->commit();
+-    } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
+-}
+-
+-// ============================================================================
+-// WEATHER API FUNCTIONS
+-// ============================================================================
+-
+-// Fetch weather from Open-Meteo
+-
+-function get_or_create_location(float $lat, float $lng, ?string $landmark = null): array {
+-    if (!is_finite($lat) || !is_finite($lng) || !is_in_irisan($lat, $lng) || strlen((string)$landmark) > 255) {
+-        throw new InvalidArgumentException('Invalid Irisan location or address.');
+-    }
+-    $pdo = db();
+-
+-    // Round to 5 decimal places
+-    $lat = round($lat, 5);
+-    $lng = round($lng, 5);
+-
+-    // Check if exists
+-    $stmt = $pdo->prepare("SELECT * FROM locations WHERE lat = ? AND lng = ?");
+-    $stmt->execute([$lat, $lng]);
+-
+-    if ($loc = $stmt->fetch()) {
+-        if (!$loc['active']) {
+-            throw new InvalidArgumentException('This monitoring point was removed by an administrator.');
+-        }
+-        $savedAddress = trim((string)($loc['landmark'] ?? ''));
+-        $placeholder = $savedAddress === '' || strcasecmp($savedAddress, 'Map point') === 0 ||
+-            (bool)preg_match('/^(?:Map point,\s*)?Barangay Irisan,\s*Baguio City,\s*Benguet,\s*Philippines$/i', $savedAddress);
+-        if ($placeholder && trim((string)$landmark) !== '') {
+-            // Preserve an existing specific address, including one entered by a resident or administrator.
+-            $stmt = $pdo->prepare('UPDATE locations SET landmark = ? WHERE id = ? AND landmark <=> ?');
+-            $stmt->execute([trim((string)$landmark), $loc['id'], $loc['landmark']]);
+-            return get_location((int)$loc['id']) ?? $loc;
+-        }
+-        return $loc;
+-    }
+-
+-    // Create new
+-    $name = sprintf('Irisan %.5f, %.5f', $lat, $lng);
+-    $stmt = $pdo->prepare(
+-        "INSERT INTO locations (name, purok, landmark, lat, lng, susceptibility, active)
+-         VALUES (?, NULL, ?, ?, ?, 'unknown', 1)"
+-    );
+-    $landmark = trim((string)$landmark);
+-    try {
+-        $stmt->execute([$name, $landmark !== '' ? $landmark : null, $lat, $lng]);
+-    } catch (PDOException $error) {
+-        if ($error->getCode() !== '23000') throw $error;
+-        $existing = $pdo->prepare('SELECT * FROM locations WHERE lat = ? AND lng = ?');
+-        $existing->execute([$lat, $lng]);
+-        $row = $existing->fetch();
+-        if (!$row || !$row['active']) throw $error;
+-        return $row;
+-    }
+-    return get_location((int)$pdo->lastInsertId());
+-}
++// Load the database modules; existing callers keep the same function names.
++require_once __DIR__ . '/repositories/users.php';
++require_once __DIR__ . '/repositories/locations.php';
++require_once __DIR__ . '/repositories/readings.php';
++require_once __DIR__ . '/repositories/reports.php';
+diff --git a/app/repositories/locations.php b/app/repositories/locations.php
+new file mode 100644
+index 0000000..2e22848
+--- /dev/null
++++ b/app/repositories/locations.php
+@@ -0,0 +1,73 @@
++<?php
++declare(strict_types=1);
++
++// Locations database operations.
++
++function get_locations(): array {
++    $pdo = db();
++    return $pdo->query("SELECT * FROM locations WHERE active = 1 ORDER BY name")->fetchAll();
++}
++
++function get_location(int $id): ?array {
++    $pdo = db();
++    $stmt = $pdo->prepare("SELECT * FROM locations WHERE id = ?");
++    $stmt->execute([$id]);
++    return $stmt->fetch() ?: null;
++}
++
++function deactivate_location(int $id): bool {
++    $pdo = db();
++    $stmt = $pdo->prepare("UPDATE locations SET active = 0 WHERE id = ?");
++    $stmt->execute([$id]);
++    return $stmt->rowCount() === 1;
++}
++
++function get_or_create_location(float $lat, float $lng, ?string $landmark = null): array {
++    if (!is_finite($lat) || !is_finite($lng) || !is_in_irisan($lat, $lng) || strlen((string)$landmark) > 255) {
++        throw new InvalidArgumentException('Invalid Irisan location or address.');
++    }
++    $pdo = db();
++
++    // Round to 5 decimal places
++    $lat = round($lat, 5);
++    $lng = round($lng, 5);
++
++    // Check if exists
++    $stmt = $pdo->prepare("SELECT * FROM locations WHERE lat = ? AND lng = ?");
++    $stmt->execute([$lat, $lng]);
++
++    if ($loc = $stmt->fetch()) {
++        if (!$loc['active']) {
++            throw new InvalidArgumentException('This monitoring point was removed by an administrator.');
++        }
++        $savedAddress = trim((string)($loc['landmark'] ?? ''));
++        $placeholder = $savedAddress === '' || strcasecmp($savedAddress, 'Map point') === 0 ||
++            (bool)preg_match('/^(?:Map point,\s*)?Barangay Irisan,\s*Baguio City,\s*Benguet,\s*Philippines$/i', $savedAddress);
++        if ($placeholder && trim((string)$landmark) !== '') {
++            // Preserve an existing specific address, including one entered by a resident or administrator.
++            $stmt = $pdo->prepare('UPDATE locations SET landmark = ? WHERE id = ? AND landmark <=> ?');
++            $stmt->execute([trim((string)$landmark), $loc['id'], $loc['landmark']]);
++            return get_location((int)$loc['id']) ?? $loc;
++        }
++        return $loc;
++    }
++
++    // Create new
++    $name = sprintf('Irisan %.5f, %.5f', $lat, $lng);
++    $stmt = $pdo->prepare(
++        "INSERT INTO locations (name, purok, landmark, lat, lng, susceptibility, active)
++         VALUES (?, NULL, ?, ?, ?, 'unknown', 1)"
++    );
++    $landmark = trim((string)$landmark);
++    try {
++        $stmt->execute([$name, $landmark !== '' ? $landmark : null, $lat, $lng]);
++    } catch (PDOException $error) {
++        if ($error->getCode() !== '23000') throw $error;
++        $existing = $pdo->prepare('SELECT * FROM locations WHERE lat = ? AND lng = ?');
++        $existing->execute([$lat, $lng]);
++        $row = $existing->fetch();
++        if (!$row || !$row['active']) throw $error;
++        return $row;
++    }
++    return get_location((int)$pdo->lastInsertId());
++}
+diff --git a/app/repositories/readings.php b/app/repositories/readings.php
+new file mode 100644
+index 0000000..72b10e2
+--- /dev/null
++++ b/app/repositories/readings.php
+@@ -0,0 +1,105 @@
++<?php
++declare(strict_types=1);
++
++// Readings database operations.
++
++function get_latest_reading(int $locationId): ?array {
++    $pdo = db();
++    $stmt = $pdo->prepare(
++        "SELECT e.id, e.location_id, e.user_id, e.type, e.created_at, r.*
++         FROM events e JOIN readings r ON r.event_id = e.id
++         WHERE e.location_id = ? AND e.type = 'reading' AND r.archived = 0
++         ORDER BY r.observed_at DESC, e.id DESC LIMIT 1"
++    );
++    $stmt->execute([$locationId]);
++    $row = $stmt->fetch();
++    return $row ? assess_reading($row) : null;
++}
++
++function get_readings(int $locationId, int $limit = 50): array {
++    $pdo = db();
++    $stmt = $pdo->prepare(
++        "SELECT e.id, e.location_id, e.user_id, e.type, e.created_at, r.*
++         FROM events e JOIN readings r ON r.event_id = e.id
++         WHERE e.location_id = ? AND e.type = 'reading' AND r.archived = 0
++         ORDER BY r.observed_at DESC, e.id DESC LIMIT ?"
++    );
++    $stmt->bindValue(1, $locationId, PDO::PARAM_INT);
++    $stmt->bindValue(2, max(1, $limit), PDO::PARAM_INT);
++    $stmt->execute();
++    return array_map('assess_reading', $stmt->fetchAll());
++}
++
++function get_all_readings(int $limit = 100): array {
++    $pdo = db();
++    $rows = $pdo->query(
++                "SELECT e.id, e.location_id, e.user_id, e.type, e.created_at, r.*,
++                                l.name as location_name, l.purok, l.lat, l.lng
++         FROM events e
++                 JOIN readings r ON r.event_id = e.id
++         JOIN locations l ON l.id = e.location_id
++                 WHERE e.type = 'reading' AND r.archived = 0 AND l.active = 1
++                 ORDER BY r.observed_at DESC, e.id DESC
++         LIMIT " . max(1, (int)$limit)
++    )->fetchAll();
++    return array_map('assess_reading', $rows);
++}
++
++function create_reading(array $data): int {
++    $pdo = db();
++    $ownsTransaction = !$pdo->inTransaction();
++    if ($ownsTransaction) $pdo->beginTransaction();
++    try {
++        $event = $pdo->prepare("INSERT INTO events (location_id, user_id, type) VALUES (?, ?, 'reading')");
++        $event->execute([$data['location_id'], $data['user_id'] ?? null]);
++        $id = (int)$pdo->lastInsertId();
++        $reading = $pdo->prepare(
++            'INSERT INTO readings (event_id, rainfall_1h, rainfall_24h, rainfall_72h, risk_level,
++                rainfall_forecast_24h, precipitation_probability_24h, soil_moisture_9_27cm,
++                soil_moisture_27_81cm, temperature, humidity, wind_speed, weather_code, observed_at,
++                source, rule_version, rainfall_window_end, provider_payload)
++             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
++        );
++        $reading->execute([
++            $id, $data['rainfall_1h'] ?? null, $data['rainfall_24h'] ?? null,
++            $data['rainfall_72h'] ?? null, $data['risk_level'] ?? null,
++            $data['rainfall_forecast_24h'] ?? null, $data['precipitation_probability_24h'] ?? null,
++            $data['soil_moisture_9_27cm'] ?? null, $data['soil_moisture_27_81cm'] ?? null,
++            $data['temperature'] ?? null, $data['humidity'] ?? null, $data['wind_speed'] ?? null,
++            $data['weather_code'] ?? null, $data['observed_at'], $data['source'] ?? 'openmeteo',
++            $data['rule_version'] ?? RiskAnalyzer::VERSION, $data['rainfall_window_end'] ?? null,
++            $data['provider_payload'] ?? null
++        ]);
++        if ($ownsTransaction) $pdo->commit();
++        return $id;
++    } catch (Throwable $error) {
++        if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
++        throw $error;
++    }
++}
++
++function archive_reading(int $id): bool {
++    $pdo = db();
++    $stmt = $pdo->prepare("UPDATE readings r JOIN events e ON e.id = r.event_id
++        SET r.archived = 1 WHERE e.id = ? AND e.type = 'reading' AND r.archived = 0");
++    $stmt->execute([$id]);
++    return $stmt->rowCount() === 1;
++}
++
++function update_reading_risk(int $readingId, string $risk, int $adminId, string $reason): void {
++    require_awareness_schema();
++    if (!in_array($risk, ['low','normal','medium','high'], true) || trim($reason)==='' || strlen($reason)>500) throw new InvalidArgumentException('Valid category and adjustment reason are required.');
++    $pdo=db(); $pdo->beginTransaction();
++    try {
++        $stmt=$pdo->prepare("SELECT r.risk_level, r.adjustment_log FROM readings r
++            JOIN events e ON e.id=r.event_id
++            WHERE e.id=? AND e.type='reading' AND r.archived=0 FOR UPDATE");
++        $stmt->execute([$readingId]); $row=$stmt->fetch();
++        if (!$row) throw new InvalidArgumentException('Reading not found.');
++        $log=json_decode($row['adjustment_log'] ?? '[]',true);
++        if (!is_array($log)) throw new RuntimeException('Invalid existing adjustment log.');
++        $log[]=['by'=>$adminId,'at'=>gmdate('Y-m-d H:i:s'),'from'=>$row['risk_level'],'to'=>$risk,'reason'=>trim($reason)];
++        $stmt=$pdo->prepare('UPDATE readings SET risk_level=?, adjustment_log=? WHERE event_id=?');
++        $stmt->execute([$risk,json_encode($log,JSON_THROW_ON_ERROR),$readingId]); $pdo->commit();
++    } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
++}
+diff --git a/app/repositories/reports.php b/app/repositories/reports.php
+new file mode 100644
+index 0000000..99dd86b
+--- /dev/null
++++ b/app/repositories/reports.php
+@@ -0,0 +1,92 @@
++<?php
++declare(strict_types=1);
++
++// Reports database operations.
++
++function get_reports(?string $status = null): array {
++    $pdo = db();
++        $sql = "SELECT e.id, e.location_id, e.user_id, e.type, e.created_at, r.*,
++                                     l.name as location_name, l.purok, l.landmark, l.lat, l.lng,
++                   l.susceptibility, u.full_name as reporter_name
++            FROM events e
++                        JOIN reports r ON r.event_id = e.id
++            JOIN locations l ON l.id = e.location_id
++            LEFT JOIN users u ON u.id = e.user_id
++            WHERE e.type = 'report'";
++    $params = [];
++    if ($status) {
++        $sql .= " AND r.status = ?";
++        $params[] = $status;
++    }
++    $sql .= " ORDER BY e.created_at DESC, e.id DESC";
++    $stmt = $pdo->prepare($sql);
++    $stmt->execute($params);
++    $reports = $stmt->fetchAll();
++    $assessments = [];
++    foreach ($reports as &$report) {
++        $id = (int)$report['location_id'];
++        if (!isset($assessments[$id])) $assessments[$id] = reading_assessment(get_latest_reading($id), $report);
++        $report['location_assessment'] = $assessments[$id];
++        // Reports should retain the last saved location risk after a later login.
++        $report['location_risk_level'] = $assessments[$id]['category'] ?? 'unavailable';
++    }
++    unset($report);
++    return $reports;
++}
++
++function get_pending_counts(): array {
++    $pdo = db();
++    $stmt = $pdo->query(
++        "SELECT e.location_id, COUNT(*) as count
++         FROM events e JOIN reports r ON r.event_id = e.id
++         WHERE e.type = 'report' AND r.status = 'pending'
++         GROUP BY e.location_id"
++    );
++    $counts = [];
++    foreach ($stmt->fetchAll() as $row) {
++        $counts[(int)$row['location_id']] = (int)$row['count'];
++    }
++    return $counts;
++}
++
++function create_report(array $data): int {
++    $pdo = db();
++    $ownsTransaction = !$pdo->inTransaction();
++    if ($ownsTransaction) $pdo->beginTransaction();
++    try {
++        $event = $pdo->prepare("INSERT INTO events (location_id, user_id, type) VALUES (?, ?, 'report')");
++        $event->execute([$data['location_id'], $data['user_id'] ?? null]);
++        $id = (int)$pdo->lastInsertId();
++        $report = $pdo->prepare(
++            "INSERT INTO reports (event_id, message, contact_phone, contact_email, house_landmark, status, report_type, occurred_at)
++             VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)"
++        );
++        $report->execute([
++            $id, $data['message'], $data['contact_phone'], $data['contact_email'] ?? null,
++            $data['house_landmark'] ?? null, $data['report_type'] ?? 'other', $data['occurred_at'] ?? null
++        ]);
++        if ($ownsTransaction) $pdo->commit();
++        return $id;
++    } catch (Throwable $error) {
++        if ($ownsTransaction && $pdo->inTransaction()) $pdo->rollBack();
++        throw $error;
++    }
++}
++
++function update_report(int $id, string $status, int $adminId): bool {
++    require_awareness_schema();
++    $pdo = db();
++    if (!in_array($status, ['reviewed','resolved'], true)) throw new InvalidArgumentException('Invalid review status.');
++    $stmt = $pdo->prepare("UPDATE reports r JOIN events e ON e.id = r.event_id
++        SET r.status = ?, r.reviewed_by = ?, r.reviewed_at = UTC_TIMESTAMP()
++        WHERE e.id = ? AND e.type = 'report' AND r.status = ?");
++    $stmt->execute([$status, $adminId, $id, $status === 'reviewed' ? 'pending' : 'reviewed']);
++    return $stmt->rowCount() === 1;
++}
++
++function delete_report(int $id): bool {
++    $pdo = db();
++    $stmt = $pdo->prepare("DELETE FROM events WHERE id = ? AND type = 'report'");
++    $stmt->execute([$id]);
++    return $stmt->rowCount() === 1;
++}
+diff --git a/app/repositories/users.php b/app/repositories/users.php
+new file mode 100644
+index 0000000..3223bec
+--- /dev/null
++++ b/app/repositories/users.php
+@@ -0,0 +1,14 @@
++<?php
++declare(strict_types=1);
++
++// Users database operations.
++
++function create_user(string $fullName, string $username, string $email, string $phone, string $password): int {
++    $pdo = db();
++    $stmt = $pdo->prepare(
++        "INSERT INTO users (full_name, username, email, phone, password, role)
++         VALUES (?, ?, ?, ?, ?, 'user')"
++    );
++    $stmt->execute([$fullName, $username, $email, $phone, hash_password($password)]);
++    return (int)$pdo->lastInsertId();
++}
+diff --git a/app/schema.php b/app/schema.php
+new file mode 100644
+index 0000000..8df375b
+--- /dev/null
++++ b/app/schema.php
+@@ -0,0 +1,49 @@
++<?php
++declare(strict_types=1);
++
++const LEGACY_READING_COLUMNS = [
++    'rainfall_1h','rainfall_24h','rainfall_72h','rainfall_forecast_24h',
++    'precipitation_probability_24h','soil_moisture_9_27cm','soil_moisture_27_81cm',
++    'risk_level','temperature','humidity','wind_speed','weather_code','observed_at','source',
++    'rule_version','rainfall_window_end','provider_payload','adjustment_log','archived','stale'
++];
++const LEGACY_REPORT_COLUMNS = [
++    'message','contact_phone','contact_email','house_landmark','status','report_type',
++    'occurred_at','reviewed_by','reviewed_at'
++];
++const READING_AWARENESS_COLUMNS = ['rule_version','rainfall_window_end','provider_payload','adjustment_log'];
++const REPORT_AWARENESS_COLUMNS = ['report_type','occurred_at','reviewed_by','reviewed_at'];
++
++function schema_table_exists(string $table): bool {
++    $stmt = db()->prepare('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?');
++    $stmt->execute([$table]);
++    return (int)$stmt->fetchColumn() > 0;
++}
++
++function schema_table_columns(string $table): array {
++    if (!preg_match('/^[a-z_]+$/', $table) || !schema_table_exists($table)) return [];
++    return array_column(db()->query('SHOW COLUMNS FROM `' . $table . '`')->fetchAll(), 'Field');
++}
++
++function schema_ensure_index(PDO $pdo, string $table, string $name, string $definition): void {
++    $indexes = array_column($pdo->query('SHOW INDEX FROM `' . $table . '`')->fetchAll(), 'Key_name');
++    if (!in_array($name, $indexes, true)) $pdo->exec('ALTER TABLE `' . $table . '` ADD ' . $definition);
++}
++
++function missing_awareness_columns(): array {
++    $required = ['readings'=>READING_AWARENESS_COLUMNS, 'reports'=>REPORT_AWARENESS_COLUMNS];
++    $missing = [];
++    foreach ($required as $table => $columns) {
++        $existing = schema_table_columns($table);
++        if (!$existing) {
++            $missing[] = $table;
++            continue;
++        }
++        foreach (array_diff($columns, $existing) as $column) $missing[] = $table . '.' . $column;
++    }
++    return $missing;
++}
++
++function require_awareness_schema(): void {
++    if (missing_awareness_columns()) throw new RuntimeException('Database setup is incomplete. Run php database/migrate-awareness.php before serving the updated application.');
++}
+diff --git a/tests/admin-workflow.php b/tests/admin-workflow.php
+index 87f1f1a..dad88f5 100644
+--- a/tests/admin-workflow.php
++++ b/tests/admin-workflow.php
+@@ -2,7 +2,8 @@
+ require_once __DIR__ . '/bootstrap.php';
+ foreach (['pending','reviewed','resolved'] as $status) test_check(in_array($status,['pending','reviewed','resolved'],true),'Supported report state is recognized.');
+ test_check(!in_array('deleted',['pending','reviewed','resolved'],true),'Unknown report state is rejected by the workflow contract.');
+-$path=file_get_contents(__DIR__ . '/../app/repositories.php');
++$path=file_get_contents(__DIR__ . '/../app/repositories/reports.php')
++    . file_get_contents(__DIR__ . '/../app/repositories/readings.php');
+ test_check(str_contains($path,"UPDATE reports r JOIN events e"),'Report update is scoped to report details and parent event.');
+ test_check(str_contains($path,"UPDATE readings r JOIN events e"),'Reading archive is scoped to reading details and parent event.');
+ test_check(str_contains($path,'adjustment_log'),'Reading correction audit is persisted.');

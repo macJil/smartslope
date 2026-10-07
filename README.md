@@ -13,6 +13,15 @@ SmartSlope is a PHP/MySQL academic prototype for rainfall screening and resident
 
 No JavaScript framework or build process is required. PHP routes live in the project root and `pages/`; `actions/` handles forms, `api/` handles JSON, and `app/` holds authentication, database access, weather processing and analysis.
 
+## Code organization
+
+- `app/bootstrap.php` loads the shared application code.
+- `app/repositories.php` loads four function-based modules in `app/repositories/`: users, locations, readings and reports. Existing function names and SQL are retained.
+- `app/helpers.php` provides form, URL, escaping and date helpers; `app/geography.php` checks the Irisan boundary.
+- `app/http.php` provides the shared JSON response function.
+- `app/maintenance.php` loads `app/schema.php` (schema checks) and `app/migration.php` (legacy migration).
+- `app/RiskAnalyzer.php` remains the rainfall screening class. Pages, routes, database structure and interface assets retain their existing roles.
+
 ## Main features
 
 - Resident registration/login, an Irisan map, saved reading history and a manually triggered weather refresh.
