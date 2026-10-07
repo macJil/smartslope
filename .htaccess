@@ -1,6 +1,5 @@
 # Apache/XAMPP: prevent direct downloads or execution of internal application files.
-Options -Indexes +FollowSymLinks
-DirectoryIndex index.php
+Options -Indexes
 
 <FilesMatch "(?i)^(\.env(?:\..*)?|.*\.(?:sql|patch|log|md))$">
     Require all denied
@@ -16,6 +15,6 @@ RewriteRule ^pages/admin\.php$ /admin.php [L,R=301]
 RewriteRule ^pages/readings\.php$ /readings.php [L,R=301]
 RewriteRule ^pages/Logout\.php$ /logout.php [L,R=301]
 
-# Block access to removed directories
+# Block access to internal directories
 RewriteRule ^(?:app|data|database|scripts|tests|docs|partials)(?:/|$) - [F,L]
-RewriteRule (^|/)\.(?!well-known(?:/$)) - [F,L]
+RewriteRule (^|/)\.(?!well-known(?:/|$)) - [F,L]

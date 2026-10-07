@@ -1,46 +1,30 @@
 <?php
-// Simple Index - Login/Registration Page
+/**
+ * SmartSlope - Login/Registration Page
+ */
+require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/functions.php';
-require_once __DIR__ . '/Database.php';
-require_once __DIR__ . '/User.php';
 
 start_session();
 
-// Initialize database and models first
-try {
-    $database = new Database();
-    $pdo = $database->connect();
-    $user = new User($pdo);
-} catch (PDOException $e) {
-    error_log('Database connection error in index.php: ' . $e->getMessage());
-    die("Database connection error. Please check the server configuration.");
-}
-
-// If already logged in, redirect to appropriate page
-// Only redirect if we have a valid, complete session with proper user data
-if (is_logged_in() && 
-    !empty($_SESSION['user_id']) && 
-    !empty($_SESSION['username']) && 
-    !empty($_SESSION['role']) &&
-    isset($_SESSION['full_name'])) {
+// Redirect if already logged in
+if (is_logged_in() && !empty($_SESSION['user_id']) && !empty($_SESSION['role'])) {
     redirect(is_admin() ? 'admin.php' : 'dashboard.php');
 }
 
 // Handle login
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
-    
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
     $username = trim(post('username'));
     $password = post('password');
     
-    if ($authenticatedUser = $user->authenticate($username, $password)) {
+    if ($user = authenticate_user($username, $password)) {
         session_regenerate_id(true);
-        $_SESSION = [];
-        $_SESSION['user_id'] = $authenticatedUser['id'];
-        $_SESSION['full_name'] = $authenticatedUser['full_name'];
-        $_SESSION['username'] = $authenticatedUser['username'];
-        $_SESSION['email'] = $authenticatedUser['email'];
-        $_SESSION['phone'] = $authenticatedUser['phone'];
-        $_SESSION['role'] = $authenticatedUser['role'];
+        $_SESSION['user_id'] = $user['id'];
+        $_SESSION['username'] = $user['username'];
+        $_SESSION['full_name'] = $user['full_name'];
+        $_SESSION['email'] = $user['email'];
+        $_SESSION['phone'] = $user['phone'];
+        $_SESSION['role'] = $user['role'];
         
         redirect(is_admin() ? 'admin.php' : 'dashboard.php');
     } else {
@@ -50,61 +34,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
 }
 
 // Handle registration
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
-    
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register'])) {
     $fullName = trim(post('full_name'));
     $username = trim(post('username'));
     $email = trim(post('email'));
     $phone = trim(post('phone'));
     $password = post('password');
     
-    // Simple validation
+    // Validation
     if ($fullName === '' || $username === '' || $email === '' || $phone === '' || $password === '') {
         flash('error', 'All fields are required.');
         redirect('index.php');
     }
     
-    // Validate username (3-50 chars, alphanumeric + underscore)
-    if (!preg_match('/^[a-zA-Z0-9_]{3,50}$/', $username)) {
+    if (!validate_username($username)) {
         flash('error', 'Username must be 3-50 characters (letters, numbers, underscore only).');
         redirect('index.php');
     }
     
-    // Validate email
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    if (!validate_email($email)) {
         flash('error', 'Invalid email address.');
         redirect('index.php');
     }
     
-    // Validate phone
-    if (!preg_match('/^\+?[0-9]{10,15}$/', $phone)) {
+    if (!validate_phone($phone)) {
         flash('error', 'Phone must be 10-15 digits, optionally starting with +.');
         redirect('index.php');
     }
     
-    // Validate password length
-    if (strlen($password) < 8) {
+    if (!validate_password($password)) {
         flash('error', 'Password must be at least 8 characters.');
         redirect('index.php');
     }
     
-    // Check if user exists
-    if ($user->exists($username, $email, $phone)) {
+    if (user_exists($username, $email, $phone)) {
         flash('error', 'Username, email, or phone already exists');
         redirect('index.php');
     }
     
-    // Create user
-    try {
-        $user->create($fullName, $username, $email, $phone, $password);
+    if (create_user($fullName, $username, $email, $phone, $password)) {
         flash('success', 'Registration successful! Please login.');
-    } catch (PDOException $error) {
-        error_log('Registration failed: ' . $error->getMessage());
+        redirect('index.php');
+    } else {
         flash('error', 'Registration failed. Please try again.');
+        redirect('index.php');
     }
-    
-    redirect('index.php');
 }
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -112,95 +88,127 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SmartSlope - Login</title>
-    <link rel="stylesheet" href="<?= e(url('assets/css/bootstrap.min.css')) ?>">
-    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>">
+    <link rel="stylesheet" href="<?php echo url('assets/css/bootstrap.min.css'); ?>">
+    <link rel="stylesheet" href="<?php echo url('assets/css/frontend.css'); ?>">
+    <style>
+        .auth-shell { max-width: 500px; margin: 2rem auto; }
+        .auth-intro h1 { color: var(--slope-green); font-weight: 700; letter-spacing: -.025em; }
+        .auth-intro .page-subtitle { line-height: 1.5; }
+        .auth-card { border-top: 4px solid var(--slope-green); }
+        .auth-layout { display: block; }
+        .auth-section { flex: 1 1 0; min-width: 0; padding: clamp(1.25rem, 4vw, 2rem); }
+        .auth-section > h2, .auth-section > p { text-align: center; }
+        .auth-section .form-control { text-align: left; }
+        .auth-section .form-floating > label { width: calc(100% - 2rem); text-align: left; }
+        .auth-section h2 { color: var(--slope-green); }
+        .auth-register { border-top: 1px solid var(--slope-border); background: #f7f8f3; }
+        .auth-register h2 { color: var(--slope-brown); }
+        .auth-section .btn { min-height: 2.75rem; font-weight: 600; }
+        .auth-section .form-text { line-height: 1.5; margin-top: .5rem; }
+        .auth-toggle { text-align: center; margin: 1rem 0; }
+        .auth-toggle a { text-decoration: none; }
+    </style>
 </head>
 <body>
-    <main class="container auth-shell py-4 py-md-5">
-        <div class="text-center mb-4 auth-intro">
-            <h1 class="h2 mb-2">SmartSlope</h1>
-            <p class="page-subtitle mb-0">Landslide awareness for Barangay Irisan, Baguio City</p>
-        </div>
-        
-        <?php if ($msg = flash('error')): ?>
-            <div class="alert alert-danger" role="alert"><?= e($msg) ?></div>
-        <?php endif; ?>
-        
-        <?php if ($msg = flash('success')): ?>
-            <div class="alert alert-success" role="status"><?= e($msg) ?></div>
-        <?php endif; ?>
-        
-        <div class="card auth-card">
+    <main class="auth-shell">
+        <div class="auth-card card shadow">
             <div class="auth-layout">
                 <!-- Login Section -->
-                <section class="auth-section" aria-labelledby="login-title">
-                    <h2 id="login-title" class="h4 mb-2">Log in</h2>
-                    <p class="page-subtitle mb-3">Continue to the Irisan dashboard.</p>
-                    <form method="post">
-                        <?= csrf_field() ?>
+                <div class="auth-section" id="login-section">
+                    <div class="auth-intro text-center mb-4">
+                        <h1>SmartSlope</h1>
+                        <p class="page-subtitle">Rainfall Monitoring for Barangay Irisan, Baguio City</p>
+                    </div>
+                    
+                    <?php if ($error = flash('error')): ?>
+                        <div class="alert alert-danger"><?php echo e($error); ?></div>
+                    <?php endif; ?>
+                    
+                    <?php if ($success = flash('success')): ?>
+                        <div class="alert alert-success"><?php echo e($success); ?></div>
+                    <?php endif; ?>
+                    
+                    <h2>Sign In</h2>
+                    <form method="POST" action="index.php">
                         <input type="hidden" name="login" value="1">
+                        
                         <div class="form-floating mb-3">
-                            <input type="text" name="username" id="login_username" class="form-control" 
-                                   placeholder="Username" autocomplete="username" required autofocus>
-                            <label for="login_username">Username</label>
+                            <input type="text" class="form-control" id="username" name="username" 
+                                   placeholder="Username" required autocomplete="username">
+                            <label for="username">Username</label>
                         </div>
+                        
                         <div class="form-floating mb-3">
-                            <input type="password" name="password" id="login_password" class="form-control" 
-                                   placeholder="Password" autocomplete="current-password" required>
-                            <label for="login_password">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" 
+                                   placeholder="Password" required autocomplete="current-password">
+                            <label for="password">Password</label>
                         </div>
-                        <button type="submit" class="btn btn-primary w-100">Log in</button>
+                        
+                        <button type="submit" class="btn btn-primary w-100">Sign In</button>
                     </form>
-                </section>
+                    
+                    <div class="auth-toggle">
+                        <p>Don't have an account? <a href="#" onclick="showRegister(); return false;">Register here</a></p>
+                    </div>
+                </div>
                 
-                <!-- Registration Section -->
-                <section class="auth-section auth-register" aria-labelledby="register-title">
-                    <h2 id="register-title" class="h4 mb-2">Create an account</h2>
-                    <p class="page-subtitle mb-3">Register as a resident to submit observations.</p>
-                    <form method="post">
-                        <?= csrf_field() ?>
+                <!-- Registration Section (Hidden by default) -->
+                <div class="auth-section auth-register" id="register-section" style="display: none;">
+                    <h2>Create Account</h2>
+                    <form method="POST" action="index.php">
                         <input type="hidden" name="register" value="1">
-                        <div class="d-flex flex-column gap-3">
-                            <div class="form-floating">
-                                <input type="text" name="full_name" id="register_name" class="form-control" 
-                                       placeholder="Full name" maxlength="100" autocomplete="name" required>
-                                <label for="register_name">Full name</label>
-                            </div>
-                            <div class="form-floating">
-                                <input type="text" name="username" id="register_username" class="form-control" 
-                                       placeholder="Username" minlength="3" maxlength="50" 
-                                       pattern="[A-Za-z0-9_]{3,50}" autocomplete="username" required>
-                                <label for="register_username">Username</label>
-                            </div>
-                            <div class="form-floating">
-                                <input type="email" name="email" id="register_email" class="form-control" 
-                                       placeholder="Email" maxlength="254" autocomplete="email" required>
-                                <label for="register_email">Email</label>
-                            </div>
-                            <div class="form-floating">
-                                <input type="tel" name="phone" id="register_phone" class="form-control" 
-                                       placeholder="Phone" maxlength="16" pattern="\+?[0-9]{10,15}" 
-                                       autocomplete="tel" required>
-                                <label for="register_phone">Phone</label>
-                            </div>
-                            <div>
-                                <div class="form-floating">
-                                    <input type="password" name="password" id="register_password" class="form-control" 
-                                           placeholder="Password" minlength="8" maxlength="72" 
-                                           autocomplete="new-password" required>
-                                    <label for="register_password">Password</label>
-                                </div>
-                                <div class="form-text">Use 8-72 characters. Phone numbers use 10-15 digits, optionally starting with +.</div>
-                            </div>
-                            <button type="submit" class="btn btn-primary w-100">Create account</button>
+                        
+                        <div class="form-floating mb-3">
+                            <input type="text" class="form-control" id="full_name" name="full_name" 
+                                   placeholder="Full Name" required autocomplete="name">
+                            <label for="full_name">Full Name</label>
                         </div>
+                        
+                        <div class="form-floating mb-3">
+                            <input type="text" class="form-control" id="reg_username" name="username" 
+                                   placeholder="Username" required autocomplete="username">
+                            <label for="reg_username">Username (3-50 chars, letters, numbers, underscore)</label>
+                        </div>
+                        
+                        <div class="form-floating mb-3">
+                            <input type="email" class="form-control" id="email" name="email" 
+                                   placeholder="Email" required autocomplete="email">
+                            <label for="email">Email Address</label>
+                        </div>
+                        
+                        <div class="form-floating mb-3">
+                            <input type="tel" class="form-control" id="phone" name="phone" 
+                                   placeholder="Phone" required autocomplete="tel">
+                            <label for="phone">Phone Number (10-15 digits, optional +)</label>
+                        </div>
+                        
+                        <div class="form-floating mb-3">
+                            <input type="password" class="form-control" id="reg_password" name="password" 
+                                   placeholder="Password" required autocomplete="new-password" minlength="8">
+                            <label for="reg_password">Password (min 8 characters)</label>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary w-100">Create Account</button>
                     </form>
-                </section>
+                    
+                    <div class="auth-toggle">
+                        <p>Already have an account? <a href="#" onclick="showLogin(); return false;">Sign in here</a></p>
+                    </div>
+                </div>
             </div>
         </div>
-        
-        <p class="text-center small page-subtitle mt-4">SmartSlope is an academic prototype; see the sources and methodology after signing in.</p>
     </main>
-    <script src="<?= e(url('assets/js/bootstrap.bundle.js')) ?>"></script>
+    
+    <script>
+        function showRegister() {
+            document.getElementById('login-section').style.display = 'none';
+            document.getElementById('register-section').style.display = 'block';
+        }
+        
+        function showLogin() {
+            document.getElementById('register-section').style.display = 'none';
+            document.getElementById('login-section').style.display = 'block';
+        }
+    </script>
 </body>
 </html>

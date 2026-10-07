@@ -1,50 +1,50 @@
 <?php
-// Simple Readings API Endpoint
+/**
+ * SmartSlope - Weather API Endpoint
+ */
+require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
-require_once __DIR__ . '/../Database.php';
-require_once __DIR__ . '/../Reading.php';
 
 start_session();
-header('Content-Type: application/json; charset=UTF-8');
-header('Cache-Control: no-store');
-
-function api_json(int $status, array $body): void {
-    http_response_code($status);
-    echo json_encode($body, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
-    exit;
-}
 
 if (!is_logged_in()) {
-    api_json(401, ['error' => 'Sign in required.']);
+    json_response(['error' => 'Unauthorized'], 401);
 }
 
-$database = new Database();
-$pdo = $database->connect();
-$reading = new Reading($pdo);
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$locationId = (int)($_GET['location_id'] ?? 0);
 
-// Get readings based on parameters
-$locationId = filter_var($_GET['location_id'] ?? null, FILTER_VALIDATE_INT);
-$limit = min(100, max(1, (int)($_GET['limit'] ?? 20)));
-
-if ($locationId) {
-    $readings = $reading->getByLocation($locationId, $limit);
+if ($method === 'GET') {
+    // Get readings for a location
+    if ($locationId > 0) {
+        $readings = get_readings_by_location($locationId);
+        foreach ($readings as &$r) {
+            $r['assessment'] = assess_reading($r);
+        }
+        json_response(['success' => true, 'data' => $readings]);
+    } else {
+        json_response(['error' => 'Location ID required'], 400);
+    }
+} elseif ($method === 'POST') {
+    // Fetch and save weather for a location
+    if ($locationId > 0) {
+        try {
+            $userId = $_SESSION['user_id'] ?? null;
+            $eventId = fetch_and_save_weather($locationId, $userId);
+            
+            // Get the reading we just created
+            $reading = get_latest_reading($locationId);
+            if ($reading) {
+                $reading['assessment'] = assess_reading($reading);
+            }
+            
+            json_response(['success' => true, 'event_id' => $eventId, 'data' => $reading]);
+        } catch (Exception $e) {
+            json_response(['error' => $e->getMessage()], 500);
+        }
+    } else {
+        json_response(['error' => 'Location ID required'], 400);
+    }
 } else {
-    $readings = $reading->getAllRecent($limit);
+    json_response(['error' => 'Method not allowed'], 405);
 }
-
-// Format response
-$formattedReadings = [];
-foreach ($readings as $r) {
-    $formattedReadings[] = [
-        'id' => $r['id'],
-        'location_id' => $r['location_id'],
-        'risk_level' => $r['risk_level'] ?? null,
-        'rainfall_1h' => $r['rainfall_1h'] ?? null,
-        'rainfall_24h' => $r['rainfall_24h'] ?? null,
-        'temperature' => $r['temperature'] ?? null,
-        'humidity' => $r['humidity'] ?? null,
-        'observed_at' => $r['observed_at'] ?? null,
-    ];
-}
-
-api_json(200, ['readings' => $formattedReadings]);
