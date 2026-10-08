@@ -1,4 +1,5 @@
 <?php
+
 // CSV downloads and imports
 
 function csv_rows(array $rows, bool $bom = true): string

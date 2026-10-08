@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../includes/risk.php';
 
 $analyzer = new RiskAnalyzer();
 $checks = 0;

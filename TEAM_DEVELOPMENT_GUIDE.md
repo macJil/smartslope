@@ -13,11 +13,9 @@ redirect. SmartSlope keeps PDO throughout. Failed login or registration stays on
 the same form and displays a local error variable; successful submissions redirect.
 Login and registration are separate branches, so one request handles one form.
 
-In `functions.php`, database functions are grouped by Users, Locations, Readings
-and Reports. Other sections contain errors, input/output, map boundaries, sessions,
-RiskAnalyzer, assessment, weather, CSV, setup, susceptibility, notices and HTML.
-Change a database operation in its matching section; change page markup in the
-root page or partial. Keep rendering shared between page loads and AJAX responses.
+Pages call `session_start()` and read `$_SESSION['user_id']` and
+`$_SESSION['role']` directly. There are no authentication wrapper functions.
+Each page explicitly includes only the modules it uses, with `__DIR__`.
 
 Use ordinary `if` blocks with braces and put separate statements on separate lines.
 Avoid adding new wrapper functions that only forward one call. Keep required checks
@@ -27,9 +25,15 @@ close to the operation they protect and use prepared statements for user values.
 - `dashboard.php`: map, reading history and location selection.
 - `admin.php`: administrator actions, CSV workflows and reading edits.
 - `report.php`, `readings.php`, `logout.php`, `methodology.php`: their named pages.
-- `functions.php`: helpers, PDO functions, weather, CSV and the RiskAnalyzer class,
-  grouped into named sections. It is about 60 KB; preserving existing analysis
-  and HTML rendering takes more than the illustrative 32 KB in the target tree.
+- `functions.php`: small shared input/output, error, date and flash helpers (about 3 KB).
+- `includes/data.php`: prepared PDO operations grouped by Users, Locations, Readings and Reports.
+- `includes/risk.php`: RiskAnalyzer and assessment helpers.
+- `includes/geography.php`: boundary and susceptibility lookups.
+- `includes/weather.php`: weather fetching and reading refresh.
+- `includes/csv.php`: CSV import and download.
+- `includes/setup.php`: schema checks and migration helpers.
+- `includes/awareness.php`: report types and awareness notices.
+- `includes/views.php`: reusable HTML shared by pages and AJAX responses.
 - `partials/navbar.php`: the existing navigation markup.
 - `partials/edit-reading.php`: the existing reading-edit form used by Admin.
 - `api/`: JSON endpoints. Their returned HTML uses links relative to dashboard.php.
@@ -38,14 +42,14 @@ close to the operation they protect and use prepared statements for user values.
 
 The old `pages/` and `actions/` files are tiny compatibility redirects only.
 They preserve old links and POST submissions; edit the root pages instead.
-The old `app/` implementation has been consolidated into `functions.php`.
+Shared logic is split by responsibility under `includes/`; there is no bootstrap loader.
 
 ## If login fails
 
-1. Start MySQL in dbngin/MySQL on your Mac, or MySQL in XAMPP.
-2. Keep your existing `.env`. Check DB_HOST, DB_PORT, DB_DATABASE,
-   DB_USERNAME and DB_PASSWORD against your actual local database server.
-   The patch does not replace your database credentials or your database.
+1. Start Apache and MySQL in XAMPP or MAMP.
+2. Edit `config.php`. Check DB_HOST, DB_PORT, DB_NAME,
+   DB_USER and DB_PASS against your actual local database server.
+   The supplied constants are local defaults; enter your actual settings. Your database is not changed by applying the patch.
 3. Run `php scripts/check_database.php`. It checks the connection and required
    columns without changing data or printing the password.
 4. An invalid-password message means the account was not authenticated. A

@@ -1,13 +1,17 @@
 <?php
-require_once __DIR__ . '/app/config.php';
-require_once __DIR__ . '/app/helpers.php';
-require_once __DIR__ . '/app/auth.php';
-require_once __DIR__ . '/app/RiskAnalyzer.php';
-require_once __DIR__ . '/app/assessment.php';
-require_once __DIR__ . '/app/repositories.php';
-require_once __DIR__ . '/app/map.php';
-start_session();
-require_login();
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/includes/risk.php';
+require_once __DIR__ . '/includes/data.php';
+require_once __DIR__ . '/includes/geography.php';
+require_once __DIR__ . '/includes/awareness.php';
+require_once __DIR__ . '/includes/views.php';
+
+session_start();
+if (empty($_SESSION['user_id'])) {
+    header('Location: index.php', true, 303);
+    exit;
+}
 
 $locations = get_locations();
 
@@ -180,7 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <link rel="stylesheet" href="assets/css/frontend.css?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>">
 </head>
 <body>
-    <?= ui_navigation('report') ?>
+    <?php $active = 'report'; require __DIR__ . '/partials/navbar.php'; ?>
 
     <div class="container-fluid px-3 px-lg-4 my-4">
         <div class="d-flex justify-content-between align-items-center mb-4">

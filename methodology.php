@@ -1,11 +1,15 @@
 <?php
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/includes/risk.php';
 
-start_session(); require_login();
+session_start(); if (empty($_SESSION['user_id'])) {
+    header('Location: index.php', true, 303);
+    exit;
+}
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmartSlope sources and methodology</title><link rel="stylesheet" href="assets/css/bootstrap.min.css"><link rel="stylesheet" href="assets/css/frontend.css?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>"></head>
-<body><?= ui_navigation('methodology') ?>
+<body><?php $active = 'methodology'; require __DIR__ . '/partials/navbar.php'; ?>
 <main class="container py-4 methodology-page"><header class="page-heading mb-4"><h1 class="h2 mb-1">Sources and methodology</h1><p class="page-subtitle mb-0">How the SmartSlope prototype uses and explains data.</p></header>
 <p>An API-based landslide awareness and alert prototype for Barangay Irisan. No physical sensors or AI are used. Categories are uncalibrated rainfall screening, not official warnings, landslide probabilities, or assurances of safety.</p>
 <div class="alert alert-info">Refresh weather manually to fetch data and save a snapshot. No background monitoring runs while the website is unattended. Each refresh requests provider data; no local provider cache is used.</div>

@@ -1,5 +1,5 @@
 <?php
-if (!function_exists('is_logged_in') || !is_logged_in()) {
+if (empty($_SESSION['user_id'])) {
     http_response_code(404);
     exit;
 }
@@ -8,7 +8,7 @@ if (!function_exists('is_logged_in') || !is_logged_in()) {
         'readings' => ['readings.php', 'Readings'],
         'methodology' => ['methodology.php', 'Sources & methodology'],
     ];
-    if (is_admin()) {
+    if (($_SESSION['role'] ?? '') === 'admin') {
         $links = ['dashboard' => $links['dashboard'], 'admin' => ['admin.php', 'Admin'],
             'readings' => $links['readings'], 'methodology' => $links['methodology']];
     } else {

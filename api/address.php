@@ -1,10 +1,12 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../includes/risk.php';
+require_once __DIR__ . '/../includes/geography.php';
 
 
 
-start_session();
+session_start();
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 function address_json(int $status, array $body): void
@@ -13,14 +15,14 @@ function address_json(int $status, array $body): void
     echo json_encode($body, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
     exit;
 }
-if (!is_logged_in()) {
+if (empty($_SESSION['user_id'])) {
     address_json(401, ['error' => 'Sign in required.']);
 }
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
     header('Allow: GET');
     address_json(405, ['error' => 'Method not allowed.']);
 }
-if (env_value('NOMINATIM_ENABLED', '0') !== '1') {
+if (!NOMINATIM_ENABLED) {
     address_json(200, ['address' => '']);
 }
 $lat = finite_number(get('lat'), -90, 90);

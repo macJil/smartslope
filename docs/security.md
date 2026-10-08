@@ -18,7 +18,7 @@ The project uses several application-level controls. These reduce common web ris
 
 1. Rotate the seeded administrator account password before retaining any non-disposable data.
 2. Keep `.env`, database files, scripts, source docs, tests and logs outside public access. Check actual HTTP responses on the chosen server.
-3. Apache/XAMPP reads `.htaccess` only when configured to allow overrides. Herd uses Nginx and ignores `.htaccess`; configure equivalent Nginx denials. Protect `config.php`, `functions.php`, `partials`, `data`, `database`, `scripts`, `tests`, `docs` and all dotfiles.
+3. Apache/XAMPP reads `.htaccess` only when configured to allow overrides. Herd uses Nginx and ignores `.htaccess`; configure equivalent Nginx denials. Protect `config.php`, `functions.php`, `includes`, `partials`, `data`, `database`, `scripts`, `tests`, `docs` and all dotfiles.
 4. Use HTTPS for any network-exposed deployment; the local HTTP setting cannot create a Secure cookie.
 5. Keep PHP/MySQL updated, use a least-privilege DB account for deployment, restrict access to backups and exports, and rotate credentials kept in `.env`.
 6. Treat report contact details and CSV exports as personal information. Keep only what the project needs and restrict administrator access.

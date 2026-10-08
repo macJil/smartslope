@@ -1,6 +1,10 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../includes/risk.php';
+require_once __DIR__ . '/../includes/geography.php';
+require_once __DIR__ . '/../includes/awareness.php';
+require_once __DIR__ . '/../includes/views.php';
 
 $checks = 0;
 function check_ui(bool $condition, string $message): void {

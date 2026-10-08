@@ -1,13 +1,19 @@
 <?php
-require_once __DIR__ . '/app/config.php';
-require_once __DIR__ . '/app/helpers.php';
-require_once __DIR__ . '/app/auth.php';
-require_once __DIR__ . '/app/RiskAnalyzer.php';
-require_once __DIR__ . '/app/assessment.php';
-require_once __DIR__ . '/app/repositories.php';
-require_once __DIR__ . '/app/map.php';
-start_session();
-require_admin();
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/includes/risk.php';
+require_once __DIR__ . '/includes/data.php';
+require_once __DIR__ . '/includes/geography.php';
+require_once __DIR__ . '/includes/csv.php';
+require_once __DIR__ . '/includes/setup.php';
+require_once __DIR__ . '/includes/awareness.php';
+require_once __DIR__ . '/includes/views.php';
+
+session_start();
+if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
+    header('Location: index.php', true, 303);
+    exit;
+}
 
 if (get('action') === 'edit_reading') {
     require __DIR__ . '/partials/edit-reading.php';
@@ -178,7 +184,7 @@ foreach ($reports as $report) {
     <link rel="stylesheet" href="assets/css/frontend.css?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>">
 </head>
 <body>
-    <?= ui_navigation('admin') ?>
+    <?php $active = 'admin'; require __DIR__ . '/partials/navbar.php'; ?>
 
     <div class="container my-4">
         <div class="d-flex justify-content-between align-items-center mb-4">

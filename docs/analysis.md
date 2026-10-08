@@ -1,6 +1,6 @@
 # Rainfall analysis and interpretation
 
-The `RiskAnalyzer` section in `functions.php` contains the explainable rule class (`prototype-1`). It reads saved totals for the preceding 1, 24 and 72 hours. The strongest threshold met by any one window determines the category.
+The `RiskAnalyzer` section in `includes/risk.php` contains the explainable rule class (`prototype-1`). It reads saved totals for the preceding 1, 24 and 72 hours. The strongest threshold met by any one window determines the category.
 
 | Category | 1 hour | 24 hours | 72 hours |
 | --- | ---: | ---: | ---: |

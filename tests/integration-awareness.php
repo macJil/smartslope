@@ -1,6 +1,14 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../includes/risk.php';
+require_once __DIR__ . '/../includes/data.php';
+require_once __DIR__ . '/../includes/geography.php';
+require_once __DIR__ . '/../includes/weather.php';
+require_once __DIR__ . '/../includes/csv.php';
+require_once __DIR__ . '/../includes/setup.php';
+require_once __DIR__ . '/../includes/awareness.php';
+require_once __DIR__ . '/../includes/views.php';
 
 if (!str_ends_with($config['db_name'],'_test')) throw new RuntimeException('Use a disposable *_test database.');
 $pdo=db();

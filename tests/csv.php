@@ -1,6 +1,9 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../includes/risk.php';
+require_once __DIR__ . '/../includes/csv.php';
+require_once __DIR__ . '/../includes/views.php';
 
 set_error_handler(static function(int $severity,string $message): never { throw new ErrorException($message,0,$severity); });
 $checks=0;

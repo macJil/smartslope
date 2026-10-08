@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../includes/risk.php';
 
 $config['freshness_seconds'] = 10800;
 $config['future_tolerance_seconds'] = 300;

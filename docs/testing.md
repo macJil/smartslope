@@ -38,7 +38,7 @@ On 2026-10-03, the student reported that the website's components and features h
 ## Before a final classroom demonstration
 
 - Confirm which exact `sf2` commit will be presented and run the commands above on that checkout.
-- Verify the project on the intended Herd/XAMPP instance, with the migration applied to a disposable copy first.
+- Verify the project on the intended XAMPP/MAMP instance, with the migration applied to a disposable copy first.
 - Demonstrate resident report submission and admin review, refresh failure preserving history, risk edit reason/audit, and CSV export.
 - Check internal-file denial on the actual web server. `.htaccess` does not apply to Nginx.
 - Do not use live resident contact data in screenshots or sample records.
@@ -51,7 +51,7 @@ For the current simplification, verify editable CSV round trips, a later invalid
 ## Database checks for this patch
 
 Use a fresh disposable database ending in `_test`, populated from `database/schema.sql`.
-Configure DB_DATABASE and the other DB environment variables for that database.
+In a separate test checkout, edit DB_NAME and the other database constants in config.php for that database. Never point these tests at your working database.
 
 ```sh
 php tests/integration-awareness.php
@@ -66,5 +66,5 @@ Linux with shared extensions:
 php -n -d extension=pdo -d extension=mysqlnd -d extension=pdo_mysql tests/refresh.php
 ```
 
-Extension names/loading differ on Herd and XAMPP. The fixture test must run
+Extension names/loading differ on XAMPP and MAMP. The fixture test must run
 without the real cURL extension; it does not prove live provider availability.

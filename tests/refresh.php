@@ -1,6 +1,10 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../includes/risk.php';
+require_once __DIR__ . '/../includes/data.php';
+require_once __DIR__ . '/../includes/geography.php';
+require_once __DIR__ . '/../includes/weather.php';
 // Run with PDO/MySQL enabled and cURL disabled; HTTP is replaced by a fixture.
 if (PHP_SAPI !== 'cli') exit;
 if (extension_loaded('curl')) {

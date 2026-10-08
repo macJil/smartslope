@@ -1,5 +1,5 @@
 <?php
-if (!function_exists('is_admin') || !is_admin()) {
+if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
     http_response_code(404);
     exit;
 }
@@ -51,7 +51,7 @@ $loc = get_location($reading['location_id']);
     <link rel="stylesheet" href="assets/css/frontend.css?v=<?= (int) filemtime(__DIR__ . '/../assets/css/frontend.css') ?>">
 </head>
 <body>
-    <?= ui_navigation('admin') ?>
+    <?php $active = 'admin'; require __DIR__ . '/navbar.php'; ?>
     <main class="container my-5">
         <div class="row justify-content-center">
             <div class="col-md-6">

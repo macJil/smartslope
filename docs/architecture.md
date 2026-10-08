@@ -8,18 +8,18 @@ SmartSlope uses a small PHP application with browser pages, shared application c
 | --- | --- | --- |
 | Browser routes and templates | Root PHP pages, `partials/navbar.php`, `partials/edit-reading.php` | Render login, dashboard, report and admin views. |
 | Actions and API | Root page POST handlers, `api/readings.php`, `api/address.php` | Check session/role, process forms and return JSON or redirect. Old `actions/` and `pages/` files only redirect for compatibility. |
-| Shared application logic | Direct includes of root `config.php` and `functions.php` | Database settings, PDO connection, named helper functions, RiskAnalyzer and HTML rendering. Includes use `__DIR__`; browser links are relative, with no URL base detection. |
+| Shared application logic | Direct includes of root `config.php`, `functions.php` and selected `includes/` modules | Database settings, PDO connection, named helper functions, RiskAnalyzer and HTML rendering. Includes use `__DIR__`; browser links are relative, with no URL base detection. |
 | Storage | `database/schema.sql`, `database/migrate-awareness.php`, MySQL | Persist users, locations and reading/report events. |
 | Browser assets | `assets/js/`, `assets/css/`, `assets/vendor/`, `assets/map/`, `assets/map-tiles/` | Local Bootstrap, Leaflet, jQuery, map boundary, AJAX, styling and tiles. |
 
-Each PHP entry point loads the explicit shared bootstrap using `__DIR__`. Configuration reads `.env`; PDO connects lazily with exceptions, utf8mb4, native prepared statements and UTC session time.
+Each PHP entry point directly includes its required files using `__DIR__`. Configuration contains plain database constants; PDO connects lazily with exceptions, utf8mb4, native prepared statements and UTC session time.
 
 ## Reading refresh flow
 
 1. A signed-in user chooses an active point inside the Irisan polygon and presses Refresh.
 2. `assets/js/dashboard.js` sends a session-authenticated POST to `api/readings.php`.
-3. The endpoint checks the session, method, token and positive location ID.
-4. `app/weather.php` validates the active point, calls Open-Meteo through the provider helper, validates units/timestamps/ranges, and totals complete 1/24/72 hour windows.
+3. The endpoint checks the session, method and positive location ID.
+4. `includes/weather.php` validates the active point, calls Open-Meteo through the provider helper, validates units/timestamps/ranges, and totals complete 1/24/72 hour windows.
 5. `RiskAnalyzer` assigns the highest reached prototype rainfall category; `refresh_location()` stores a new `events` snapshot with a prepared INSERT.
 6. The endpoint recomputes freshness and explanatory assessment, then returns JSON and rendered fragments for the dashboard.
 

@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../includes/risk.php';
+require_once __DIR__ . '/../includes/geography.php';
 
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 $path=$argv[1] ?? '';

@@ -2,16 +2,28 @@
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/functions.php';
-start_session();
-require_login();
+require_once __DIR__ . '/includes/risk.php';
+require_once __DIR__ . '/includes/data.php';
+require_once __DIR__ . '/includes/geography.php';
+require_once __DIR__ . '/includes/csv.php';
+require_once __DIR__ . '/includes/awareness.php';
+require_once __DIR__ . '/includes/views.php';
+session_start();
+if (empty($_SESSION['user_id'])) {
+    header('Location: index.php', true, 303);
+    exit;
+}
 
 $readings = get_all_readings(100);
-$isAdmin = is_admin();
+$isAdmin = (!empty($_SESSION['user_id']) && ($_SESSION['role'] ?? '') === 'admin');
 $uiLocations = array_column(get_locations(), null, 'id');
 
 // Export CSV
 if (get('action') === 'export') {
-    require_admin();
+    if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
+    header('Location: index.php', true, 303);
+    exit;
+}
     download_csv('smartslope_readings_' . gmdate('Y-m-d') . '.csv', export_readings_csv(get_all_readings(PHP_INT_MAX)));
 }
 ?>
@@ -28,7 +40,7 @@ if (get('action') === 'export') {
     <link rel="stylesheet" href="assets/css/frontend.css?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>">
 </head>
 <body>
-    <?= ui_navigation('readings') ?>
+    <?php $active = 'readings'; require __DIR__ . '/partials/navbar.php'; ?>
 
     <div class="container my-4">
         <div class="d-flex justify-content-between align-items-center mb-4">

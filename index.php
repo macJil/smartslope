@@ -1,19 +1,14 @@
 <?php
-require_once __DIR__ . '/app/config.php';
-require_once __DIR__ . '/app/helpers.php';
-require_once __DIR__ . '/app/auth.php';
-require_once __DIR__ . '/app/RiskAnalyzer.php';
-require_once __DIR__ . '/app/assessment.php';
-require_once __DIR__ . '/app/repositories.php';
 
-start_session();
-// ... rest of code (unchanged)
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/includes/data.php';
 
-start_session();
+session_start();
 
 // An authenticated visitor goes straight to their page.
-if (is_logged_in()) {
-    if (is_admin()) {
+if (!empty($_SESSION['user_id'])) {
+    if (($_SESSION['role'] ?? '') === 'admin') {
         redirect('admin.php');
     }
     redirect('dashboard.php');

@@ -6,6 +6,7 @@ if (PHP_SAPI !== 'cli') {
 }
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../includes/setup.php';
 
 echo 'PHP: ' . PHP_VERSION . "\n";
 echo 'Database: ' . DB_NAME . ' at ' . DB_HOST . ':' . DB_PORT . "\n";

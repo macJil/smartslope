@@ -1,10 +1,16 @@
 <?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../includes/risk.php';
+require_once __DIR__ . '/../includes/data.php';
+require_once __DIR__ . '/../includes/geography.php';
+require_once __DIR__ . '/../includes/weather.php';
+require_once __DIR__ . '/../includes/awareness.php';
+require_once __DIR__ . '/../includes/views.php';
 
 
 
-start_session();
+session_start();
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
@@ -15,7 +21,7 @@ function reading_json(int $status, array $body): void
     echo json_encode($body, JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
     exit;
 }
-if (!is_logged_in()) {
+if (empty($_SESSION['user_id'])) {
     reading_json(401, ['error' => 'Please sign in again.']);
 }
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -56,11 +62,11 @@ try {
         'readings' => $readings,
         'view' => [
             'assessment' => ui_assessment_panel($latest, $location, $assessment),
-            'readings' => ui_readings_rows($readings, is_admin(), 'dashboard-readings', 'bulkDashboardReadingsForm', [$locationId => $location]),
+            'readings' => ui_readings_rows($readings, (!empty($_SESSION['user_id']) && ($_SESSION['role'] ?? '') === 'admin'), 'dashboard-readings', 'bulkDashboardReadingsForm', [$locationId => $location]),
             'high' => ui_current_count($readings, 'high'),
             'medium' => ui_current_count($readings, 'medium'),
             'history' => ui_history($readings),
-            'reports' => ui_report_summary($reportCounts, is_admin()),
+            'reports' => ui_report_summary($reportCounts, (!empty($_SESSION['user_id']) && ($_SESSION['role'] ?? '') === 'admin')),
         ],
     ]);
 } catch (Throwable $error) {
