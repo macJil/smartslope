@@ -4,10 +4,10 @@
 // XAMPP commonly uses port 3306 and a blank root password.
 // For MAMP, check the MySQL port and password in the application settings.
 const DB_HOST = '127.0.0.1';
-const DB_PORT = '3306';
+const DB_PORT = '8889';
 const DB_NAME = 'smartslope_mvp';
 const DB_USER = 'root';
-const DB_PASS = '';
+const DB_PASS = 'root';
 const NOMINATIM_ENABLED = false;
 
 const APP_TIMEZONE = 'UTC';
