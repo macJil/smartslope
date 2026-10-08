@@ -5,6 +5,24 @@ Configuration contains database settings and a reusable PDO connection, with no
 URL detection or base-path constants. Browser links are ordinary relative URLs.
 Open the project at its site root, or at `/smartslope/` on XAMPP.
 
+## Reading the code
+
+`index.php` follows the reference project's straightforward login sequence:
+prepared account query, `password_verify()`, session values, then a role-based
+redirect. SmartSlope keeps PDO throughout. Failed login or registration stays on
+the same form and displays a local error variable; successful submissions redirect.
+Login and registration are separate branches, so one request handles one form.
+
+In `functions.php`, database functions are grouped by Users, Locations, Readings
+and Reports. Other sections contain errors, input/output, map boundaries, sessions,
+RiskAnalyzer, assessment, weather, CSV, setup, susceptibility, notices and HTML.
+Change a database operation in its matching section; change page markup in the
+root page or partial. Keep rendering shared between page loads and AJAX responses.
+
+Use ordinary `if` blocks with braces and put separate statements on separate lines.
+Avoid adding new wrapper functions that only forward one call. Keep required checks
+close to the operation they protect and use prepared statements for user values.
+
 - `index.php`: registration and a direct prepared-query/password/session login.
 - `dashboard.php`: map, reading history and location selection.
 - `admin.php`: administrator actions, CSV workflows and reading edits.

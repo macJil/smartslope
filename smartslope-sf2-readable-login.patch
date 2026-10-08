@@ -1,0 +1,986 @@
+diff --git a/TEAM_DEVELOPMENT_GUIDE.md b/TEAM_DEVELOPMENT_GUIDE.md
+index 36760ab..96df827 100644
+--- a/TEAM_DEVELOPMENT_GUIDE.md
++++ b/TEAM_DEVELOPMENT_GUIDE.md
+@@ -5,6 +5,24 @@ Configuration contains database settings and a reusable PDO connection, with no
+ URL detection or base-path constants. Browser links are ordinary relative URLs.
+ Open the project at its site root, or at `/smartslope/` on XAMPP.
+ 
++## Reading the code
++
++`index.php` follows the reference project's straightforward login sequence:
++prepared account query, `password_verify()`, session values, then a role-based
++redirect. SmartSlope keeps PDO throughout. Failed login or registration stays on
++the same form and displays a local error variable; successful submissions redirect.
++Login and registration are separate branches, so one request handles one form.
++
++In `functions.php`, database functions are grouped by Users, Locations, Readings
++and Reports. Other sections contain errors, input/output, map boundaries, sessions,
++RiskAnalyzer, assessment, weather, CSV, setup, susceptibility, notices and HTML.
++Change a database operation in its matching section; change page markup in the
++root page or partial. Keep rendering shared between page loads and AJAX responses.
++
++Use ordinary `if` blocks with braces and put separate statements on separate lines.
++Avoid adding new wrapper functions that only forward one call. Keep required checks
++close to the operation they protect and use prepared statements for user values.
++
+ - `index.php`: registration and a direct prepared-query/password/session login.
+ - `dashboard.php`: map, reading history and location selection.
+ - `admin.php`: administrator actions, CSV workflows and reading edits.
+diff --git a/config.php b/config.php
+index 06bb428..8e1a717 100644
+--- a/config.php
++++ b/config.php
+@@ -1,10 +1,13 @@
+ <?php
++
+ // Settings come from .env, or from these local-development defaults.
+ $envFile = __DIR__ . '/.env';
+ if (is_file($envFile)) {
+     foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+         $line = trim($line);
+-        if ($line === '' || $line[0] === '#' || !str_contains($line, '=')) continue;
++        if ($line === '' || $line[0] === '#' || !str_contains($line, '=')) {
++            continue;
++        }
+         [$name, $value] = explode('=', $line, 2);
+         $name = trim($name);
+         if ($name !== '' && getenv($name) === false && !isset($_ENV[$name])) {
+@@ -13,7 +16,8 @@ if (is_file($envFile)) {
+     }
+ }
+ 
+-function env_value(string $name, string $default = ''): string {
++function env_value(string $name, string $default = ''): string
++{
+     $value = $_ENV[$name] ?? getenv($name);
+     return $value === false ? $default : (string)$value;
+ }
+@@ -31,7 +35,8 @@ $config = [
+     'future_tolerance_seconds' => 300,
+ ];
+ 
+-function db(): PDO {
++function db(): PDO
++{
+     static $pdo = null;
+     if ($pdo === null) {
+         $pdo = new PDO('mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS, [
+diff --git a/dashboard.php b/dashboard.php
+index c762678..50ddf9e 100644
+--- a/dashboard.php
++++ b/dashboard.php
+@@ -1,44 +1,44 @@
+ <?php
++
+ require_once __DIR__ . '/config.php';
+ require_once __DIR__ . '/functions.php';
+ start_session();
+ require_login();
+ 
+ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && get('action') === 'select_location') {
+-try {
+-    $locationId = filter_var($_POST['location_id'] ?? null, FILTER_VALIDATE_INT);
+-    $address = trim((string)($_POST['address'] ?? ''));
+-    if (strlen($address) > 255) {
+-        throw new InvalidArgumentException('The selected address is too long.');
+-    }
+-    if ($locationId) {
+-        $location = get_location($locationId);
+-        if (!$location || !$location['active']) {
+-            throw new InvalidArgumentException('Unknown location.');
+-        }
+-        if ($address !== '' && $location['lat'] !== null && $location['lng'] !== null) {
+-            $location = get_or_create_location((float)$location['lat'], (float)$location['lng'], $address);
++    try {
++        $locationId = filter_var($_POST['location_id'] ?? null, FILTER_VALIDATE_INT);
++        $address = trim((string)($_POST['address'] ?? ''));
++        if (strlen($address) > 255) {
++            throw new InvalidArgumentException('The selected address is too long.');
+         }
+-    } else {
+-        $lat = filter_var($_POST['lat'] ?? null, FILTER_VALIDATE_FLOAT);
+-        $lng = filter_var($_POST['lng'] ?? null, FILTER_VALIDATE_FLOAT);
+-        if (!is_float($lat) || !is_float($lng) || !is_in_irisan($lat, $lng)) {
+-            throw new InvalidArgumentException('Select a point inside Barangay Irisan.');
++        if ($locationId) {
++            $location = get_location($locationId);
++            if (!$location || !$location['active']) {
++                throw new InvalidArgumentException('Unknown location.');
++            }
++            if ($address !== '' && $location['lat'] !== null && $location['lng'] !== null) {
++                $location = get_or_create_location((float)$location['lat'], (float)$location['lng'], $address);
++            }
++        } else {
++            $lat = filter_var($_POST['lat'] ?? null, FILTER_VALIDATE_FLOAT);
++            $lng = filter_var($_POST['lng'] ?? null, FILTER_VALIDATE_FLOAT);
++            if (!is_float($lat) || !is_float($lng) || !is_in_irisan($lat, $lng)) {
++                throw new InvalidArgumentException('Select a point inside Barangay Irisan.');
++            }
++            $location = get_or_create_location($lat, $lng, $address);
+         }
+-        $location = get_or_create_location($lat, $lng, $address);
+-    }
+-    refresh_location((int)$location['id']);
+-    flash('success', 'Weather reading saved.');
+-    redirect('dashboard.php?location_id=' . $location['id']);
+-} catch (Throwable $error) {
+-    error_log('SmartSlope weather refresh: ' . $error->getMessage());
+-    flash('error', 'The location was selected, but current weather could not be saved. Try Refresh later.');
+-    if (isset($location)) {
++        refresh_location((int)$location['id']);
++        flash('success', 'Weather reading saved.');
+         redirect('dashboard.php?location_id=' . $location['id']);
++    } catch (Throwable $error) {
++        error_log('SmartSlope weather refresh: ' . $error->getMessage());
++        flash('error', 'The location was selected, but current weather could not be saved. Try Refresh later.');
++        if (isset($location)) {
++            redirect('dashboard.php?location_id=' . $location['id']);
++        }
++        redirect('dashboard.php');
+     }
+-    redirect('dashboard.php');
+-}
+-
+ }
+ 
+ 
+diff --git a/docs/readability-update.md b/docs/readability-update.md
+new file mode 100644
+index 0000000..c428b64
+--- /dev/null
++++ b/docs/readability-update.md
+@@ -0,0 +1,40 @@
++# Login and readability update
++
++Patch base: `730e4f0f67eab79586e6b5ff208e8c788523c679` on `sf2`.
++
++The `macJil/umbalin` login page is the reference for the procedural flow, not a
++replacement for SmartSlope's design or database. Its login uses mysqli; SmartSlope
++continues to use PDO prepared statements with the existing password hashes.
++
++Changes:
++
++- Login is a visible sequence: fetch user, verify password, assign session values,
++  then choose the admin or resident destination with ordinary if statements.
++- Failed login/registration displays an error in the current response. Previously
++  it stored a flash message and redirected before showing the error. Success still
++  redirects, which avoids resubmitting a successful registration on page reload.
++- Login and registration are exclusive branches. Session ID regeneration, cookie
++  settings, resident-only registration and server-side role checks remain.
++- PDO functions are grouped by users, locations, readings and reports. Compressed
++  conditionals and statements are expanded, with consistent PHP indentation.
++- Config remains root-level with direct __DIR__ includes and no URL-path detection.
++
++The database schema, SQL queries, risk thresholds, page layout, assets and API
++response fields are unchanged. More readable formatting can use more lines; the
++goal is simpler control flow and easier navigation, not an arbitrary file size.
++
++Validation covers the existing PHP suites, syntax checks, database/CSV workflows,
++fixture-provider refresh, login and registration, database failure messages,
++administrator access, and both site-root and subdirectory URLs. Rendered page HTML
++is compared with the base. Live external provider availability and visual browser
++rendering are not certified by these checks.
++
++Apply only to the base above or an equivalent working tree:
++
++```sh
++git apply --check smartslope-sf2-readable-login.patch
++git apply smartslope-sf2-readable-login.patch
++php scripts/check_database.php
++```
++
++Keep the existing .env and database; this patch requires no schema reset.
+diff --git a/functions.php b/functions.php
+index b03e487..43e00c6 100644
+--- a/functions.php
++++ b/functions.php
+@@ -1,19 +1,37 @@
+ <?php
+-// Application functions. Pages include config.php and this file directly.
++
++// Pages include config.php and this file directly.
++// Sections: errors; input/output; map boundary; sessions; RiskAnalyzer;
++// assessment; database (users, locations, readings, reports); weather;
++// CSV; database setup; susceptibility; notices; shared HTML.
+ 
+ // Turn database failures into useful messages without showing SQL or passwords.
+-function database_error_message(PDOException $error): string {
++function database_error_message(PDOException $error): string
++{
+     $code = (int)($error->errorInfo[1] ?? 0);
+-    if ($code === 1049) return 'Database not found. Check DB_DATABASE in .env against your MySQL database name.';
+-    if ($code === 1045 || $code === 1044) return 'Database access denied. Check DB_USERNAME and DB_PASSWORD in .env.';
+-    if ($code === 2002 || $code === 2003) return 'Cannot connect to MySQL. Start the database server and check DB_HOST and DB_PORT in .env.';
+-    if ($error->getCode() === '42S02') return 'A required SmartSlope table is missing. Select your SmartSlope database in .env; use database/schema.sql only for a new database.';
+-    if ($error->getCode() === '42S22') return 'The database columns do not match this SmartSlope version. Check the selected database and run the documented migration.';
+-    if (str_contains($error->getMessage(), 'could not find driver')) return 'PHP needs the PDO MySQL extension enabled. Check the PHP version used by Herd or XAMPP.';
++    if ($code === 1049) {
++        return 'Database not found. Check DB_DATABASE in .env against your MySQL database name.';
++    }
++    if ($code === 1045 || $code === 1044) {
++        return 'Database access denied. Check DB_USERNAME and DB_PASSWORD in .env.';
++    }
++    if ($code === 2002 || $code === 2003) {
++        return 'Cannot connect to MySQL. Start the database server and check DB_HOST and DB_PORT in .env.';
++    }
++    if ($error->getCode() === '42S02') {
++        return 'A required SmartSlope table is missing. Select your SmartSlope database in .env; use database/schema.sql only for a new database.';
++    }
++    if ($error->getCode() === '42S22') {
++        return 'The database columns do not match this SmartSlope version. Check the selected database and run the documented migration.';
++    }
++    if (str_contains($error->getMessage(), 'could not find driver')) {
++        return 'PHP needs the PDO MySQL extension enabled. Check the PHP version used by Herd or XAMPP.';
++    }
+     return 'The database operation failed. Check the PHP error log for the recorded database error.';
+ }
+ 
+-function show_application_error(Throwable $error): void {
++function show_application_error(Throwable $error): void
++{
+     error_log('SmartSlope: ' . $error->getMessage());
+     if (PHP_SAPI === 'cli') {
+         fwrite(STDERR, $error->getMessage() . "\n");
+@@ -21,7 +39,9 @@ function show_application_error(Throwable $error): void {
+     }
+     http_response_code(500);
+     $message = 'This page could not load. Check the PHP error log for details.';
+-    if ($error instanceof PDOException) $message = database_error_message($error);
++    if ($error instanceof PDOException) {
++        $message = database_error_message($error);
++    }
+     echo htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
+ }
+ set_exception_handler('show_application_error');
+@@ -49,8 +69,6 @@ function get(string $key, $default = '')
+     return is_scalar($value) ? $value : $default;
+ }
+ 
+-// Build URL
+-
+ // Redirect
+ 
+ function redirect(string $path): void
+@@ -200,7 +218,9 @@ final class RiskAnalyzer
+                     $reasons[] = "{$hours[$i]}-hour rainfall ({$values[$i]} mm) reached the prototype {$level} threshold ({$limit} mm).";
+                 }
+             }
+-            if ($reasons) return ['category' => $level, 'reasons' => $reasons, 'rule_version' => self::VERSION];
++            if ($reasons) {
++                return ['category' => $level, 'reasons' => $reasons, 'rule_version' => self::VERSION];
++            }
+         }
+         return ['category' => 'low', 'reasons' => ['Rainfall is below all prototype thresholds. Low does not mean the slope is safe.'], 'rule_version' => self::VERSION];
+     }
+@@ -319,6 +339,8 @@ function assess_reading(array $reading): array
+ 
+ // PDO database functions
+ 
++// Users
++
+ function create_user(string $fullName, string $username, string $email, string $phone, string $password): int
+ {
+     $pdo = db();
+@@ -330,11 +352,7 @@ function create_user(string $fullName, string $username, string $email, string $
+     return (int)$pdo->lastInsertId();
+ }
+ 
+-// ============================================================================
+-// DATA ACCESS FUNCTIONS
+-// ============================================================================
+-
+-// Get all active locations
++// Locations
+ 
+ function get_locations(): array
+ {
+@@ -342,8 +360,6 @@ function get_locations(): array
+     return $pdo->query("SELECT * FROM locations WHERE active = 1 ORDER BY name")->fetchAll();
+ }
+ 
+-// Get location by ID
+-
+ function get_location(int $id): ?array
+ {
+     $pdo = db();
+@@ -352,7 +368,43 @@ function get_location(int $id): ?array
+     return $stmt->fetch() ?: null;
+ }
+ 
+-// Deactivate location
++function get_or_create_location(float $lat, float $lng, ?string $landmark = null): array
++{
++    if (!is_finite($lat) || !is_finite($lng) || !is_in_irisan($lat, $lng) || strlen((string)$landmark) > 255) {
++        throw new InvalidArgumentException('Invalid Irisan location or address.');
++    }
++    $pdo = db();
++
++    // Round to 5 decimal places
++    $lat = round($lat, 5);
++    $lng = round($lng, 5);
++
++    // Check if exists
++    $stmt = $pdo->prepare("SELECT * FROM locations WHERE lat = ? AND lng = ?");
++    $stmt->execute([$lat, $lng]);
++
++    if ($loc = $stmt->fetch()) {
++        if (!$loc['active']) {
++            throw new InvalidArgumentException('This monitoring point was removed by an administrator.');
++        }
++        if (empty($loc['landmark']) && trim((string)$landmark) !== '') {
++            $stmt = $pdo->prepare("UPDATE locations SET landmark = ? WHERE id = ? AND (landmark IS NULL OR landmark = '')");
++            $stmt->execute([trim((string)$landmark), $loc['id']]);
++            return get_location((int)$loc['id']) ?? $loc;
++        }
++        return $loc;
++    }
++
++    // Create new
++    $name = sprintf('Irisan %.5f, %.5f', $lat, $lng);
++    $stmt = $pdo->prepare(
++        "INSERT INTO locations (name, purok, landmark, lat, lng, susceptibility, active)
++         VALUES (?, 'Map point', ?, ?, ?, 'unknown', 1)"
++    );
++    $landmark = trim((string)$landmark);
++    $stmt->execute([$name, $landmark !== '' ? $landmark : null, $lat, $lng]);
++    return get_location((int)$pdo->lastInsertId());
++}
+ 
+ function deactivate_location(int $id): bool
+ {
+@@ -362,7 +414,7 @@ function deactivate_location(int $id): bool
+     return $stmt->rowCount() === 1;
+ }
+ 
+-// Get latest reading for location
++// Readings
+ 
+ function get_latest_reading(int $locationId): ?array
+ {
+@@ -377,8 +429,6 @@ function get_latest_reading(int $locationId): ?array
+     return $row ? assess_reading($row) : null;
+ }
+ 
+-// Get readings for location
+-
+ function get_readings(int $locationId, int $limit = 50): array
+ {
+     $pdo = db();
+@@ -397,8 +447,6 @@ function get_readings(int $locationId, int $limit = 50): array
+     return $rows;
+ }
+ 
+-// Get all recent readings
+-
+ function get_all_readings(int $limit = 100): array
+ {
+     $pdo = db();
+@@ -416,8 +464,6 @@ function get_all_readings(int $limit = 100): array
+     return $rows;
+ }
+ 
+-// Create reading
+-
+ function create_reading(array $data): int
+ {
+     $pdo = db();
+@@ -452,6 +498,37 @@ function create_reading(array $data): int
+     return (int)$pdo->lastInsertId();
+ }
+ 
++function update_reading_risk(int $readingId, string $risk, int $adminId, string $reason): void
++{
++    require_awareness_schema();
++    if (!in_array($risk, ['low','normal','medium','high'], true) || trim($reason) === '' || strlen($reason) > 500) {
++        throw new InvalidArgumentException('Valid category and adjustment reason are required.');
++    }
++    $pdo = db();
++    $stmt = $pdo->prepare("SELECT risk_level, adjustment_log FROM events WHERE id=? AND type='reading' AND archived=0");
++    $stmt->execute([$readingId]);
++    $row = $stmt->fetch();
++    if (!$row) {
++        throw new InvalidArgumentException('Reading not found.');
++    }
++    $log = json_decode($row['adjustment_log'] ?? '[]', true);
++    if (!is_array($log)) {
++        throw new RuntimeException('Invalid existing adjustment log.');
++    }
++    $log[] = ['by' => $adminId,'at' => gmdate('Y-m-d H:i:s'),'from' => $row['risk_level'],'to' => $risk,'reason' => trim($reason)];
++    $stmt = $pdo->prepare('UPDATE events SET risk_level=?, adjustment_log=? WHERE id=?');
++    $stmt->execute([$risk,json_encode($log, JSON_THROW_ON_ERROR),$readingId]);
++}
++
++function archive_reading(int $id): bool
++{
++    $pdo = db();
++    $stmt = $pdo->prepare("UPDATE events SET archived = 1 WHERE id = ? AND type = 'reading' AND archived = 0");
++    $stmt->execute([$id]);
++    return $stmt->rowCount() === 1;
++}
++
++// Reports
+ 
+ function get_reports(?string $status = null): array
+ {
+@@ -484,8 +561,6 @@ function get_reports(?string $status = null): array
+     return $reports;
+ }
+ 
+-// Get pending report counts by location
+-
+ function get_pending_counts(): array
+ {
+     $pdo = db();
+@@ -502,8 +577,6 @@ function get_pending_counts(): array
+     return $counts;
+ }
+ 
+-// Create report
+-
+ function create_report(array $data): int
+ {
+     $pdo = db();
+@@ -525,8 +598,6 @@ function create_report(array $data): int
+     return (int)$pdo->lastInsertId();
+ }
+ 
+-// Update report status
+-
+ function update_report(int $id, string $status, int $adminId): bool
+ {
+     require_awareness_schema();
+@@ -539,8 +610,6 @@ function update_report(int $id, string $status, int $adminId): bool
+     return $stmt->rowCount() === 1;
+ }
+ 
+-// Delete report
+-
+ function delete_report(int $id): bool
+ {
+     $pdo = db();
+@@ -549,78 +618,6 @@ function delete_report(int $id): bool
+     return $stmt->rowCount() === 1;
+ }
+ 
+-// Archive reading
+-
+-function archive_reading(int $id): bool
+-{
+-    $pdo = db();
+-    $stmt = $pdo->prepare("UPDATE events SET archived = 1 WHERE id = ? AND type = 'reading' AND archived = 0");
+-    $stmt->execute([$id]);
+-    return $stmt->rowCount() === 1;
+-}
+-
+-
+-function update_reading_risk(int $readingId, string $risk, int $adminId, string $reason): void
+-{
+-    require_awareness_schema();
+-    if (!in_array($risk, ['low','normal','medium','high'], true) || trim($reason) === '' || strlen($reason) > 500) {
+-        throw new InvalidArgumentException('Valid category and adjustment reason are required.');
+-    }
+-    $pdo = db();
+-    $stmt = $pdo->prepare("SELECT risk_level, adjustment_log FROM events WHERE id=? AND type='reading' AND archived=0");
+-    $stmt->execute([$readingId]);
+-    $row = $stmt->fetch();
+-    if (!$row) {
+-        throw new InvalidArgumentException('Reading not found.');
+-    }
+-    $log = json_decode($row['adjustment_log'] ?? '[]', true);
+-    if (!is_array($log)) {
+-        throw new RuntimeException('Invalid existing adjustment log.');
+-    }
+-    $log[] = ['by' => $adminId,'at' => gmdate('Y-m-d H:i:s'),'from' => $row['risk_level'],'to' => $risk,'reason' => trim($reason)];
+-    $stmt = $pdo->prepare('UPDATE events SET risk_level=?, adjustment_log=? WHERE id=?');
+-    $stmt->execute([$risk,json_encode($log, JSON_THROW_ON_ERROR),$readingId]);
+-}
+-
+-
+-function get_or_create_location(float $lat, float $lng, ?string $landmark = null): array
+-{
+-    if (!is_finite($lat) || !is_finite($lng) || !is_in_irisan($lat, $lng) || strlen((string)$landmark) > 255) {
+-        throw new InvalidArgumentException('Invalid Irisan location or address.');
+-    }
+-    $pdo = db();
+-
+-    // Round to 5 decimal places
+-    $lat = round($lat, 5);
+-    $lng = round($lng, 5);
+-
+-    // Check if exists
+-    $stmt = $pdo->prepare("SELECT * FROM locations WHERE lat = ? AND lng = ?");
+-    $stmt->execute([$lat, $lng]);
+-
+-    if ($loc = $stmt->fetch()) {
+-        if (!$loc['active']) {
+-            throw new InvalidArgumentException('This monitoring point was removed by an administrator.');
+-        }
+-        if (empty($loc['landmark']) && trim((string)$landmark) !== '') {
+-            $stmt = $pdo->prepare("UPDATE locations SET landmark = ? WHERE id = ? AND (landmark IS NULL OR landmark = '')");
+-            $stmt->execute([trim((string)$landmark), $loc['id']]);
+-            return get_location((int)$loc['id']) ?? $loc;
+-        }
+-        return $loc;
+-    }
+-
+-    // Create new
+-    $name = sprintf('Irisan %.5f, %.5f', $lat, $lng);
+-    $stmt = $pdo->prepare(
+-        "INSERT INTO locations (name, purok, landmark, lat, lng, susceptibility, active)
+-         VALUES (?, 'Map point', ?, ?, ?, 'unknown', 1)"
+-    );
+-    $landmark = trim((string)$landmark);
+-    $stmt->execute([$name, $landmark !== '' ? $landmark : null, $lat, $lng]);
+-    return get_location((int)$pdo->lastInsertId());
+-}
+-
+ // Weather requests and rainfall windows
+ 
+ function fetch_weather(float $lat, float $lng): array
+@@ -976,50 +973,78 @@ function import_locations_csv(array $rows): array
+ 
+ // Database setup
+ 
+-const AWARENESS_COLUMNS = ['rule_version'=>'VARCHAR(40) NULL','rainfall_window_end'=>'DATETIME NULL',
+-    'provider_payload'=>'LONGTEXT NULL','adjustment_log'=>'LONGTEXT NULL','report_type'=>'VARCHAR(30) NULL',
+-    'occurred_at'=>'DATETIME NULL','reviewed_by'=>'INT UNSIGNED NULL','reviewed_at'=>'DATETIME NULL'];
+-function missing_awareness_columns(): array {
+-    $existing=array_column(db()->query('SHOW COLUMNS FROM events')->fetchAll(),'Field');
+-    return array_diff(array_keys(AWARENESS_COLUMNS),$existing);
++const AWARENESS_COLUMNS = ['rule_version' => 'VARCHAR(40) NULL','rainfall_window_end' => 'DATETIME NULL',
++    'provider_payload' => 'LONGTEXT NULL','adjustment_log' => 'LONGTEXT NULL','report_type' => 'VARCHAR(30) NULL',
++    'occurred_at' => 'DATETIME NULL','reviewed_by' => 'INT UNSIGNED NULL','reviewed_at' => 'DATETIME NULL'];
++function missing_awareness_columns(): array
++{
++    $existing = array_column(db()->query('SHOW COLUMNS FROM events')->fetchAll(), 'Field');
++    return array_diff(array_keys(AWARENESS_COLUMNS), $existing);
+ }
+-function require_awareness_schema(): void {
+-    if (missing_awareness_columns()) throw new RuntimeException('Database setup is incomplete. Open Admin Panel and click Complete database setup.');
++function require_awareness_schema(): void
++{
++    if (missing_awareness_columns()) {
++        throw new RuntimeException('Database setup is incomplete. Open Admin Panel and click Complete database setup.');
++    }
+ }
+-function migrate_awareness_schema(): void {
+-    $pdo=db();
+-    foreach (missing_awareness_columns() as $name) $pdo->exec('ALTER TABLE events ADD COLUMN `'.$name.'` '.AWARENESS_COLUMNS[$name]);
+-    $indexes=array_column($pdo->query('SHOW INDEX FROM events')->fetchAll(),'Key_name');
+-    if (!in_array('reading_history',$indexes,true)) $pdo->exec('ALTER TABLE events ADD INDEX reading_history (location_id, type, archived, observed_at)');
++function migrate_awareness_schema(): void
++{
++    $pdo = db();
++    foreach (missing_awareness_columns() as $name) {
++        $pdo->exec('ALTER TABLE events ADD COLUMN `' . $name . '` ' . AWARENESS_COLUMNS[$name]);
++    }
++    $indexes = array_column($pdo->query('SHOW INDEX FROM events')->fetchAll(), 'Key_name');
++    if (!in_array('reading_history', $indexes, true)) {
++        $pdo->exec('ALTER TABLE events ADD INDEX reading_history (location_id, type, archived, observed_at)');
++    }
+ }
+ 
+ // Optional reviewed susceptibility dataset
+ 
+ /** A source review is a documented human check, not scientific validation. */
+-function validate_susceptibility_dataset(array $data): void {
++function validate_susceptibility_dataset(array $data): void
++{
+     $m = $data['metadata'] ?? [];
+     $host = parse_url($m['source_url'] ?? '', PHP_URL_HOST);
+-    if (($data['type'] ?? '') !== 'FeatureCollection' || ($m['reviewed'] ?? false) !== true ||
++    if (
++        ($data['type'] ?? '') !== 'FeatureCollection' || ($m['reviewed'] ?? false) !== true ||
+         parse_url($m['source_url'] ?? '', PHP_URL_SCHEME) !== 'https' || !is_string($host) || !($host === 'mgb.gov.ph' || str_ends_with($host, '.mgb.gov.ph')) ||
+-        ($m['crs'] ?? '') !== 'EPSG:4326' || empty($data['features'])) {
++        ($m['crs'] ?? '') !== 'EPSG:4326' || empty($data['features'])
++    ) {
+         throw new InvalidArgumentException('A reviewed MGB WGS84 polygon dataset is required.');
+     }
+     foreach (['edition','scale','reuse_terms','coverage_review','reviewed_by','reviewed_at'] as $field) {
+-        if (!is_string($m[$field] ?? null) || trim($m[$field]) === '') throw new InvalidArgumentException('Missing source review: ' . $field);
++        if (!is_string($m[$field] ?? null) || trim($m[$field]) === '') {
++            throw new InvalidArgumentException('Missing source review: ' . $field);
++        }
+     }
+     foreach ($data['features'] as $feature) {
+-        if (!in_array($feature['properties']['LndslideSusc'] ?? '', ['VHL','HL','ML','LL','DF'], true) ||
+-            !isset($feature['properties']['OBJECTID'])) throw new InvalidArgumentException('Invalid original MGB class or feature ID.');
++        if (
++            !in_array($feature['properties']['LndslideSusc'] ?? '', ['VHL','HL','ML','LL','DF'], true) ||
++            !isset($feature['properties']['OBJECTID'])
++        ) {
++            throw new InvalidArgumentException('Invalid original MGB class or feature ID.');
++        }
+         $g = $feature['geometry'] ?? [];
+-        if (!in_array($g['type'] ?? '', ['Polygon','MultiPolygon'], true)) throw new InvalidArgumentException('Polygon geometry required.');
++        if (!in_array($g['type'] ?? '', ['Polygon','MultiPolygon'], true)) {
++            throw new InvalidArgumentException('Polygon geometry required.');
++        }
+         $polygons = $g['type'] === 'Polygon' ? [$g['coordinates'] ?? []] : ($g['coordinates'] ?? []);
+-        if (!$polygons) throw new InvalidArgumentException('Empty geometry.');
++        if (!$polygons) {
++            throw new InvalidArgumentException('Empty geometry.');
++        }
+         foreach ($polygons as $polygon) {
+-            if (!$polygon) throw new InvalidArgumentException('Empty polygon.');
++            if (!$polygon) {
++                throw new InvalidArgumentException('Empty polygon.');
++            }
+             foreach ($polygon as $ring) {
+-                if (count($ring) < 4 || $ring[0] !== $ring[count($ring)-1]) throw new InvalidArgumentException('Closed ring required.');
++                if (count($ring) < 4 || $ring[0] !== $ring[count($ring) - 1]) {
++                    throw new InvalidArgumentException('Closed ring required.');
++                }
+                 foreach ($ring as $point) {
+-                    if (count($point) < 2 || finite_number($point[0], -180, 180) === null || finite_number($point[1], -90, 90) === null) throw new InvalidArgumentException('Invalid WGS84 coordinate.');
++                    if (count($point) < 2 || finite_number($point[0], -180, 180) === null || finite_number($point[1], -90, 90) === null) {
++                        throw new InvalidArgumentException('Invalid WGS84 coordinate.');
++                    }
+                 }
+             }
+         }
+@@ -1027,96 +1052,137 @@ function validate_susceptibility_dataset(array $data): void {
+ }
+ 
+ // 0 outside, 1 inside, 2 on boundary. Boundary/overlap ambiguity stays unknown.
+-function susceptibility_ring(float $lat, float $lng, array $ring): int {
++function susceptibility_ring(float $lat, float $lng, array $ring): int
++{
+     $inside = false;
+-    for ($i=0, $j=count($ring)-1; $i<count($ring); $j=$i++) {
+-        [$x1,$y1]=$ring[$j]; [$x2,$y2]=$ring[$i];
+-        $cross=($lng-$x1)*($y2-$y1)-($lat-$y1)*($x2-$x1);
+-        if (abs($cross)<1e-12 && $lng>=min($x1,$x2)-1e-10 && $lng<=max($x1,$x2)+1e-10 && $lat>=min($y1,$y2)-1e-10 && $lat<=max($y1,$y2)+1e-10) return 2;
+-        if (($y1>$lat)!==($y2>$lat) && $lng<($x2-$x1)*($lat-$y1)/($y2-$y1)+$x1) $inside=!$inside;
++    for ($i = 0, $j = count($ring) - 1; $i < count($ring); $j = $i++) {
++        [$x1,$y1] = $ring[$j];
++        [$x2,$y2] = $ring[$i];
++        $cross = ($lng - $x1) * ($y2 - $y1) - ($lat - $y1) * ($x2 - $x1);
++        if (abs($cross) < 1e-12 && $lng >= min($x1, $x2) - 1e-10 && $lng <= max($x1, $x2) + 1e-10 && $lat >= min($y1, $y2) - 1e-10 && $lat <= max($y1, $y2) + 1e-10) {
++            return 2;
++        }
++        if (($y1 > $lat) !== ($y2 > $lat) && $lng < ($x2 - $x1) * ($lat - $y1) / ($y2 - $y1) + $x1) {
++            $inside = !$inside;
++        }
+     }
+     return $inside ? 1 : 0;
+ }
+ 
+-function susceptibility_lookup(array $location, ?array $dataset = null): array {
+-    $unknown=['category'=>'unknown','classification'=>null,'source'=>null,'reason'=>'No reviewed susceptibility dataset is installed.'];
+-    if (finite_number($location['lat'] ?? null) === null || finite_number($location['lng'] ?? null) === null) return $unknown;
++function susceptibility_lookup(array $location, ?array $dataset = null): array
++{
++    $unknown = ['category' => 'unknown','classification' => null,'source' => null,'reason' => 'No reviewed susceptibility dataset is installed.'];
++    if (finite_number($location['lat'] ?? null) === null || finite_number($location['lng'] ?? null) === null) {
++        return $unknown;
++    }
+     if ($dataset === null) {
+         static $loaded = false, $local = null;
+         if (!$loaded) {
+-            $loaded=true;
+-            $path=__DIR__ . '/data/irisan-susceptibility.geojson';
+-            if (is_file($path)) $local=json_decode((string)file_get_contents($path), true);
++            $loaded = true;
++            $path = __DIR__ . '/data/irisan-susceptibility.geojson';
++            if (is_file($path)) {
++                $local = json_decode((string)file_get_contents($path), true);
++            }
+         }
+-        $dataset=$local;
++        $dataset = $local;
++    }
++    if (!is_array($dataset)) {
++        return $unknown;
+     }
+-    if (!is_array($dataset)) return $unknown;
+-    try { validate_susceptibility_dataset($dataset); } catch (Throwable $e) { return $unknown; }
+-    $matches=[];
++    try {
++        validate_susceptibility_dataset($dataset);
++    } catch (Throwable $e) {
++        return $unknown;
++    }
++    $matches = [];
+     foreach ($dataset['features'] as $feature) {
+-        $g=$feature['geometry'];
+-        foreach ($g['type']==='Polygon' ? [$g['coordinates']] : $g['coordinates'] as $polygon) {
+-            $inside=false;
+-            foreach ($polygon as $i=>$ring) {
+-                $state=susceptibility_ring((float)$location['lat'], (float)$location['lng'], $ring);
+-                if ($state===2) return array_merge($unknown,['reason'=>'Point is on an approximate polygon boundary.']);
+-                if ($i===0) $inside=$state===1;
+-                elseif ($state===1) $inside=false;
++        $g = $feature['geometry'];
++        foreach ($g['type'] === 'Polygon' ? [$g['coordinates']] : $g['coordinates'] as $polygon) {
++            $inside = false;
++            foreach ($polygon as $i => $ring) {
++                $state = susceptibility_ring((float)$location['lat'], (float)$location['lng'], $ring);
++                if ($state === 2) {
++                    return array_merge($unknown, ['reason' => 'Point is on an approximate polygon boundary.']);
++                }
++                if ($i === 0) {
++                    $inside = $state === 1;
++                } elseif ($state === 1) {
++                    $inside = false;
++                }
++            }
++            if ($inside) {
++                $matches[] = $feature['properties'];
+             }
+-            if ($inside) $matches[]=$feature['properties'];
+         }
+     }
+-    $classes=array_unique(array_column($matches,'LndslideSusc'));
+-    if (count($classes)!==1) return array_merge($unknown,['reason'=>$matches ? 'Conflicting polygon classes.' : 'No reviewed polygon covers this point.']);
+-    $map=['VHL'=>'very_high','HL'=>'high','ML'=>'moderate','LL'=>'low','DF'=>'debris_flow'];
+-    return ['category'=>$map[reset($classes)],'classification'=>'VERIFIED','source'=>$dataset['metadata'],
+-        'feature_ids'=>array_column($matches,'OBJECTID'),'reason'=>'Reviewed MGB dataset; boundaries are approximate.'];
++    $classes = array_unique(array_column($matches, 'LndslideSusc'));
++    if (count($classes) !== 1) {
++        return array_merge($unknown, ['reason' => $matches ? 'Conflicting polygon classes.' : 'No reviewed polygon covers this point.']);
++    }
++    $map = ['VHL' => 'very_high','HL' => 'high','ML' => 'moderate','LL' => 'low','DF' => 'debris_flow'];
++    return ['category' => $map[reset($classes)],'classification' => 'VERIFIED','source' => $dataset['metadata'],
++        'feature_ids' => array_column($matches, 'OBJECTID'),'reason' => 'Reviewed MGB dataset; boundaries are approximate.'];
+ }
+ 
+ // Reports and notices
+ 
+-const REPORT_TYPES = ['ground_cracks'=>'Ground cracks','fallen_material'=>'Fallen soil or rock',
+-    'drainage_problem'=>'Drainage problem','other'=>'Other observed condition'];
++const REPORT_TYPES = ['ground_cracks' => 'Ground cracks','fallen_material' => 'Fallen soil or rock',
++    'drainage_problem' => 'Drainage problem','other' => 'Other observed condition'];
+ 
+-function report_occurrence(string $input, ?int $now = null): ?string {
+-    if ($input === '') return null;
+-    $date=DateTimeImmutable::createFromFormat('!Y-m-d\TH:i', $input, new DateTimeZone('Asia/Manila'));
+-    if (!$date || $date->format('Y-m-d\TH:i')!==$input || $date->getTimestamp()>($now ?? time())+300) throw new InvalidArgumentException('Enter a valid occurrence time that is not in the future.');
++function report_occurrence(string $input, ?int $now = null): ?string
++{
++    if ($input === '') {
++        return null;
++    }
++    $date = DateTimeImmutable::createFromFormat('!Y-m-d\TH:i', $input, new DateTimeZone('Asia/Manila'));
++    if (!$date || $date->format('Y-m-d\TH:i') !== $input || $date->getTimestamp() > ($now ?? time()) + 300) {
++        throw new InvalidArgumentException('Enter a valid occurrence time that is not in the future.');
++    }
+     return $date->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+ }
+ 
+-function awareness_notices(array $assessment, array $baseline): array {
+-    $notices=[];
++function awareness_notices(array $assessment, array $baseline): array
++{
++    $notices = [];
+     // Administrator edits are presented separately; automated notices use the calculated category.
+-    $level=$assessment['data_status']==='current' ? $assessment['calculated_category'] : null;
+-    if ($level===null) $notices[]=['tone'=>'secondary','title'=>'Current assessment unavailable',
+-        'text'=>'Select a location and refresh weather. Last saved readings remain historical context.'];
+-    elseif (in_array($level,['medium','high'],true)) $notices[]=['tone'=>$level==='high'?'danger':'warning',
+-        'title'=>'Prototype rainfall notice: ' . ucfirst($level),
+-        'text'=>implode(' ', $assessment['reasons'])];
+-    else $notices[]=['tone'=>'info','title'=>'Prototype rainfall screening: ' . ucfirst($level),
+-        'text'=>'Rainfall is below the medium and high prototype thresholds. This does not establish slope safety.'];
+-    if ($baseline['classification']==='VERIFIED' && in_array($baseline['category'],['high','very_high','debris_flow'],true)) {
+-        $notices[]=['tone'=>'warning','title'=>'Baseline susceptibility notice',
+-            'text'=>'Reviewed MGB class: ' . str_replace('_',' ', $baseline['category']) . '. This baseline is separate from rainfall screening. Boundaries are approximate.'];
++    $level = $assessment['data_status'] === 'current' ? $assessment['calculated_category'] : null;
++    if ($level === null) {
++        $notices[] = ['tone' => 'secondary','title' => 'Current assessment unavailable',
++        'text' => 'Select a location and refresh weather. Last saved readings remain historical context.'];
++    } elseif (in_array($level, ['medium','high'], true)) {
++        $notices[] = ['tone' => $level === 'high' ? 'danger' : 'warning',
++        'title' => 'Prototype rainfall notice: ' . ucfirst($level),
++        'text' => implode(' ', $assessment['reasons'])];
++    } else {
++        $notices[] = ['tone' => 'info','title' => 'Prototype rainfall screening: ' . ucfirst($level),
++        'text' => 'Rainfall is below the medium and high prototype thresholds. This does not establish slope safety.'];
++    }
++    if ($baseline['classification'] === 'VERIFIED' && in_array($baseline['category'], ['high','very_high','debris_flow'], true)) {
++        $notices[] = ['tone' => 'warning','title' => 'Baseline susceptibility notice',
++            'text' => 'Reviewed MGB class: ' . str_replace('_', ' ', $baseline['category']) . '. This baseline is separate from rainfall screening. Boundaries are approximate.'];
+     }
+     return $notices;
+ }
+ 
+-function location_report_summary(int $id): array {
+-    $stmt=db()->prepare("SELECT status, COUNT(*) AS total FROM events WHERE type='report' AND location_id=? GROUP BY status");
++function location_report_summary(int $id): array
++{
++    $stmt = db()->prepare("SELECT status, COUNT(*) AS total FROM events WHERE type='report' AND location_id=? GROUP BY status");
+     $stmt->execute([$id]);
+-    return array_map('intval', array_column($stmt->fetchAll(),'total','status'));
++    return array_map('intval', array_column($stmt->fetchAll(), 'total', 'status'));
+ }
+ 
+-function ui_report_summary(array $counts, bool $admin): string {
+-    $html='<h4 class="h6">Community reports <span class="badge bg-secondary">USER-SUBMITTED</span></h4><p>';
+-    foreach (['pending','reviewed','resolved'] as $state) $html.=e(ucfirst($state)).': '.(int)($counts[$state]??0).' &nbsp; ';
+-    $html.='</p><p class="small text-muted">Review status is a workflow label, not scientific confirmation. Reports do not change the rainfall category.</p>';
+-    if ($admin && ($counts['pending']??0)>0) $html.='<a class="btn btn-sm btn-outline-primary" href="'.e('admin.php?status=pending').'">Review pending reports</a>';
++function ui_report_summary(array $counts, bool $admin): string
++{
++    $html = '<h4 class="h6">Community reports <span class="badge bg-secondary">USER-SUBMITTED</span></h4><p>';
++    foreach (['pending','reviewed','resolved'] as $state) {
++        $html .= e(ucfirst($state)) . ': ' . (int)($counts[$state] ?? 0) . ' &nbsp; ';
++    }
++    $html .= '</p><p class="small text-muted">Review status is a workflow label, not scientific confirmation. Reports do not change the rainfall category.</p>';
++    if ($admin && ($counts['pending'] ?? 0) > 0) {
++        $html .= '<a class="btn btn-sm btn-outline-primary" href="' . e('admin.php?status=pending') . '">Review pending reports</a>';
++    }
+     return $html;
+ }
+-
+ // Shared HTML rendering
+ 
+ // Shared, escaped presentation for page loads and the weather AJAX response.
+diff --git a/index.php b/index.php
+index 8ce9168..37d9122 100644
+--- a/index.php
++++ b/index.php
+@@ -1,16 +1,24 @@
+ <?php
++
+ require_once __DIR__ . '/config.php';
+ require_once __DIR__ . '/functions.php';
+ 
+ start_session();
+ 
+-// If already logged in, redirect to dashboard
++// An authenticated visitor goes straight to their page.
+ if (is_logged_in()) {
+-    redirect(is_admin() ? 'admin.php' : 'dashboard.php');
++    if (is_admin()) {
++        redirect('admin.php');
++    }
++    redirect('dashboard.php');
+ }
+ 
+-// Handle login
+-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
++$errorMessage = flash('error') ?? '';
++$successMessage = flash('success') ?? '';
++$isPost = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
++
++// Login: find the account, check its password, then set the session.
++if ($isPost && !empty($_POST['login'])) {
+     $username = trim(post('username'));
+     $password = post('password');
+ 
+@@ -21,26 +29,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
+ 
+         if ($user && password_verify($password, $user['password'])) {
+             session_regenerate_id(true);
+-            $_SESSION = [
+-                'user_id' => $user['id'],
+-                'full_name' => $user['full_name'],
+-                'username' => $user['username'],
+-                'email' => $user['email'],
+-                'phone' => $user['phone'],
+-                'role' => $user['role'],
+-            ];
+-            redirect(is_admin() ? 'admin.php' : 'dashboard.php');
++            $_SESSION = [];
++            $_SESSION['user_id'] = $user['id'];
++            $_SESSION['full_name'] = $user['full_name'];
++            $_SESSION['username'] = $user['username'];
++            $_SESSION['email'] = $user['email'];
++            $_SESSION['phone'] = $user['phone'];
++            $_SESSION['role'] = $user['role'];
++
++            if ($user['role'] === 'admin') {
++                redirect('admin.php');
++            }
++            redirect('dashboard.php');
+         }
+-        flash('error', 'Invalid username or password');
++        $errorMessage = 'Invalid username or password';
+     } catch (PDOException $error) {
+         error_log('SmartSlope login: ' . $error->getMessage());
+-        flash('error', database_error_message($error));
++        $errorMessage = database_error_message($error);
+     }
+-    redirect('index.php');
+-}
+-
+-// Handle registration
+-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
++} elseif ($isPost && !empty($_POST['register'])) {
++    // Registration always creates a resident; the browser cannot choose a role.
+     $fullName = trim(post('full_name'));
+     $username = trim(post('username'));
+     $email = trim(post('email'));
+@@ -52,19 +60,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
+         strlen($fullName) > 100 || strlen($username) > 50 || strlen($email) > 254 ||
+         strlen($phone) > 20 || strlen($password) > 72
+     ) {
+-        flash('error', 'Fill all fields and keep them within the form limits.');
+-        redirect('index.php');
+-    }
+-
+-    try {
+-        create_user($fullName, $username, $email, $phone, $password);
+-    } catch (PDOException $error) {
+-        error_log('Registration failed: ' . $error->getMessage());
+-        flash('error', $error->getCode() === '23000' ? 'Username, email, or phone already exists' : database_error_message($error));
+-        redirect('index.php');
++        $errorMessage = 'Fill all fields and keep them within the form limits.';
++    } else {
++        try {
++            create_user($fullName, $username, $email, $phone, $password);
++            flash('success', 'Registration successful! Please login.');
++            redirect('index.php');
++        } catch (PDOException $error) {
++            error_log('Registration failed: ' . $error->getMessage());
++            if ($error->getCode() === '23000') {
++                $errorMessage = 'Username, email, or phone already exists';
++            } else {
++                $errorMessage = database_error_message($error);
++            }
++        }
+     }
+-    flash('success', 'Registration successful! Please login.');
+-    redirect('index.php');
+ }
+ ?>
+ <!DOCTYPE html>
+@@ -82,11 +92,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
+             <h1 class="h2 mb-2">SmartSlope</h1>
+             <p class="page-subtitle mb-0">Landslide awareness for Barangay Irisan, Baguio City</p>
+         </div>
+-        <?php if ($msg = flash('error')): ?>
+-            <div class="alert alert-danger" role="alert"><?= e($msg) ?></div>
++        <?php if ($errorMessage !== ''): ?>
++            <div class="alert alert-danger" role="alert"><?= e($errorMessage) ?></div>
+         <?php endif; ?>
+-        <?php if ($msg = flash('success')): ?>
+-            <div class="alert alert-success" role="status"><?= e($msg) ?></div>
++        <?php if ($successMessage !== ''): ?>
++            <div class="alert alert-success" role="status"><?= e($successMessage) ?></div>
+         <?php endif; ?>
+         <div class="card auth-card">
+             <div class="auth-layout">
+diff --git a/readings.php b/readings.php
+index f963b70..5c23b45 100644
+--- a/readings.php
++++ b/readings.php
+@@ -1,4 +1,5 @@
+ <?php
++
+ require_once __DIR__ . '/config.php';
+ require_once __DIR__ . '/functions.php';
+ start_session();
+@@ -11,9 +12,8 @@ $uiLocations = array_column(get_locations(), null, 'id');
+ // Export CSV
+ if (get('action') === 'export') {
+     require_admin();
+-    download_csv('smartslope_readings_'.gmdate('Y-m-d').'.csv', export_readings_csv(get_all_readings(PHP_INT_MAX)));
++    download_csv('smartslope_readings_' . gmdate('Y-m-d') . '.csv', export_readings_csv(get_all_readings(PHP_INT_MAX)));
+ }
+-
+ ?>
+ <!DOCTYPE html>
+ <html lang="en">

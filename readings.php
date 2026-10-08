@@ -1,4 +1,5 @@
 <?php
+
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/functions.php';
 start_session();
@@ -11,9 +12,8 @@ $uiLocations = array_column(get_locations(), null, 'id');
 // Export CSV
 if (get('action') === 'export') {
     require_admin();
-    download_csv('smartslope_readings_'.gmdate('Y-m-d').'.csv', export_readings_csv(get_all_readings(PHP_INT_MAX)));
+    download_csv('smartslope_readings_' . gmdate('Y-m-d') . '.csv', export_readings_csv(get_all_readings(PHP_INT_MAX)));
 }
-
 ?>
 <!DOCTYPE html>
 <html lang="en">

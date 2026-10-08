@@ -1,16 +1,24 @@
 <?php
+
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/functions.php';
 
 start_session();
 
-// If already logged in, redirect to dashboard
+// An authenticated visitor goes straight to their page.
 if (is_logged_in()) {
-    redirect(is_admin() ? 'admin.php' : 'dashboard.php');
+    if (is_admin()) {
+        redirect('admin.php');
+    }
+    redirect('dashboard.php');
 }
 
-// Handle login
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
+$errorMessage = flash('error') ?? '';
+$successMessage = flash('success') ?? '';
+$isPost = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
+
+// Login: find the account, check its password, then set the session.
+if ($isPost && !empty($_POST['login'])) {
     $username = trim(post('username'));
     $password = post('password');
 
@@ -21,26 +29,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['login'])) {
 
         if ($user && password_verify($password, $user['password'])) {
             session_regenerate_id(true);
-            $_SESSION = [
-                'user_id' => $user['id'],
-                'full_name' => $user['full_name'],
-                'username' => $user['username'],
-                'email' => $user['email'],
-                'phone' => $user['phone'],
-                'role' => $user['role'],
-            ];
-            redirect(is_admin() ? 'admin.php' : 'dashboard.php');
+            $_SESSION = [];
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['full_name'] = $user['full_name'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['email'] = $user['email'];
+            $_SESSION['phone'] = $user['phone'];
+            $_SESSION['role'] = $user['role'];
+
+            if ($user['role'] === 'admin') {
+                redirect('admin.php');
+            }
+            redirect('dashboard.php');
         }
-        flash('error', 'Invalid username or password');
+        $errorMessage = 'Invalid username or password';
     } catch (PDOException $error) {
         error_log('SmartSlope login: ' . $error->getMessage());
-        flash('error', database_error_message($error));
+        $errorMessage = database_error_message($error);
     }
-    redirect('index.php');
-}
-
-// Handle registration
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
+} elseif ($isPost && !empty($_POST['register'])) {
+    // Registration always creates a resident; the browser cannot choose a role.
     $fullName = trim(post('full_name'));
     $username = trim(post('username'));
     $email = trim(post('email'));
@@ -52,19 +60,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
         strlen($fullName) > 100 || strlen($username) > 50 || strlen($email) > 254 ||
         strlen($phone) > 20 || strlen($password) > 72
     ) {
-        flash('error', 'Fill all fields and keep them within the form limits.');
-        redirect('index.php');
+        $errorMessage = 'Fill all fields and keep them within the form limits.';
+    } else {
+        try {
+            create_user($fullName, $username, $email, $phone, $password);
+            flash('success', 'Registration successful! Please login.');
+            redirect('index.php');
+        } catch (PDOException $error) {
+            error_log('Registration failed: ' . $error->getMessage());
+            if ($error->getCode() === '23000') {
+                $errorMessage = 'Username, email, or phone already exists';
+            } else {
+                $errorMessage = database_error_message($error);
+            }
+        }
     }
-
-    try {
-        create_user($fullName, $username, $email, $phone, $password);
-    } catch (PDOException $error) {
-        error_log('Registration failed: ' . $error->getMessage());
-        flash('error', $error->getCode() === '23000' ? 'Username, email, or phone already exists' : database_error_message($error));
-        redirect('index.php');
-    }
-    flash('success', 'Registration successful! Please login.');
-    redirect('index.php');
 }
 ?>
 <!DOCTYPE html>
@@ -82,11 +92,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['register'])) {
             <h1 class="h2 mb-2">SmartSlope</h1>
             <p class="page-subtitle mb-0">Landslide awareness for Barangay Irisan, Baguio City</p>
         </div>
-        <?php if ($msg = flash('error')): ?>
-            <div class="alert alert-danger" role="alert"><?= e($msg) ?></div>
+        <?php if ($errorMessage !== ''): ?>
+            <div class="alert alert-danger" role="alert"><?= e($errorMessage) ?></div>
         <?php endif; ?>
-        <?php if ($msg = flash('success')): ?>
-            <div class="alert alert-success" role="status"><?= e($msg) ?></div>
+        <?php if ($successMessage !== ''): ?>
+            <div class="alert alert-success" role="status"><?= e($successMessage) ?></div>
         <?php endif; ?>
         <div class="card auth-card">
             <div class="auth-layout">

@@ -1,10 +1,13 @@
 <?php
+
 // Settings come from .env, or from these local-development defaults.
 $envFile = __DIR__ . '/.env';
 if (is_file($envFile)) {
     foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
         $line = trim($line);
-        if ($line === '' || $line[0] === '#' || !str_contains($line, '=')) continue;
+        if ($line === '' || $line[0] === '#' || !str_contains($line, '=')) {
+            continue;
+        }
         [$name, $value] = explode('=', $line, 2);
         $name = trim($name);
         if ($name !== '' && getenv($name) === false && !isset($_ENV[$name])) {
@@ -13,7 +16,8 @@ if (is_file($envFile)) {
     }
 }
 
-function env_value(string $name, string $default = ''): string {
+function env_value(string $name, string $default = ''): string
+{
     $value = $_ENV[$name] ?? getenv($name);
     return $value === false ? $default : (string)$value;
 }
@@ -31,7 +35,8 @@ $config = [
     'future_tolerance_seconds' => 300,
 ];
 
-function db(): PDO {
+function db(): PDO
+{
     static $pdo = null;
     if ($pdo === null) {
         $pdo = new PDO('mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS, [
