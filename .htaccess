@@ -1,12 +1,9 @@
-# Apache/XAMPP: prevent direct downloads or execution of internal application files.
-Options -Indexes
-<FilesMatch "(?i)^(\.env(?:\..*)?|.*\.(?:sql|patch|log|md))$">
+# Apache 2.4 (XAMPP/MAMP). No URL rewriting or Options override is needed.
+# Keep source/configuration downloads private.
+<FilesMatch "(?i)^(\..*|config\.php|functions\.php|.*\.(?:sql|patch|log|md))$">
     Require all denied
 </FilesMatch>
-RewriteEngine On
-RewriteRule ^(?:includes|partials|data|database|scripts|tests|docs)(?:/|$) - [F,L]
-RewriteRule (^|/)\.(?!well-known(?:/|$)) - [F,L]
-
-<FilesMatch "^(config|functions)\.php$">
+# Block internal directories at both localhost/ and localhost/smartslope/.
+<If "%{REQUEST_URI} =~ m#/(?:includes|partials|data|database|scripts|tests|docs|\.[^/]+)(?:/|$)#">
     Require all denied
-</FilesMatch>
+</If>

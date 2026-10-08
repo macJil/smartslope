@@ -1,3 +1,4 @@
 .env
 *.log
+/*.patch
 .DS_Store
