@@ -1,16 +1,12 @@
 <?php
+require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../functions.php';
 // Run with PDO/MySQL enabled and cURL disabled; HTTP is replaced by a fixture.
 if (PHP_SAPI !== 'cli') exit;
 if (extension_loaded('curl')) {
     fwrite(STDERR, "Run this test with php -n and PDO/MySQL extensions, without cURL.\n");
     exit(1);
 }
-require_once __DIR__ . '/../app/config.php';
-require_once __DIR__ . '/../app/helpers.php';
-require_once __DIR__ . '/../app/RiskAnalyzer.php';
-require_once __DIR__ . '/../app/assessment.php';
-require_once __DIR__ . '/../app/repositories.php';
-require_once __DIR__ . '/../app/weather.php';
 if (!str_ends_with($config['db_name'], '_test')) throw new RuntimeException('Use a disposable *_test database.');
 
 foreach (['CURLOPT_RETURNTRANSFER', 'CURLOPT_TIMEOUT', 'CURLOPT_CONNECTTIMEOUT', 'CURLOPT_SSL_VERIFYPEER', 'CURLOPT_SSL_VERIFYHOST', 'CURLINFO_HTTP_CODE'] as $index => $name) {

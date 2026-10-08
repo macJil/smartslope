@@ -1,17 +1,9 @@
 <?php
+require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../functions.php';
 
-declare(strict_types=1);
 
-require_once __DIR__ . '/../app/config.php';
-require_once __DIR__ . '/../app/helpers.php';
-require_once __DIR__ . '/../app/auth.php';
-require_once __DIR__ . '/../app/RiskAnalyzer.php';
-require_once __DIR__ . '/../app/assessment.php';
-require_once __DIR__ . '/../app/susceptibility.php';
-require_once __DIR__ . '/../app/awareness.php';
-require_once __DIR__ . '/../app/presentation.php';
-require_once __DIR__ . '/../app/repositories.php';
-require_once __DIR__ . '/../app/weather.php';
+
 start_session();
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');

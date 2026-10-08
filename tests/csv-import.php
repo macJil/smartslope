@@ -1,8 +1,6 @@
 <?php
-require_once __DIR__ . '/../app/config.php';
-require_once __DIR__ . '/../app/helpers.php';
-require_once __DIR__ . '/../app/assessment.php';
-require_once __DIR__ . '/../app/csv.php';
+require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../functions.php';
 
 if (!str_ends_with($config['db_name'], '_test')) {
     throw new RuntimeException('Use a disposable *_test database.');

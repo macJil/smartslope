@@ -1,6 +1,6 @@
 # SmartSlope | Irisan prototype
 
-This `sf2` simplification uses direct PHP includes and session login. See [changes and behavior differences](docs/simplification-sf2.md), especially editable CSVs, partial saves and removed CSRF/provider controls.
+This `sf2` version uses root-level `config.php`, `functions.php` and page files, with direct `__DIR__` includes and ordinary relative browser links. Read the [team development guide](TEAM_DEVELOPMENT_GUIDE.md) for the structure and login troubleshooting. The earlier [behavior differences](docs/simplification-sf2.md), including editable CSVs and partial saves, still apply.
 SmartSlope is a student prototype for rainfall screening and community ground-condition reporting in Barangay Irisan, Baguio City. It uses PHP and PDO/MySQL, locally bundled Bootstrap/Leaflet/jQuery, an offline Irisan map, and Open-Meteo weather data.
 
 The website supports resident accounts, map-point selection, manual weather refresh and saved reading history, explainable rainfall categories, resident reports, administrator review, risk-category correction with a reason, reading archival and CSV workflows.

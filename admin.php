@@ -1,18 +1,14 @@
 <?php
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/functions.php';
 
-require_once __DIR__ . '/app/config.php';
-require_once __DIR__ . '/app/helpers.php';
-require_once __DIR__ . '/app/auth.php';
-require_once __DIR__ . '/app/RiskAnalyzer.php';
-require_once __DIR__ . '/app/assessment.php';
-require_once __DIR__ . '/app/susceptibility.php';
-require_once __DIR__ . '/app/awareness.php';
-require_once __DIR__ . '/app/presentation.php';
-require_once __DIR__ . '/app/repositories.php';
-require_once __DIR__ . '/app/maintenance.php';
-require_once __DIR__ . '/app/csv.php';
 start_session();
 require_admin();
+
+if (get('action') === 'edit_reading') {
+    require __DIR__ . '/partials/edit-reading.php';
+    exit;
+}
 
 $reportFilter = (string)get('status', post('return_status'));
 $reportFilter = in_array($reportFilter, ['pending','reviewed','resolved'], true) ? $reportFilter : null;
@@ -20,8 +16,13 @@ $reportReturn = 'admin.php' . ($reportFilter ? '?status=' . $reportFilter : '') 
 
 // Form actions use the signed-in administrator session.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = (string)post('action');
+    $action = (string)post('action', get('action'));
     try {
+        if ($action === 'archive_reading') {
+            archive_reading((int)post('reading_id'));
+            flash('success', 'Reading removed from active lists.');
+            redirect('admin.php');
+        }
         if ($action === 'complete_setup') {
             migrate_awareness_schema();
             flash('success', 'Database setup completed. Review and reading edits are ready.');
@@ -146,8 +147,8 @@ foreach ($reports as $report) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SmartSlope - Admin</title>
-    <link rel="stylesheet" href="<?= url('assets/css/bootstrap.min.css') ?>">
-    <link rel="stylesheet" href="<?= url('assets/vendor/leaflet/leaflet.css') ?>">
+    <link rel="stylesheet" href="assets/css/bootstrap.min.css">
+    <link rel="stylesheet" href="assets/vendor/leaflet/leaflet.css">
     <style>
         .badge-risk { font-size: 0.85em; }
         #reportMap { height: 420px; width: 100%; }
@@ -170,7 +171,7 @@ foreach ($reports as $report) {
         .report-risk-unavailable { background: #6c757d; }
         .report-message { white-space: pre-wrap; overflow-wrap: anywhere; min-height: 6rem; }
     </style>
-    <link rel="stylesheet" href="<?= e(url('assets/css/frontend.css')) ?>?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>">
+    <link rel="stylesheet" href="assets/css/frontend.css?v=<?= (int) filemtime(__DIR__ . '/assets/css/frontend.css') ?>">
 </head>
 <body>
     <?= ui_navigation('admin') ?>
@@ -179,7 +180,7 @@ foreach ($reports as $report) {
         <div class="d-flex justify-content-between align-items-center mb-4">
             <div class="page-heading"><h1 class="h2 mb-1">Admin panel</h1><p class="page-subtitle mb-0">Review community reports, locations, and saved readings.</p></div>
             <div>
-                <a href="<?= url('admin.php?action=export') ?>" class="btn btn-outline-success">
+                <a href="admin.php?action=export" class="btn btn-outline-success">
                     Export readings CSV
                 </a>
             </div>
@@ -195,7 +196,7 @@ foreach ($reports as $report) {
 
         <?php if ($missingColumns): ?>
         <div class="alert alert-warning" role="alert"><h3 class="h6">Database setup is incomplete</h3><p>The previous awareness upgrade needs additional fields for report review and reading edits. Back up your database, then complete setup. Existing records are retained.</p>
-        <form method="post" action="<?= e(url('admin.php')) ?>"><input type="hidden" name="action" value="complete_setup"><button class="btn btn-warning" type="submit">Complete database setup</button></form></div>
+        <form method="post" action="admin.php"><input type="hidden" name="action" value="complete_setup"><button class="btn btn-warning" type="submit">Complete database setup</button></form></div>
         <?php endif; ?>
         <p class="small text-muted">Reading counts cover the latest 50 saved readings across active locations. Current means observed within <?= e(round($config['freshness_seconds'] / 3600, 2)) ?> hours; these are reading counts, not location counts.</p>
         <!-- Stats Row -->
@@ -240,14 +241,14 @@ foreach ($reports as $report) {
                 <div><h5 class="mb-0">Community report review queue</h5><small>USER-SUBMITTED; workflow status does not establish scientific verification.</small>
                 <nav class="d-flex flex-wrap gap-2 mt-2" aria-label="Filter reports">
                 <?php foreach ([''=>'All','pending'=>'Pending','reviewed'=>'Reviewed','resolved'=>'Resolved'] as $value=>$label): ?>
-                <a class="btn btn-sm <?= ($reportFilter??'')===$value?'btn-primary':'btn-outline-primary' ?>" <?= ($reportFilter??'')===$value?'aria-current="page"':'' ?> href="<?= e(url('admin.php'.($value!==''?'?status='.$value:'').'#reports')) ?>"><?= e($label) ?></a>
+                <a class="btn btn-sm <?= ($reportFilter??'')===$value?'btn-primary':'btn-outline-primary' ?>" <?= ($reportFilter??'')===$value?'aria-current="page"':'' ?> href="<?= e(('admin.php'.($value!==''?'?status='.$value:'').'#reports')) ?>"><?= e($label) ?></a>
                 <?php endforeach; ?></nav><p class="small mb-0 mt-2"><?= count($reports) ?> <?= e($reportFilter??'total') ?> report(s)</p></div>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
                     <form id="bulkReportsForm" method="post" data-bulk-confirm="Delete %d selected report(s)?" class="m-0">
                         <input type="hidden" name="action" value="bulk_delete_reports"><input type="hidden" name="return_to" value="admin.php">
                         <button class="btn btn-sm btn-outline-danger">Delete selected</button>
                     </form>
-                    <a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export_reports'.($reportFilter?'&status='.$reportFilter:''))) ?>">Download reports CSV</a>
+                    <a class="btn btn-sm btn-outline-success" href="<?= e(('admin.php?action=export_reports'.($reportFilter?'&status='.$reportFilter:''))) ?>">Download reports CSV</a>
                 </div>
             </div>
             <div class="card-body p-0">
@@ -333,8 +334,8 @@ foreach ($reports as $report) {
         <div class="card mb-4" id="locations">
             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
                 <h5 class="mb-0">All Locations</h5>
-                <a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export_locations')) ?>">Download locations CSV</a>
-                <form method="post" action="<?= e(url('admin.php')) ?>" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-center">
+                <a class="btn btn-sm btn-outline-success" href="admin.php?action=export_locations">Download locations CSV</a>
+                <form method="post" action="admin.php" enctype="multipart/form-data" class="d-flex flex-wrap gap-2 align-items-center">
                     <input type="hidden" name="action" value="import_locations">
                     <label for="locations_csv" class="visually-hidden">Locations CSV to import</label>
                     <input type="file" class="form-control form-control-sm w-auto" id="locations_csv" name="locations_csv" accept=".csv,text/csv" required>
@@ -400,7 +401,7 @@ foreach ($reports as $report) {
         <!-- All Readings Section -->
         <div class="card mb-4">
             <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <h5 class="mb-0">All Weather Readings</h5><a class="btn btn-sm btn-outline-success" href="<?= e(url('admin.php?action=export')) ?>">Download readings CSV</a>
+                <h5 class="mb-0">All Weather Readings</h5><a class="btn btn-sm btn-outline-success" href="admin.php?action=export">Download readings CSV</a>
                 <form id="bulkAdminReadingsForm" method="post" data-bulk-confirm="Remove %d reading(s) from active lists? They will be archived." class="m-0">
                     <input type="hidden" name="action" value="bulk_archive_readings"><input type="hidden" name="return_to" value="admin.php">
                     <button class="btn btn-sm btn-outline-danger">Remove selected</button>
@@ -473,7 +474,7 @@ foreach ($reports as $report) {
                     </section>
                 </div>
                 <div class="modal-footer">
-                    <form method="post" action="<?= e(url('admin.php')) ?>" id="modalReportAction" hidden>
+                    <form method="post" action="admin.php" id="modalReportAction" hidden>
                         <input type="hidden" name="id" id="modalReportActionId">
                         <input type="hidden" name="action" id="modalReportActionName">
                         <input type="hidden" name="return_status" value="<?= e($reportFilter??'') ?>">
@@ -485,11 +486,11 @@ foreach ($reports as $report) {
         </div>
     </div>
 
-    <script src="<?= url('assets/js/bootstrap.bundle.js') ?>"></script>
-    <script src="<?= e(url('assets/js/reading-modal.js')) ?>"></script>
-    <script src="<?= url('assets/vendor/leaflet/leaflet.js') ?>"></script>
-    <script src="<?= e(url('assets/js/offline-map.js')) ?>"></script>
-    <script src="<?= e(url('assets/js/bulk-select.js')) ?>"></script>
+    <script src="assets/js/bootstrap.bundle.js"></script>
+    <script src="assets/js/reading-modal.js"></script>
+    <script src="assets/vendor/leaflet/leaflet.js"></script>
+    <script src="assets/js/offline-map.js"></script>
+    <script src="assets/js/bulk-select.js"></script>
     <script>
         let reportMapInstance = null;
         const viewReportModal = document.getElementById('viewReportModal');
@@ -539,7 +540,7 @@ foreach ($reports as $report) {
             if (!reportMapInstance) {
                 reportMapInstance = L.map('reportMap', { minZoom: 12, maxZoom: 16, zoomSnap: 0.25 });
 
-                irisanTiles('<?= e(url("assets/map-tiles/{z}/{x}/{y}.png")) ?>', {
+                irisanTiles('assets/map-tiles/{z}/{x}/{y}.png', {
                     attribution: 'Barangay Irisan offline map tiles',
                     maxNativeZoom: 15,
                     maxZoom: 16,
@@ -551,7 +552,7 @@ foreach ($reports as $report) {
             reportMapInstance.invalidateSize();
             reportMapInstance.fitBounds([[16.407, 120.543], [16.435, 120.576]], {padding: [24, 24], maxZoom: 14});
             const currentMap = reportMapInstance;
-            fetch('<?= e(url("assets/map/irisan.geojson")) ?>')
+            fetch('assets/map/irisan.geojson')
                 .then(response => { if (!response.ok) throw new Error('Boundary unavailable'); return response.json(); })
                 .then(data => {
                     if (reportMapInstance !== currentMap) return;

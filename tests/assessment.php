@@ -1,8 +1,7 @@
 <?php
-declare(strict_types=1);
-require_once __DIR__ . '/../app/config.php';
-require_once __DIR__ . '/../app/RiskAnalyzer.php';
-require_once __DIR__ . '/../app/assessment.php';
+require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../functions.php';
+
 $config['freshness_seconds'] = 10800;
 $config['future_tolerance_seconds'] = 300;
 $now = utc_timestamp('2026-10-02 06:00:00');

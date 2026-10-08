@@ -1,13 +1,7 @@
 <?php
-declare(strict_types=1);
-require_once __DIR__ . '/../app/config.php';
-require_once __DIR__ . '/../app/helpers.php';
-require_once __DIR__ . '/../app/auth.php';
-require_once __DIR__ . '/../app/RiskAnalyzer.php';
-require_once __DIR__ . '/../app/assessment.php';
-require_once __DIR__ . '/../app/susceptibility.php';
-require_once __DIR__ . '/../app/awareness.php';
-require_once __DIR__ . '/../app/presentation.php';
+require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../functions.php';
+
 $checks = 0;
 function check_ui(bool $condition, string $message): void {
     global $checks;
@@ -48,7 +42,7 @@ foreach ([false, true] as $admin) {
     $row = ui_readings_rows([$reading], $admin, 'test', 'testForm', [1=>$location]);
     check_ui(substr_count($row, '<td') === ($admin ? 8 : 6), 'Table column count mismatch.');
     check_ui(str_contains($row, 'reading_ids[]') === $admin, 'Bulk controls must be admin-only.');
-    check_ui(str_contains($row, 'actions/save_reading.php') === $admin, 'Edit links must be admin-only.');
+    check_ui(str_contains($row, 'admin.php?action=edit_reading') === $admin, 'Edit links must be admin-only.');
     check_ui(str_contains($row, 'data-weather-dialog') && str_contains($row, '<template') &&
         !str_contains($row, '<details') && !str_contains($row, '<img '), 'Modal details must preserve escaped content.');
 }

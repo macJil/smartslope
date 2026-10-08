@@ -1,6 +1,7 @@
 <?php
-declare(strict_types=1);
-require_once __DIR__ . '/../app/RiskAnalyzer.php';
+require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../functions.php';
+
 $analyzer = new RiskAnalyzer();
 $checks = 0;
 foreach (RiskAnalyzer::THRESHOLDS as $level => $thresholds) {

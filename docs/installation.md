@@ -5,7 +5,7 @@ This guide matches branch `f1`. Use PHP 8.1+, MySQL with the PDO MySQL driver, c
 ## New local installation
 
 1. Clone or download branch `f1` and place it in the web root.
-2. Copy `.env.example` to `.env`. Set `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` for the local server. The sample database name is `smartslope_mvp`. Leave `APP_BASE_PATH` blank for automatic path detection, or set the exact URL base if detection is unsuitable.
+2. Copy `.env.example` to `.env` only if you do not already have one. Set `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD` for the local server. The sample database name is `smartslope_mvp`. No base-path setting is needed: browser URLs are relative and includes use `__DIR__`.
 3. Import `database/schema.sql` into MySQL. It creates the database and tables and inserts the initial administrator and one Irisan pilot location.
 4. Start PHP and MySQL, then open the site root in Herd or `http://localhost/smartslope/` in XAMPP.
 5. Rotate the seeded administrator credential immediately. From the project root, run:
@@ -40,7 +40,7 @@ Do not commit `.env`. Apache reads the supplied `.htaccess` when overrides are e
 | Database connection error | Confirm MySQL is running, `.env` credentials and database name, and `pdo_mysql` is enabled. |
 | Migration says setup incomplete | Run `php database/migrate-awareness.php` with the same `.env` and PHP runtime the site uses. |
 | Refresh fails but saved readings remain | Check internet access, cURL, provider response, and PHP error log. A provider failure should not erase history. |
-| Wrong links on XAMPP | Set `APP_BASE_PATH=/smartslope` or verify automatic subfolder detection. |
+| Wrong links on XAMPP | Open `/smartslope/` or `/smartslope/index.php`; ensure the root page files, config.php, functions.php and assets are deployed together. |
 | Internal PHP/SQL files open in browser | Fix server-level access rules. `.htaccess` alone does not protect Nginx. |
 
 See [testing](testing.md) for local acceptance steps after installation.

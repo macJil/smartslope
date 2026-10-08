@@ -4,5 +4,9 @@ Options -Indexes
     Require all denied
 </FilesMatch>
 RewriteEngine On
-RewriteRule ^(?:app|data|database|scripts|tests|docs)(?:/|$) - [F,L]
+RewriteRule ^(?:partials|data|database|scripts|tests|docs)(?:/|$) - [F,L]
 RewriteRule (^|/)\.(?!well-known(?:/|$)) - [F,L]
+
+<FilesMatch "^(config|functions)\.php$">
+    Require all denied
+</FilesMatch>

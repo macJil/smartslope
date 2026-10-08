@@ -6,9 +6,9 @@ SmartSlope uses a small PHP application with browser pages, shared application c
 
 | Layer | Repository paths | Responsibility |
 | --- | --- | --- |
-| Browser routes and templates | `index.php`, `dashboard.php`, `admin.php`, `report.php`, `readings.php`, `pages/` | Render login, dashboard, report and admin views. |
-| Actions and API | `actions/`, `api/readings.php`, `api/address.php` | Validate requests, check session/role, return JSON or redirect. |
-| Shared application logic | direct includes of `app/config.php`, `auth.php`, `helpers.php`, `repositories.php`, `weather.php`, `assessment.php`, `RiskAnalyzer.php`, `awareness.php` | Load dependencies, apply domain rules, query data and create view models. |
+| Browser routes and templates | Root PHP pages, `partials/navbar.php`, `partials/edit-reading.php` | Render login, dashboard, report and admin views. |
+| Actions and API | Root page POST handlers, `api/readings.php`, `api/address.php` | Check session/role, process forms and return JSON or redirect. Old `actions/` and `pages/` files only redirect for compatibility. |
+| Shared application logic | Direct includes of root `config.php` and `functions.php` | Database settings, PDO connection, named helper functions, RiskAnalyzer and HTML rendering. Includes use `__DIR__`; browser links are relative, with no URL base detection. |
 | Storage | `database/schema.sql`, `database/migrate-awareness.php`, MySQL | Persist users, locations and reading/report events. |
 | Browser assets | `assets/js/`, `assets/css/`, `assets/vendor/`, `assets/map/`, `assets/map-tiles/` | Local Bootstrap, Leaflet, jQuery, map boundary, AJAX, styling and tiles. |
 
@@ -35,4 +35,4 @@ Leaflet, tiles, the GeoJSON boundary and JavaScript boundary checker are served 
 
 ## Failure and status behavior
 
-The bootstrap logs exceptions and shows a generic failure to users. The reading API returns structured JSON errors and HTTP status codes. Assessment logic treats old, incomplete, invalid or unknown-rule data as non-current; it does not turn missing data into a low category.
+Login catches PDO failures and explains connection, credentials, missing database and schema problems inside the existing form. Other unhandled failures are logged; database failures get the same setup guidance without exposing SQL or passwords. The reading API returns structured JSON errors and HTTP status codes. Assessment logic treats old, incomplete, invalid or unknown-rule data as non-current; it does not turn missing data into a low category.

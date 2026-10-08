@@ -1,11 +1,12 @@
 # sf2 procedural simplification
 
-Base: `8c92d4d36624019a1d30091b13123ad5b0b60812` on `sf2`.
+Flattening patch base: `bf33d74541a2c41d2481e0def34ff31c89174714` on `sf2`.
 
-Pages, actions, APIs and CLI scripts include their PHP dependencies directly with
-`require_once __DIR__`. There is no bootstrap loader. `app/config.php` retains
-settings, environment loading, URL base detection and one shared PDO connection.
-`__DIR__` resolves files, while `url()` preserves root and subdirectory installs.
+Pages, APIs and CLI scripts directly include root `config.php` and `functions.php`
+using `require_once __DIR__`. There is no bootstrap loader, URL detection, base-path
+constant or `url()` helper. Browser links are ordinary relative URLs. The old
+`app/` implementation is consolidated; old page/action routes are tiny redirects.
+See `TEAM_DEVELOPMENT_GUIDE.md` for the current structure and login troubleshooting.
 
 The implementation follows the reference project's direct includes, session
 login and ordinary function calls. It does not copy its UI or mix mysqli/PDO.
@@ -49,8 +50,8 @@ From a clean checkout of the exact base above:
 ```sh
 git switch sf2
 git rev-parse HEAD
-git apply --check smartslope-sf2-simplify.patch
-git apply smartslope-sf2-simplify.patch
+git apply --check smartslope-sf2-flat-login.patch
+git apply smartslope-sf2-flat-login.patch
 ```
 
 The patch does not contain your `.env` or require a schema reset. Never reimport
@@ -62,7 +63,7 @@ Run the PHP tests listed in `docs/testing.md`, then test the site on the actual
 Herd/XAMPP installation. Existing historical docs describe older behavior;
 this document and the updated security/API/testing guides describe this patch.
 
-## Verification performed for this patch
+## Verification of the earlier simplification
 
 - Clean base: six PHP suites and 16 database integration checks passed.
 - Simplified code: PHP syntax checks; six PHP suites (risk, weather, assessment,

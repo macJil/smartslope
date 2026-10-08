@@ -31,7 +31,7 @@ Test both `/` on Herd and `/smartslope/` on XAMPP. Verify PHP PDO MySQL and cURL
 9. Test bulk removal, empty selection and malformed IDs. A later failure may leave earlier bulk changes saved.
 10. Export reports/readings CSV; check contacts, UTC columns, freshness, adjusted status, and formula-like report text.
 11. API: logged-out GET returns JSON 401; invalid POST token 403; malformed ID 422; inactive/missing location 404; unsupported method 405; provider failure 503. GET must not insert rows.
-12. Direct HTTP access to `.env`, `database/schema.sql`, `app/config.php` and `tests/risk.php` must be denied. Check server logs for errors.
+12. Direct HTTP access to `.env`, `database/schema.sql`, `config.php`, `functions.php`, `partials/` and `tests/risk.php` must be denied. Check server logs for errors.
 
 ## Server access protection
 

@@ -1,13 +1,11 @@
 <?php
-declare(strict_types=1);
+require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../functions.php';
+
 if (PHP_SAPI !== 'cli') {
     http_response_code(404);
     exit;
 }
-require_once __DIR__ . '/../app/config.php';
-require_once __DIR__ . '/../app/helpers.php';
-require_once __DIR__ . '/../app/auth.php';
-require_once __DIR__ . '/../app/repositories.php';
 
 if ($argc !== 4 || !preg_match('/^[a-zA-Z0-9_]{3,50}$/', $argv[1]) ||
     strlen($argv[2]) > 254 || !filter_var($argv[2], FILTER_VALIDATE_EMAIL) || !preg_match('/^\+?[0-9]{10,15}$/', $argv[3])) {

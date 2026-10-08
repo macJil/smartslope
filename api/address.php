@@ -1,11 +1,9 @@
 <?php
+require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../functions.php';
 
-declare(strict_types=1);
 
-require_once __DIR__ . '/../app/config.php';
-require_once __DIR__ . '/../app/helpers.php';
-require_once __DIR__ . '/../app/auth.php';
-require_once __DIR__ . '/../app/assessment.php';
+
 start_session();
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');

@@ -1,11 +1,7 @@
 <?php
-declare(strict_types=1);
-require_once __DIR__ . '/../app/config.php';
-require_once __DIR__ . '/../app/helpers.php';
-require_once __DIR__ . '/../app/RiskAnalyzer.php';
-require_once __DIR__ . '/../app/assessment.php';
-require_once __DIR__ . '/../app/presentation.php';
-require_once __DIR__ . '/../app/csv.php';
+require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../functions.php';
+
 set_error_handler(static function(int $severity,string $message): never { throw new ErrorException($message,0,$severity); });
 $checks=0;
 function check_csv(bool $ok,string $message): void { global $checks; if(!$ok)throw new RuntimeException($message); $checks++; }
