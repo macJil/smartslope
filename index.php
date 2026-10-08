@@ -1,7 +1,13 @@
 <?php
+require_once __DIR__ . '/app/config.php';
+require_once __DIR__ . '/app/helpers.php';
+require_once __DIR__ . '/app/auth.php';
+require_once __DIR__ . '/app/RiskAnalyzer.php';
+require_once __DIR__ . '/app/assessment.php';
+require_once __DIR__ . '/app/repositories.php';
 
-require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/functions.php';
+start_session();
+// ... rest of code (unchanged)
 
 start_session();
 
