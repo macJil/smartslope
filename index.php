@@ -7,7 +7,7 @@ require_once __DIR__ . '/includes/data.php';
 session_start();
 
 // An authenticated visitor goes straight to their page.
-if (!empty($_SESSION['user_id'])) {
+if (!empty($_SESSION['user_id'] )) {
     if (($_SESSION['role'] ?? '') === 'admin') {
         redirect('admin.php');
     }
