@@ -1,5 +1,11 @@
 # SmartSlope | Irisan prototype
 
+**MAMP macOS crash workaround:** keep MySQL running, then run
+`bash scripts/start-local.sh` from this folder and open http://127.0.0.1:8000/.
+This uses MAMP's PHP directly and avoids Apache/FastCGI. It includes a small
+router to keep internal files private without .htaccess. See
+[the local launch guide](docs/mamp-fastcgi-crash.md) before using the old Apache URL.
+
 This `sf2` version uses root-level `config.php`, small `functions.php`, focused `includes/` modules and page files, with direct `__DIR__` includes and ordinary relative browser links. Read the [team development guide](TEAM_DEVELOPMENT_GUIDE.md) for the structure and login troubleshooting. The earlier [behavior differences](docs/simplification-sf2.md), including editable CSVs and partial saves, still apply.
 SmartSlope is a student prototype for rainfall screening and community ground-condition reporting in Barangay Irisan, Baguio City. It uses PHP and PDO/MySQL, locally bundled Bootstrap/Leaflet/jQuery, an offline Irisan map, and Open-Meteo weather data.
 
@@ -28,8 +34,8 @@ The website supports resident accounts, map-point selection, manual weather refr
 2. Edit DB_HOST, DB_PORT, DB_NAME, DB_USER and DB_PASS in `config.php`. No `.env` file is used.
 3. For a **new** database, import `database/schema.sql`. For an existing current three-table database, back it up and run `php database/migrate-awareness.php`; do not reimport the schema over existing data.
 4. Rotate the seeded admin password with `php scripts/create_admin.php admin your-email@example.com +639123456780`. The script prompts for a password.
-5. Open `http://localhost/smartslope/` on XAMPP, or the localhost URL and web port shown by MAMP. Weather refresh needs internet access. Local map assets remain on disk.
-6. Run the checks in [testing](docs/testing.md). Nginx requires server-level rules because it does not read `.htaccess`.
+5. Keep MySQL running, run `bash scripts/start-local.sh`, then open `http://127.0.0.1:8000/`. Weather refresh needs internet access. Local map assets remain on disk.
+6. Run the checks in [testing](docs/testing.md). Apache/Nginx hosting requires separate server-level access rules; the included router is for the local PHP server.
 
 ## Risk screen
 The analyzer uses complete 1h/24h/72h rainfall totals and the highest reached prototype threshold. `low` does not mean safe. Forecast rainfall is separate from historical totals. Old, incomplete and invalid readings are not shown as current. Details: [analysis](docs/analysis.md).

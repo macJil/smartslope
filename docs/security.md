@@ -5,20 +5,20 @@ The project uses several application-level controls. These reduce common web ris
 ## Implemented controls
 
 - Registration checks required fields and column lengths, uses database uniqueness constraints and creates resident accounts with `password_hash()`; login checks with `password_verify()`.
-- Session cookies use `HttpOnly`, `SameSite=Lax`, and `Secure` when HTTPS is detected. Login regenerates the session ID.
+- Local HTTP session cookies use `HttpOnly` and `SameSite=Lax`. Login regenerates the session ID. HTTPS deployment also requires enabling Secure cookies.
 - The role comes from the authenticated database account. Admin routes/actions check the session role on the server.
 - CSRF tokens/checks are removed as requested. Forms and JSON refresh use POST, but sessions and HTTP methods alone do not provide CSRF protection.
 - PDO uses prepared statements, exception mode and native prepares. User-provided names, report messages, reasons and API text are escaped in HTML; dashboard data is rendered through escaped templates.
 - The readings endpoint returns JSON 401 for unsigned users and does not expose the stored raw provider payload or adjustment log.
 - Weather input is validated for units, numeric ranges, complete hourly intervals, timestamps, and freshness. Coordinates are restricted to the Irisan polygon on the server.
-- Generic user-facing errors are logged server-side rather than exposing SQL/provider internals. Apache rules block internal paths and dotfiles.
+- Generic user-facing errors are logged server-side rather than exposing SQL/provider internals. The local PHP router blocks requests outside the public page/asset allowlist.
 - The admin creation tool is CLI-only and prompts for a password; `.env` is ignored by Git.
 
 ## Required deployment checks
 
 1. Rotate the seeded administrator account password before retaining any non-disposable data.
 2. Keep `.env`, database files, scripts, source docs, tests and logs outside public access. Check actual HTTP responses on the chosen server.
-3. Apache/XAMPP reads `.htaccess` only when configured to allow overrides. Herd uses Nginx and ignores `.htaccess`; configure equivalent Nginx denials. Protect `config.php`, `functions.php`, `includes`, `partials`, `data`, `database`, `scripts`, `tests`, `docs` and all dotfiles.
+3. Start local development with `bash scripts/start-local.sh`; router.php is required for internal-file protection. There is no .htaccess. Apache/Nginx require equivalent server-configuration denials before hosting this tree. Protect `config.php`, `functions.php`, `includes`, `partials`, `data`, `database`, `scripts`, `tests`, `docs` and all dotfiles.
 4. Use HTTPS for any network-exposed deployment; the local HTTP setting cannot create a Secure cookie.
 5. Keep PHP/MySQL updated, use a least-privilege DB account for deployment, restrict access to backups and exports, and rotate credentials kept in `.env`.
 6. Treat report contact details and CSV exports as personal information. Keep only what the project needs and restrict administrator access.

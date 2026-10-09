@@ -1,5 +1,10 @@
 # XAMPP / MAMP installation (sf2)
 
+For the reported macOS FastCGI crash, use `bash scripts/start-local.sh` and
+http://127.0.0.1:8000/ with MySQL running. Read
+[MAMP local launch](mamp-fastcgi-crash.md). This replaces the Apache launch
+steps below for local development and uses router.php instead of .htaccess.
+
 Use PHP 8.1+ with PDO MySQL and cURL enabled. Node.js is only needed for JavaScript tests.
 
 1. Back up your project and database. Put SmartSlope in your configured document
@@ -37,9 +42,10 @@ Weather refresh needs internet access; saved readings and local map assets do no
   existing database with schema.sql just to repair login.
 - Refresh errors: check cURL, connectivity and the PHP error log. Provider
   failure should preserve earlier saved readings.
-- Apache 2.4 must permit authorization rules in `.htaccess` (AllowOverride
-  AuthConfig or All). No mod_rewrite or Options override is required. Verify that direct
-  access to config.php, includes/, database/ and scripts/ is denied.
+- The local launcher blocks direct access to config.php, includes/, database/
+  and scripts/. Apache does not use router.php automatically. Before using
+  Apache hosting, configure equivalent directory/file restrictions in its
+  server configuration; this repository no longer supplies .htaccess.
 - Run docs/testing.md and manually check map selection, refresh, reports,
   admin review, reading edits, CSV import/export, login and logout.
 
@@ -52,9 +58,9 @@ The map submits to dashboard.php?action=select_location. Apache's generic
 error page does not reveal its cause. Read the Apache error log for the
 matching request timestamp; PHP errors are separate from server-rule errors.
 
-The old .htaccess required RewriteEngine and Options even though this project
-has no rewritten URLs. The current rules remove those requirements. Apply
-the complete patch, including .htaccess, and retry the map selection.
+The previous patch addressed an Apache rewrite configuration error. The
+subsequently supplied objc_initializeAfterForkError log identifies a different
+PHP process crash. Use the local launch guide linked above to avoid FastCGI.
 On a typical macOS XAMPP installation the log is under
 /Applications/XAMPP/xamppfiles/logs/error_log; MAMP commonly uses
 /Applications/MAMP/logs/apache_error.log. Check the application's configured

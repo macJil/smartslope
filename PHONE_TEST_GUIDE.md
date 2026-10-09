@@ -1,5 +1,11 @@
 # Test SmartSlope on a Phone
 
+This is a historical LAN-testing guide. For the current MAMP FastCGI crash,
+use [the local launch guide](docs/mamp-fastcgi-crash.md) on your Mac first.
+The current launcher binds only to 127.0.0.1 and requires router.php; the old
+plain php -S command below does not protect internal files and should not be
+used with the current repository. Database settings now live in config.php.
+
 ## 1. Start the app on your Mac
 
 1. Connect your Mac to the Wi-Fi network you will use on your phone.
