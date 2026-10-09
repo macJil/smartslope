@@ -2,9 +2,8 @@
 
 // Weather requests and rainfall windows
 
-function fetch_weather(float $lat, float $lng): array
+function fetch_weather(float $lat, float $lng, string $url = 'https://api.open-meteo.com/v1/forecast'): array
 {
-    $url = "https://api.open-meteo.com/v1/forecast?";
     $params = [
         'latitude' => $lat,
         'longitude' => $lng,
@@ -18,19 +17,11 @@ function fetch_weather(float $lat, float $lng): array
         'precipitation_unit' => 'mm'
     ];
 
-    $ch = curl_init($url . http_build_query($params));
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
-    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-    $response = curl_exec($ch);
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-    if ($response === false || $status !== 200) {
+    try {
+        $decoded = http_json($url . '?' . http_build_query($params));
+    } catch (RuntimeException $error) {
         throw new RuntimeException('Weather provider is unavailable.');
     }
-    $decoded = json_decode($response, true);
     if (!is_array($decoded) || empty($decoded['current']['time'])) {
         throw new RuntimeException('Weather provider returned incomplete data.');
     }
@@ -158,7 +149,7 @@ function validate_weather_payload(array $weather, ?int $now = null): void
     }
 }
 
-function refresh_location(int $locationId): array
+function refresh_location(int $locationId, string $providerUrl = 'https://api.open-meteo.com/v1/forecast'): array
 {
     $location = get_location($locationId);
     if (
@@ -167,7 +158,7 @@ function refresh_location(int $locationId): array
     ) {
         throw new InvalidArgumentException('Select an active Irisan location.');
     }
-    $weather = fetch_weather((float)$location['lat'], (float)$location['lng']);
+    $weather = fetch_weather((float)$location['lat'], (float)$location['lng'], $providerUrl);
     $current = $weather['current'];
     $indicators = calculate_weather_indicators($weather['hourly'] ?? [], $current['time']);
     $risk = calculate_risk($indicators['rainfall_1h'], $indicators['rainfall_24h'], $indicators['rainfall_72h']);

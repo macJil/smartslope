@@ -1,4 +1,5 @@
 <?php
+
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
 
@@ -7,18 +8,24 @@ if (PHP_SAPI !== 'cli') {
     exit;
 }
 
-if ($argc !== 4 || !preg_match('/^[a-zA-Z0-9_]{3,50}$/', $argv[1]) ||
-    strlen($argv[2]) > 254 || !filter_var($argv[2], FILTER_VALIDATE_EMAIL) || !preg_match('/^\+?[0-9]{10,15}$/', $argv[3])) {
+if (
+    $argc !== 4 || !preg_match('/^[a-zA-Z0-9_]{3,50}$/', $argv[1]) ||
+    strlen($argv[2]) > 254 || !filter_var($argv[2], FILTER_VALIDATE_EMAIL) || !preg_match('/^\+?[0-9]{10,15}$/', $argv[3])
+) {
     fwrite(STDERR, "Usage: php scripts/create_admin.php username email phone\n");
     exit(1);
 }
 fwrite(STDOUT, "New admin password (at least 12 characters): ");
 $hide = PHP_OS_FAMILY !== 'Windows' && function_exists('system');
-if ($hide) system('stty -echo 2>/dev/null');
+if ($hide) {
+    system('stty -echo 2>/dev/null');
+}
 try {
     $password = rtrim((string)fgets(STDIN), "\r\n");
 } finally {
-    if ($hide) system('stty echo 2>/dev/null');
+    if ($hide) {
+        system('stty echo 2>/dev/null');
+    }
     fwrite(STDOUT, "\n");
 }
 if (strlen($password) < 12 || strlen($password) > 72) {

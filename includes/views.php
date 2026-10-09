@@ -3,35 +3,47 @@
 // Shared HTML rendering
 
 // Shared, escaped presentation for page loads and the weather AJAX response.
-function ui_current_category(array $assessment): ?string {
+function ui_current_category(array $assessment): ?string
+{
     $category = $assessment['current_category'] ?? null;
     return ($assessment['data_status'] ?? '') === 'current' &&
         in_array($category, ['low', 'normal', 'medium', 'high'], true) ? $category : null;
 }
 
-function ui_current_count(array $readings, string $category): int {
+function ui_current_count(array $readings, string $category): int
+{
     $count = 0;
     foreach ($readings as $reading) {
-        if (ui_current_category($reading['assessment'] ?? []) === $category) $count++;
+        if (ui_current_category($reading['assessment'] ?? []) === $category) {
+            $count++;
+        }
     }
     return $count;
 }
 
-function ui_number($value, string $unit = ''): string {
+function ui_number($value, string $unit = ''): string
+{
     return $value === null || $value === '' ? 'Unavailable' : (string)$value . $unit;
 }
 
-function ui_time(?string $value): string {
+function ui_time(?string $value): string
+{
     return $value ? local_date($value) . ' PHT' : 'Unavailable';
 }
 
-function ui_source(?string $source): string {
-    if ($source === 'openmeteo') return 'Open-Meteo weather provider (modeled data)';
-    if ($source === 'manual') return 'Manual entry';
+function ui_source(?string $source): string
+{
+    if ($source === 'openmeteo') {
+        return 'Open-Meteo weather provider (modeled data)';
+    }
+    if ($source === 'manual') {
+        return 'Manual entry';
+    }
     return 'Source unavailable';
 }
 
-function ui_location_label(array $location): string {
+function ui_location_label(array $location): string
+{
     $name = trim((string)($location['name'] ?? $location['location_name'] ?? ''));
     $landmark = trim((string)($location['landmark'] ?? ''));
     $purok = trim((string)($location['purok'] ?? ''));
@@ -43,8 +55,12 @@ function ui_location_label(array $location): string {
     } elseif ($name !== '' && !$generated && strcasecmp($name, 'Irisan') !== 0) {
         $parts[] = $name;
     }
-    if ($landmark !== '' && stripos($landmark, 'Baguio') !== false) return $landmark;
-    if ($purok !== '' && stripos(implode(', ', $parts), $purok) === false) $parts[] = $purok;
+    if ($landmark !== '' && stripos($landmark, 'Baguio') !== false) {
+        return $landmark;
+    }
+    if ($purok !== '' && stripos(implode(', ', $parts), $purok) === false) {
+        $parts[] = $purok;
+    }
     $parts[] = 'Barangay Irisan, Baguio City, Benguet, Philippines';
     $address = implode(', ', $parts);
     if ($generated && $landmark === '' && isset($location['lat'], $location['lng'])) {
@@ -53,9 +69,10 @@ function ui_location_label(array $location): string {
     return $address;
 }
 
-function ui_category_badge(array $assessment): string {
+function ui_category_badge(array $assessment): string
+{
     $category = ui_current_category($assessment);
-    $color = ['low'=>'success', 'normal'=>'primary', 'medium'=>'warning text-dark', 'high'=>'danger'][$category ?? ''] ?? 'secondary';
+    $color = ['low' => 'success', 'normal' => 'primary', 'medium' => 'warning text-dark', 'high' => 'danger'][$category ?? ''] ?? 'secondary';
     $html = '<span class="badge bg-' . $color . '">' . e(ucfirst($category ?? 'unavailable')) . '</span>';
     if (!$category && ($assessment['data_status'] ?? '') === 'outdated' && !empty($assessment['category'])) {
         $html .= '<small class="d-block text-muted mt-1">Last saved: ' . e(ucfirst($assessment['category'])) . '</small>';
@@ -67,7 +84,8 @@ function ui_category_badge(array $assessment): string {
 }
 
 function ui_weather_details(array $reading): string {
-    ob_start(); ?>
+    ob_start();
+?>
     <dl class="weather-details mb-0">
         <?php foreach ([
             'Forecast rainfall (24h from last whole hour)' => ui_number($reading['rainfall_forecast_24h'] ?? null, ' mm'),

@@ -46,7 +46,7 @@ if ($isPost && !empty($_POST['login'])) {
         $errorMessage = 'Invalid username or password';
     } catch (PDOException $error) {
         error_log('SmartSlope login: ' . $error->getMessage());
-        $errorMessage = database_error_message($error);
+        $errorMessage = DATABASE_ERROR_MESSAGE;
     }
 } elseif ($isPost && !empty($_POST['register'])) {
     // Registration always creates a resident; the browser cannot choose a role.
@@ -72,7 +72,7 @@ if ($isPost && !empty($_POST['login'])) {
             if ($error->getCode() === '23000') {
                 $errorMessage = 'Username, email, or phone already exists';
             } else {
-                $errorMessage = database_error_message($error);
+                $errorMessage = DATABASE_ERROR_MESSAGE;
             }
         }
     }

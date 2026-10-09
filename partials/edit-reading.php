@@ -1,4 +1,5 @@
 <?php
+
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
     http_response_code(404);
     exit;

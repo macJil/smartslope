@@ -1,4 +1,5 @@
 <?php
+
 // Read-only setup check. Run from Terminal; never display credentials in a page.
 if (PHP_SAPI !== 'cli') {
     http_response_code(404);
@@ -24,6 +25,6 @@ try {
     }
     echo "Database setup: OK\n";
 } catch (PDOException $error) {
-    fwrite(STDERR, database_error_message($error) . "\n");
+    fwrite(STDERR, DATABASE_ERROR_MESSAGE . "\n");
     exit(1);
 }

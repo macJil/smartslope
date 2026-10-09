@@ -1,5 +1,8 @@
 # sf2 simplification and XAMPP/MAMP repair
 
+Historical repair record. The network client and error helpers have since been
+simplified; see [current localhost setup](mamp-localhost.md).
+
 Patch base: `58c1e9eec0800f4a59477b5e8824721f3a1000ae`.
 
 The incomplete split left endpoints requiring the deleted functions.php,

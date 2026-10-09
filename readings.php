@@ -15,15 +15,15 @@ if (empty($_SESSION['user_id'])) {
 }
 
 $readings = get_all_readings(100);
-$isAdmin = (!empty($_SESSION['user_id']) && ($_SESSION['role'] ?? '') === 'admin');
+$isAdmin = (($_SESSION['role'] ?? '') === 'admin');
 $uiLocations = array_column(get_locations(), null, 'id');
 
 // Export CSV
 if (get('action') === 'export') {
     if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
-    header('Location: index.php', true, 303);
-    exit;
-}
+        header('Location: index.php', true, 303);
+        exit;
+    }
     download_csv('smartslope_readings_' . gmdate('Y-m-d') . '.csv', export_readings_csv(get_all_readings(PHP_INT_MAX)));
 }
 ?>

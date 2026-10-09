@@ -29,6 +29,7 @@ close to the operation they protect and use prepared statements for user values.
 - `includes/data.php`: prepared PDO operations grouped by Users, Locations, Readings and Reports.
 - `includes/risk.php`: RiskAnalyzer and assessment helpers.
 - `includes/geography.php`: boundary and susceptibility lookups.
+- `includes/http.php`: one small JSON request function using PHP streams.
 - `includes/weather.php`: weather fetching and reading refresh.
 - `includes/csv.php`: CSV import and download.
 - `includes/setup.php`: schema checks and migration helpers.

@@ -58,13 +58,20 @@ php tests/integration-awareness.php
 php tests/csv-import.php
 ```
 
-`tests/refresh.php` replaces the cURL functions with a deterministic weather
-fixture, while using real PDO/MySQL. Run it with cURL disabled, for example on
-Linux with shared extensions:
+`tests/refresh.php` now uses the real HTTP stream client. Run it against a
+local HTTP fixture (127.0.0.1) that returns complete hourly weather JSON at
+/weather and HTTP 503 at /failure. Use the disposable test database:
+
+Start only the test fixture in a separate terminal (this does not start the website):
 
 ```sh
-php -n -d extension=pdo -d extension=mysqlnd -d extension=pdo_mysql tests/refresh.php
+php -S 127.0.0.1:33086 tests/http-fixture.php
 ```
 
-Extension names/loading differ on XAMPP and MAMP. The fixture test must run
-without the real cURL extension; it does not prove live provider availability.
+```sh
+php tests/refresh.php http://127.0.0.1:33086/weather
+```
+
+This test uses PDO/MySQL and HTTP, with no cURL mock or disabled extensions.
+It checks separate snapshots, rainfall windows, risk, provider inputs, and
+failure preserving history. It does not prove live provider availability.

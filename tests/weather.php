@@ -2,6 +2,7 @@
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
 require_once __DIR__ . '/../includes/risk.php';
+require_once __DIR__ . '/../includes/http.php';
 require_once __DIR__ . '/../includes/weather.php';
 
 $end = utc_timestamp('2026-10-02T06:00');

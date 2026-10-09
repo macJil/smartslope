@@ -2,30 +2,8 @@
 
 // Small shared helpers: errors, escaping, input, redirects, dates and flash messages.
 
-// Turn database failures into useful messages without showing SQL or passwords.
-function database_error_message(PDOException $error): string
-{
-    $code = (int)($error->errorInfo[1] ?? 0);
-    if ($code === 1049) {
-        return 'Database not found. Check DB_NAME in config.php against your MySQL database name.';
-    }
-    if ($code === 1045 || $code === 1044) {
-        return 'Database access denied. Check DB_USER and DB_PASS in config.php.';
-    }
-    if ($code === 2002 || $code === 2003) {
-        return 'Cannot connect to MySQL. Start the database server and check DB_HOST and DB_PORT in config.php.';
-    }
-    if ($error->getCode() === '42S02') {
-        return 'A required SmartSlope table is missing. Select your SmartSlope database in config.php; use database/schema.sql only for a new database.';
-    }
-    if ($error->getCode() === '42S22') {
-        return 'The database columns do not match this SmartSlope version. Check the selected database and run the documented migration.';
-    }
-    if (str_contains($error->getMessage(), 'could not find driver')) {
-        return 'PHP needs the PDO MySQL extension enabled. Check the PHP version used by XAMPP or MAMP.';
-    }
-    return 'The database operation failed. Check the PHP error log for the recorded database error.';
-}
+// Keep the database error simple; the full error goes to the PHP log.
+const DATABASE_ERROR_MESSAGE = 'Database unavailable. Check MySQL, config.php and the database setup.';
 
 function show_application_error(Throwable $error): void
 {
@@ -37,7 +15,7 @@ function show_application_error(Throwable $error): void
     http_response_code(500);
     $message = 'This page could not load. Check the PHP error log for details.';
     if ($error instanceof PDOException) {
-        $message = database_error_message($error);
+        $message = DATABASE_ERROR_MESSAGE;
     }
     echo htmlspecialchars($message, ENT_QUOTES, 'UTF-8');
 }

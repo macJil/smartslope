@@ -1,4 +1,5 @@
 <?php
+
 if (empty($_SESSION['user_id'])) {
     http_response_code(404);
     exit;

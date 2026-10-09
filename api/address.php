@@ -1,6 +1,8 @@
 <?php
+
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../includes/http.php';
 require_once __DIR__ . '/../includes/risk.php';
 require_once __DIR__ . '/../includes/geography.php';
 
@@ -32,15 +34,9 @@ if ($lat === null || $lng === null || !is_in_irisan($lat, $lng)) {
 }
 session_write_close();
 try {
-        $ch = curl_init('https://nominatim.openstreetmap.org/reverse?' . http_build_query(['format' => 'jsonv2','lat' => $lat,'lon' => $lng,'zoom' => 18,'addressdetails' => 1]));
-        curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true,CURLOPT_TIMEOUT => 4,CURLOPT_CONNECTTIMEOUT => 3,CURLOPT_USERAGENT => 'SmartSlope/1.0 (academic Irisan prototype)',CURLOPT_SSL_VERIFYPEER => true,CURLOPT_SSL_VERIFYHOST => 2]);
-        $body = curl_exec($ch);
-    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
-        $decoded = $body === false ? null : json_decode($body, true);
-    if ($status !== 200 || !is_array($decoded)) {
-        throw new RuntimeException('Address provider unavailable.');
-    }
+    $decoded = http_json('https://nominatim.openstreetmap.org/reverse?' . http_build_query([
+        'format' => 'jsonv2', 'lat' => $lat, 'lon' => $lng, 'zoom' => 18, 'addressdetails' => 1,
+    ]), 4);
     $data = ['address' => implode('', array_slice(preg_split('//u', (string)($decoded['display_name'] ?? ''), -1, PREG_SPLIT_NO_EMPTY) ?: [], 0, 255))];
     address_json(200, $data);
 } catch (Throwable $e) {

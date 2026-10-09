@@ -1,28 +1,20 @@
 # Test SmartSlope on a Phone
 
-This is a historical LAN-testing guide. For the current MAMP FastCGI crash,
-use [the local launch guide](docs/mamp-fastcgi-crash.md) on your Mac first.
-The current launcher binds only to 127.0.0.1 and requires router.php; the old
-plain php -S command below does not protect internal files and should not be
-used with the current repository. Database settings now live in config.php.
+Use MAMP/XAMPP Apache and MySQL with config.php database settings. See
+[localhost setup](docs/mamp-localhost.md). The website needs no shell launcher.
 
 ## 1. Start the app on your Mac
 
 1. Connect your Mac to the Wi-Fi network you will use on your phone.
-2. Make sure MySQL is running and the project `.env` has the working database settings.
+2. Make sure MySQL is running and `config.php` has the working database settings.
 3. Open Terminal in the SmartSlope project folder:
 
    ```sh
-   cd /Users/mac/Herd/smartslope
+   cd /Applications/MAMP/htdocs/smartslope
    ```
 
-4. Start PHP's local server. If it is already running in another terminal, leave it running and skip this step.
-
-   ```sh
-   php -S 0.0.0.0:8000
-   ```
-
-   Keep this terminal open while testing.
+4. Start Apache and MySQL using MAMP. Verify http://localhost:8888/smartslope/
+   on the Mac before trying the phone. Use your actual Apache port.
 
 ## 2. Open the site on your phone
 
@@ -33,10 +25,10 @@ used with the current repository. Database settings now live in config.php.
    ```
 
 2. Connect the phone to the same non-guest Wi-Fi as the Mac. Turn off any VPN while testing.
-3. In the phone browser, open `http://<MAC-IP>:8000/`. For example, if the Mac IP is `192.168.1.9`, open:
+3. In the phone browser, open `http://<MAC-IP>:8888/smartslope/`. For example, if the Mac IP is `192.168.1.9`, open:
 
    ```text
-   http://192.168.1.9:8000/
+   http://192.168.1.9:8888/smartslope/
    ```
 
 Use `http://`, not `https://`. The Herd address `smartslope.test` normally works only on the Mac, not on the phone.

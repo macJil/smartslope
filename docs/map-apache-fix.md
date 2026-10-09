@@ -1,5 +1,8 @@
 # Map request and Apache compatibility repair
 
+Historical verification record. Current localhost instructions and replacement
+server access rules are in [MAMP localhost setup](mamp-localhost.md).
+
 Base: sf2 at aa8d39d552707cde89e4be915791972fd7c57875.
 
 Reproduced an Apache 500 with the former .htaccess and mod_rewrite unavailable:

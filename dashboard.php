@@ -5,6 +5,7 @@ require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/includes/risk.php';
 require_once __DIR__ . '/includes/data.php';
 require_once __DIR__ . '/includes/geography.php';
+require_once __DIR__ . '/includes/http.php';
 require_once __DIR__ . '/includes/weather.php';
 require_once __DIR__ . '/includes/awareness.php';
 require_once __DIR__ . '/includes/views.php';
@@ -62,7 +63,7 @@ foreach ($locations as &$loc) {
 }
 unset($loc); // End the reference before iterating locations again.
 
-$isAdmin = (!empty($_SESSION['user_id']) && ($_SESSION['role'] ?? '') === 'admin');
+$isAdmin = (($_SESSION['role'] ?? '') === 'admin');
 $selectedLocId = (int)get('location_id', 0);
 $selectedLoc = null;
 foreach ($locations as $loc) {

@@ -1,11 +1,9 @@
 # XAMPP / MAMP installation (sf2)
 
-For the reported macOS FastCGI crash, use `bash scripts/start-local.sh` and
-http://127.0.0.1:8000/ with MySQL running. Read
-[MAMP local launch](mamp-fastcgi-crash.md). This replaces the Apache launch
-steps below for local development and uses router.php instead of .htaccess.
+Use the normal Apache localhost URL. Read [MAMP localhost setup](mamp-localhost.md)
+for the stream-based network requests and server access rules without .htaccess.
 
-Use PHP 8.1+ with PDO MySQL and cURL enabled. Node.js is only needed for JavaScript tests.
+Use PHP 8.1+ with PDO MySQL and OpenSSL enabled, and allow_url_fopen enabled. Node.js is only needed for JavaScript tests.
 
 1. Back up your project and database. Put SmartSlope in your configured document
    root, usually a folder named `smartslope` inside `htdocs`.
@@ -40,12 +38,10 @@ Weather refresh needs internet access; saved readings and local map assets do no
 - Connection/access errors: check MySQL is running and config.php matches it.
 - Missing tables/columns: confirm the selected database; do not overwrite an
   existing database with schema.sql just to repair login.
-- Refresh errors: check cURL, connectivity and the PHP error log. Provider
+- Refresh errors: check allow_url_fopen, OpenSSL, connectivity and the PHP error log. Provider
   failure should preserve earlier saved readings.
-- The local launcher blocks direct access to config.php, includes/, database/
-  and scripts/. Apache does not use router.php automatically. Before using
-  Apache hosting, configure equivalent directory/file restrictions in its
-  server configuration; this repository no longer supplies .htaccess.
+- Include server/apache-smartslope.conf in your Apache configuration and verify
+  its paths. This replaces .htaccess protection; there is no launcher or router.
 - Run docs/testing.md and manually check map selection, refresh, reports,
   admin review, reading edits, CSV import/export, login and logout.
 
@@ -60,7 +56,7 @@ matching request timestamp; PHP errors are separate from server-rule errors.
 
 The previous patch addressed an Apache rewrite configuration error. The
 subsequently supplied objc_initializeAfterForkError log identifies a different
-PHP process crash. Use the local launch guide linked above to avoid FastCGI.
+PHP process crash. The current patch replaces cURL network requests with PHP streams; use the normal localhost URL and test your MAMP runtime again.
 On a typical macOS XAMPP installation the log is under
 /Applications/XAMPP/xamppfiles/logs/error_log; MAMP commonly uses
 /Applications/MAMP/logs/apache_error.log. Check the application's configured

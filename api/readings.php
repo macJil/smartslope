@@ -1,9 +1,11 @@
 <?php
+
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../functions.php';
 require_once __DIR__ . '/../includes/risk.php';
 require_once __DIR__ . '/../includes/data.php';
 require_once __DIR__ . '/../includes/geography.php';
+require_once __DIR__ . '/../includes/http.php';
 require_once __DIR__ . '/../includes/weather.php';
 require_once __DIR__ . '/../includes/awareness.php';
 require_once __DIR__ . '/../includes/views.php';
@@ -62,11 +64,11 @@ try {
         'readings' => $readings,
         'view' => [
             'assessment' => ui_assessment_panel($latest, $location, $assessment),
-            'readings' => ui_readings_rows($readings, (!empty($_SESSION['user_id']) && ($_SESSION['role'] ?? '') === 'admin'), 'dashboard-readings', 'bulkDashboardReadingsForm', [$locationId => $location]),
+            'readings' => ui_readings_rows($readings, (($_SESSION['role'] ?? '') === 'admin'), 'dashboard-readings', 'bulkDashboardReadingsForm', [$locationId => $location]),
             'high' => ui_current_count($readings, 'high'),
             'medium' => ui_current_count($readings, 'medium'),
             'history' => ui_history($readings),
-            'reports' => ui_report_summary($reportCounts, (!empty($_SESSION['user_id']) && ($_SESSION['role'] ?? '') === 'admin')),
+            'reports' => ui_report_summary($reportCounts, (($_SESSION['role'] ?? '') === 'admin')),
         ],
     ]);
 } catch (Throwable $error) {
